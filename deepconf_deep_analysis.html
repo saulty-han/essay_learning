@@ -1,0 +1,1506 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>深度解读 — Deep Think with Confidence (DeepConf)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{
+  font-family:'Noto Sans SC',system-ui,-apple-system,sans-serif;
+  background:#0d1117;color:#c9d1d9;
+  line-height:1.8;font-size:16px;min-height:100vh;
+}
+.container{max-width:1400px;margin:0 auto;padding:0 24px;background:#0d1117;position:relative;}
+.back-btn{
+  position:fixed;top:16px;left:16px;z-index:9999;
+  background:rgba(20,20,35,.75);color:#c9d1d9;
+  border:1px solid rgba(255,255,255,.15);border-radius:10px;
+  padding:8px 16px;font-size:14px;cursor:pointer;
+  backdrop-filter:blur(6px);transition:all .3s;
+  text-decoration:none;display:flex;align-items:center;gap:6px;
+}
+.back-btn:hover{background:rgba(30,30,55,.9);border-color:rgba(255,255,255,.3);}
+.hero{padding:80px 0 40px;text-align:center;}
+.hero-title{
+  font-size:2.2rem;font-weight:700;
+  background:linear-gradient(135deg,#0cebeb,#20e3b2,#29ffc6);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  background-clip:text;margin-bottom:12px;line-height:1.3;
+}
+.hero-sub{font-size:1.1rem;color:#8b949e;margin-bottom:8px;}
+.venue{font-size:.95rem;color:#8b949e;margin-top:8px;}
+.venue a{color:#0cebeb;text-decoration:none;}
+.venue a:hover{text-decoration:underline;}
+.tag-row{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:16px;}
+.tag{
+  display:inline-block;padding:4px 14px;border-radius:20px;font-size:.85rem;
+  border:1px solid rgba(12,235,235,.3);color:#0cebeb;
+  background:rgba(12,235,235,.06);
+}
+.divider{border:none;border-top:1px solid rgba(255,255,255,.08);margin:48px 0;}
+.section{margin:40px 0;}
+.section-title{
+  font-size:1.75rem;font-weight:700;margin-bottom:20px;
+  color:#e6edf3;display:flex;align-items:center;gap:10px;
+}
+.section-title .num{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:36px;height:36px;border-radius:50%;
+  background:linear-gradient(135deg,#0cebeb,#20e3b2);
+  color:#0d1117;font-size:1rem;font-weight:700;flex-shrink:0;
+}
+.section-desc{font-size:16px;line-height:1.9;color:#c9d1d9;margin-bottom:16px;}
+.toc{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:16px;padding:28px 36px;margin:30px 0;
+}
+.toc h3{font-size:1.2rem;color:#e6edf3;margin-bottom:14px;}
+.toc ol{list-style:none;counter-reset:toc;padding:0;}
+.toc li{counter-increment:toc;margin:8px 0;}
+.toc li::before{content:counter(toc) ".";color:#0cebeb;font-weight:600;margin-right:8px;}
+.toc a{color:#8b949e;text-decoration:none;transition:color .2s;}
+.toc a:hover{color:#0cebeb;}
+.module-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:24px;margin:18px 0;transition:all .3s;
+}
+.module-card:hover{border-color:rgba(12,235,235,.3);transform:translateY(-2px);}
+.module-card h3{font-size:1.15rem;font-weight:600;margin-bottom:10px;color:#0cebeb;}
+.module-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.arch-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:22px;margin:14px 0;transition:all .3s;
+}
+.arch-card:hover{border-color:rgba(12,235,235,.25);}
+.arch-card h4{font-size:1.05rem;font-weight:600;color:#20e3b2;margin-bottom:8px;}
+.arch-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.step-flow{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:22px;margin:14px 0;
+}
+.step-flow h4{font-size:1.05rem;font-weight:600;color:#20e3b2;margin-bottom:8px;}
+.step-flow p{font-size:15px;line-height:1.8;color:#8b949e;}
+.data-table{
+  width:100%;border-collapse:collapse;margin:18px 0;
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;overflow:hidden;font-size:14px;
+}
+.data-table th{
+  background:rgba(12,235,235,.08);color:#0cebeb;padding:12px 14px;
+  text-align:left;font-weight:600;border-bottom:1px solid rgba(255,255,255,.1);
+}
+.data-table td{
+  padding:10px 14px;border-bottom:1px solid rgba(255,255,255,.06);color:#c9d1d9;
+}
+.data-table tr:hover td{background:rgba(12,235,235,.03);}
+.formula-box{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-left:3px solid #0cebeb;border-radius:10px;
+  padding:18px 22px;margin:16px 0;font-size:18px;
+  font-family:'JetBrains Mono',monospace;color:#e6edf3;
+  overflow-x:auto;
+}
+.formula-box .label{font-size:14px;color:#8b949e;margin-bottom:8px;font-family:'Noto Sans SC',sans-serif;}
+.code-block{
+  background:rgba(20,20,35,.8);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;padding:20px;margin:16px 0;overflow-x:auto;
+}
+.code-block pre{
+  font-family:'JetBrains Mono',monospace;font-size:14px;line-height:1.7;color:#c9d1d9;
+}
+.ck{color:#0cebeb;}.cs{color:#f0883e;}.cf{color:#20e3b2;}.cg{color:#8b949e;font-style:italic;}.cn{color:#79c0ff;}
+.qa-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:24px;margin:18px 0;transition:all .3s;
+}
+.qa-card:hover{border-color:rgba(12,235,235,.25);}
+.qa-q{font-size:1.05rem;font-weight:600;color:#0cebeb;margin-bottom:12px;}
+.qa-a{font-size:15px;line-height:1.9;color:#8b949e;}
+.highlight-box{
+  background:rgba(12,235,235,.04);border:1px solid rgba(12,235,235,.15);
+  border-left:3px solid #0cebeb;border-radius:10px;
+  padding:18px 22px;margin:16px 0;
+}
+.highlight-box h4{color:#0cebeb;margin-bottom:8px;}
+.highlight-box p{font-size:15px;line-height:1.8;color:#c9d1d9;}
+.warn-box{
+  background:rgba(240,136,62,.04);border:1px solid rgba(240,136,62,.15);
+  border-left:3px solid #f0883e;border-radius:10px;
+  padding:18px 22px;margin:16px 0;
+}
+.warn-box h4{color:#f0883e;margin-bottom:8px;}
+.warn-box p{font-size:15px;line-height:1.8;color:#c9d1d9;}
+.info-box{
+  background:rgba(12,235,235,.04);border:1px solid rgba(12,235,235,.12);
+  border-left:3px solid #20e3b2;border-radius:10px;
+  padding:18px 22px;margin:16px 0;
+}
+.info-box h4{color:#20e3b2;margin-bottom:8px;}
+.info-box p{font-size:15px;line-height:1.8;color:#c9d1d9;}
+.fc{font-size:14px;color:#8b949e;margin-top:8px;line-height:1.6;}
+.paper-figure{
+  background:rgba(20,20,35,.4);border:1px solid rgba(255,255,255,.06);
+  border-radius:14px;padding:18px;margin:16px 0;text-align:center;
+}
+.paper-figure img{max-width:100%;border-radius:12px;}
+.svg-wrap{
+  background:rgba(20,20,35,.4);border:1px solid rgba(255,255,255,.06);
+  border-radius:14px;padding:18px;margin:16px 0;
+}
+.svg-wrap svg{width:100%;height:auto;}
+.kv-row{display:flex;border-bottom:1px solid rgba(255,255,255,.06);padding:8px 0;}
+.kv-key{width:160px;flex-shrink:0;color:#8b949e;font-size:14px;}
+.kv-val{flex:1;color:#e6edf3;font-size:14px;}
+.footer{text-align:center;padding:40px 0;color:#8b949e;font-size:.85rem;}
+.prompt-box{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-left:3px solid #0cebeb;border-radius:10px;
+  padding:18px 22px;margin:16px 0;
+}
+.prompt-label{
+  display:inline-block;padding:2px 10px;border-radius:8px;font-size:.8rem;
+  background:rgba(12,235,235,.1);color:#0cebeb;margin-bottom:8px;
+}
+.prompt-box pre{
+  font-family:'JetBrains Mono',monospace;font-size:14px;line-height:1.7;
+  color:#c9d1d9;white-space:pre-wrap;
+}
+.comp-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:22px;margin:14px 0;transition:all .3s;
+}
+.comp-card:hover{border-color:rgba(12,235,235,.25);}
+.comp-card h4{font-size:1.05rem;font-weight:600;color:#20e3b2;margin-bottom:8px;}
+.comp-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.insight-box{
+  background:rgba(12,235,235,.04);border:1px solid rgba(12,235,235,.15);
+  border-left:3px solid #0cebeb;border-radius:10px;
+  padding:18px 22px;margin:16px 0;
+}
+.insight-box h4{color:#0cebeb;margin-bottom:8px;}
+.insight-box p{font-size:15px;line-height:1.8;color:#c9d1d9;}
+.limit-box{
+  background:rgba(240,136,62,.04);border:1px solid rgba(240,136,62,.15);
+  border-left:3px solid #f0883e;border-radius:10px;
+  padding:18px 22px;margin:16px 0;
+}
+.limit-box h4{color:#f0883e;margin-bottom:8px;}
+.limit-box p{font-size:15px;line-height:1.8;color:#c9d1d9;}
+@media(max-width:768px){
+  .hero-title{font-size:1.6rem;}
+  .container{padding:0 16px;}
+  .data-table{font-size:13px;}
+  .data-table th,.data-table td{padding:8px 10px;}
+}
+</style>
+</head>
+<body>
+<a class="back-btn" href="index.html">← 返回主页</a>
+<div class="container">
+
+<!-- ===== HERO ===== -->
+<div class="hero">
+  <h1 class="hero-title">Deep Think with Confidence</h1>
+  <p class="hero-sub">让大模型学会「自知之明」——用置信度信号智能过滤低质量推理轨迹</p>
+  <p class="venue">
+    <span>📄 arXiv Preprint 2025</span> &nbsp;|&nbsp;
+    <a href="https://arxiv.org/abs/2508.15260" target="_blank">arXiv: 2508.15260</a> &nbsp;|&nbsp;
+    <a href="https://github.com/facebookresearch/deepconf" target="_blank">GitHub: facebookresearch/deepconf</a>
+  </p>
+  <div class="tag-row">
+    <span class="tag">Test-Time Scaling</span>
+    <span class="tag">Confidence Filtering</span>
+    <span class="tag">Early Stopping</span>
+    <span class="tag">Parallel Thinking</span>
+    <span class="tag">No Extra Training</span>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ===== 整体架构总览 ===== -->
+<div class="section">
+<h2 class="section-title"><span class="num">★</span> 整体架构总览</h2>
+<p class="section-desc">
+DeepConf 是一个在测试时（test-time）运行的推理增强框架，核心思想是利用大语言模型自身的输出概率分布（logprobs）来衡量每条推理轨迹的"置信度"，并据此进行两件关键操作：<strong>离线过滤</strong>（生成完成后丢弃低置信度轨迹）和<strong>在线早停</strong>（生成过程中实时终止低置信度轨迹）。整个框架无需额外训练、无需超参调优，可无缝集成到 vLLM 等推理框架中。
+</p>
+
+<!-- SVG 架构总览图 -->
+<div class="svg-wrap">
+<svg viewBox="0 0 1200 520" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="g1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0cebeb"/><stop offset="100%" stop-color="#20e3b2"/>
+    </linearGradient>
+    <linearGradient id="g2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1a2340"/><stop offset="100%" stop-color="#182030"/>
+    </linearGradient>
+    <linearGradient id="g3" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2a1a3a"/><stop offset="100%" stop-color="#1a1520"/>
+    </linearGradient>
+    <filter id="sh"><feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="rgba(0,0,0,.3)"/></filter>
+  </defs>
+  <!-- 输入区 -->
+  <rect x="20" y="30" width="160" height="80" rx="12" fill="url(#g2)" stroke="#0cebeb" stroke-width="1.5" filter="url(#sh)"/>
+  <text x="100" y="65" text-anchor="middle" fill="#0cebeb" font-size="13" font-weight="600">问题输入</text>
+  <text x="100" y="88" text-anchor="middle" fill="#8b949e" font-size="11">Question + Prompt</text>
+
+  <!-- 并行思考 -->
+  <rect x="220" y="20" width="200" height="100" rx="12" fill="url(#g2)" stroke="#20e3b2" stroke-width="1.5" filter="url(#sh)"/>
+  <text x="320" y="50" text-anchor="middle" fill="#20e3b2" font-size="13" font-weight="600">并行思考</text>
+  <text x="320" y="70" text-anchor="middle" fill="#8b949e" font-size="11">采样 K 条推理轨迹</text>
+  <text x="320" y="88" text-anchor="middle" fill="#8b949e" font-size="11">(Parallel Thinking)</text>
+
+  <!-- 箭头：输入→并行 -->
+  <line x1="180" y1="70" x2="218" y2="70" stroke="#0cebeb" stroke-width="1.5" marker-end="url(#arr)"/>
+  <defs><marker id="arr" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#0cebeb"/></marker></defs>
+
+  <!-- 置信度计算 -->
+  <rect x="460" y="20" width="220" height="100" rx="12" fill="url(#g2)" stroke="#0cebeb" stroke-width="1.5" filter="url(#sh)"/>
+  <text x="570" y="45" text-anchor="middle" fill="#0cebeb" font-size="13" font-weight="600">置信度度量</text>
+  <text x="570" y="65" text-anchor="middle" fill="#8b949e" font-size="11">Token Conf → Group Conf</text>
+  <text x="570" y="83" text-anchor="middle" fill="#8b949e" font-size="11">→ Trace Conf (3种度量)</text>
+  <text x="570" y="100" text-anchor="middle" fill="#8b949e" font-size="10">C<tspan baseline-shift="sub" font-size="8">i</tspan> = −1/k Σ log P(j)</text>
+
+  <!-- 箭头：并行→置信度 -->
+  <line x1="420" y1="70" x2="458" y2="70" stroke="#20e3b2" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- 离线分支 -->
+  <rect x="720" y="10" width="210" height="55" rx="10" fill="#1a2b30" stroke="#48bb78" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="825" y="32" text-anchor="middle" fill="#48bb78" font-size="12" font-weight="600">离线模式 (Offline)</text>
+  <text x="825" y="50" text-anchor="middle" fill="#8b949e" font-size="10">过滤 + 加权投票</text>
+
+  <!-- 在线分支 -->
+  <rect x="720" y="80" width="210" height="55" rx="10" fill="#2a1a3a" stroke="#b794f4" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="825" y="102" text-anchor="middle" fill="#b794f4" font-size="12" font-weight="600">在线模式 (Online)</text>
+  <text x="825" y="120" text-anchor="middle" fill="#8b949e" font-size="10">早停 + 自适应共识</text>
+
+  <!-- 箭头：置信度→两分支 -->
+  <line x1="680" y1="50" x2="718" y2="38" stroke="#48bb78" stroke-width="1.2" marker-end="url(#arr)"/>
+  <line x1="680" y1="90" x2="718" y2="107" stroke="#b794f4" stroke-width="1.2"/>
+
+  <!-- 最终输出 -->
+  <rect x="970" y="40" width="200" height="70" rx="12" fill="url(#g2)" stroke="#0cebeb" stroke-width="1.5" filter="url(#sh)"/>
+  <text x="1070" y="68" text-anchor="middle" fill="#0cebeb" font-size="13" font-weight="600">最终答案</text>
+  <text x="1070" y="88" text-anchor="middle" fill="#8b949e" font-size="11">置信度加权多数投票</text>
+
+  <!-- 箭头→最终 -->
+  <line x1="930" y1="38" x2="968" y2="65" stroke="#48bb78" stroke-width="1.2" marker-end="url(#arr)"/>
+  <line x1="930" y1="107" x2="968" y2="80" stroke="#b794f4" stroke-width="1.2"/>
+
+  <!-- 下方：关键步骤卡片 -->
+  <!-- Step 1 -->
+  <rect x="20" y="160" width="270" height="160" rx="12" fill="#1a2340" stroke="#0cebeb" stroke-width="1" filter="url(#sh)"/>
+  <text x="155" y="185" text-anchor="middle" fill="#0cebeb" font-size="13" font-weight="600">Step 1: Token 置信度</text>
+  <text x="155" y="210" text-anchor="middle" fill="#8b949e" font-size="11">提取 top-k token 的 logprobs</text>
+  <text x="155" y="232" text-anchor="middle" fill="#8b949e" font-size="11">计算每个 token 的置信度 C<tspan baseline-shift="sub" font-size="8">i</tspan></text>
+  <rect x="40" y="248" width="230" height="50" rx="8" fill="#252a3a"/>
+  <text x="155" y="275" text-anchor="middle" fill="#20e3b2" font-size="12" font-family="JetBrains Mono,monospace">C<tspan baseline-shift="sub" font-size="9">i</tspan> = −(1/k) Σ log P<tspan baseline-shift="sub" font-size="9">i</tspan>(j)</text>
+  <text x="155" y="300" text-anchor="middle" fill="#8b949e" font-size="10">峰值分布→高置信度</text>
+
+  <!-- Step 2 -->
+  <rect x="310" y="160" width="270" height="160" rx="12" fill="#1a2340" stroke="#20e3b2" stroke-width="1" filter="url(#sh)"/>
+  <text x="445" y="185" text-anchor="middle" fill="#20e3b2" font-size="13" font-weight="600">Step 2: 组/轨迹置信度</text>
+  <text x="445" y="210" text-anchor="middle" fill="#8b949e" font-size="11">滑动窗口计算 Group Conf</text>
+  <text x="445" y="232" text-anchor="middle" fill="#8b949e" font-size="11">聚合为轨迹级置信度</text>
+  <rect x="330" y="248" width="230" height="50" rx="8" fill="#252a3a"/>
+  <text x="445" y="268" text-anchor="middle" fill="#0cebeb" font-size="11" font-family="JetBrains Mono,monospace">Avg | Bottom-10% | Tail</text>
+  <text x="445" y="290" text-anchor="middle" fill="#8b949e" font-size="10">3种轨迹级度量方式</text>
+
+  <!-- Step 3 -->
+  <rect x="600" y="160" width="270" height="160" rx="12" fill="#1a2340" stroke="#48bb78" stroke-width="1" filter="url(#sh)"/>
+  <text x="735" y="185" text-anchor="middle" fill="#48bb78" font-size="13" font-weight="600">Step 3: 置信度过滤</text>
+  <text x="735" y="210" text-anchor="middle" fill="#8b949e" font-size="11">保留 top-η% 高置信度轨迹</text>
+  <text x="735" y="232" text-anchor="middle" fill="#8b949e" font-size="11">η=10%: 激进过滤（高精度）</text>
+  <text x="735" y="252" text-anchor="middle" fill="#8b949e" font-size="11">η=90%: 保守过滤（更安全）</text>
+  <rect x="620" y="268" width="230" height="38" rx="8" fill="#1a2b30"/>
+  <text x="735" y="292" text-anchor="middle" fill="#48bb78" font-size="11">丢弃低置信度 → 聚焦高质量</text>
+
+  <!-- Step 4 -->
+  <rect x="890" y="160" width="290" height="160" rx="12" fill="#1a2340" stroke="#b794f4" stroke-width="1" filter="url(#sh)"/>
+  <text x="1035" y="185" text-anchor="middle" fill="#b794f4" font-size="13" font-weight="600">Step 4: 加权投票 & 早停</text>
+  <text x="1035" y="210" text-anchor="middle" fill="#8b949e" font-size="11">离线：C<tspan baseline-shift="sub" font-size="8">t</tspan> 加权多数投票</text>
+  <text x="1035" y="232" text-anchor="middle" fill="#8b949e" font-size="11">在线：低 Group Conf → 早停</text>
+  <text x="1035" y="254" text-anchor="middle" fill="#8b949e" font-size="11">共识≥τ 或预算达 K → 停止</text>
+  <rect x="910" y="268" width="250" height="38" rx="8" fill="#2a1a3a"/>
+  <text x="1035" y="292" text-anchor="middle" fill="#b794f4" font-size="11">自适应采样 = 省 Token + 高准确率</text>
+
+  <!-- 底部关键数字 -->
+  <rect x="20" y="350" width="380" height="70" rx="10" fill="#1a2340" stroke="#0cebeb" stroke-width="1" filter="url(#sh)"/>
+  <text x="210" y="378" text-anchor="middle" fill="#0cebeb" font-size="22" font-weight="700">99.9%</text>
+  <text x="210" y="400" text-anchor="middle" fill="#8b949e" font-size="12">AIME 2025 最高准确率 (GPT-OSS-120B)</text>
+
+  <rect x="420" y="350" width="360" height="70" rx="10" fill="#1a2340" stroke="#20e3b2" stroke-width="1" filter="url(#sh)"/>
+  <text x="600" y="378" text-anchor="middle" fill="#20e3b2" font-size="22" font-weight="700">-84.7%</text>
+  <text x="600" y="400" text-anchor="middle" fill="#8b949e" font-size="12">在线模式 Token 生成量减少</text>
+
+  <rect x="800" y="350" width="380" height="70" rx="10" fill="#1a2340" stroke="#48bb78" stroke-width="1" filter="url(#sh)"/>
+  <text x="990" y="378" text-anchor="middle" fill="#48bb78" font-size="22" font-weight="700">0</text>
+  <text x="990" y="400" text-anchor="middle" fill="#8b949e" font-size="12">额外训练 / 超参调优需求</text>
+
+  <!-- 连接箭头 -->
+  <line x1="155" y1="320" x2="155" y2="348" stroke="#0cebeb" stroke-width="1" stroke-dasharray="4,3"/>
+  <line x1="445" y1="320" x2="445" y2="348" stroke="#20e3b2" stroke-width="1" stroke-dasharray="4,3"/>
+  <line x1="735" y1="320" x2="735" y2="348" stroke="#48bb78" stroke-width="1" stroke-dasharray="4,3"/>
+</svg>
+</div>
+<p class="fc">图：DeepConf 整体架构 — 从问题输入到置信度度量，再到离线/在线两种模式，最终输出高置信度答案</p>
+
+<!-- 论文原图 -->
+<div class="paper-figure">
+  <img src="images/deepconf_diagram_with_code.drawio.png" alt="DeepConf Overview with Code" style="background:#fff;padding:10px;">
+  <p class="fc">📄 论文原图 — Figure 1: DeepConf 整体框架与伪代码。上半部分展示 AIME 2025 准确率对比和 Token 节省，下半部分展示并行思考中的置信度早停机制。</p>
+</div>
+
+<!-- 架构模块卡片 -->
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px;margin-top:20px;">
+  <div class="arch-card">
+    <h4>🔍 Token 置信度 (Token Confidence)</h4>
+    <p>基于 top-k token 的负平均 log 概率衡量每个生成步骤的确定性。高置信度意味着模型的概率分布尖锐（peaked），对下一个 token 的预测很确定；低置信度意味着分布平坦，模型在多个选项间犹豫。</p>
+  </div>
+  <div class="arch-card">
+    <h4>📊 组置信度 (Group Confidence)</h4>
+    <p>使用滑动窗口（默认 2048 tokens）计算局部区域的平均置信度。这是 DeepConf 的关键创新——不依赖全局平均，而是捕捉推理过程中局部的"崩溃"信号，使在线早停成为可能。</p>
+  </div>
+  <div class="arch-card">
+    <h4>🗳️ 置信度加权投票</h4>
+    <p>不同于标准多数投票的"一人一票"，DeepConf 让高置信度轨迹的投票权重更大。每条轨迹的投票权重等于其置信度分数，确保高质量推理路径对最终答案的影响更大。</p>
+  </div>
+  <div class="arch-card">
+    <h4>✂️ 置信度过滤</h4>
+    <p>在投票前只保留 top-η% 的高置信度轨迹。η=10% 时最激进（仅保留约 51/512 条），精度最高但可能因模型过度自信而失手；η=90% 更保守，保留大部分轨迹但仅去掉最差的。</p>
+  </div>
+  <div class="arch-card">
+    <h4>🛑 在线早停 (Early Stopping)</h4>
+    <p>生成过程中实时监控滑动窗口的 Group Confidence。一旦低于阈值 s，立即终止该轨迹的生成，节省后续所有 token 的计算开销。阈值通过 16 条 warm-up 轨迹自动设定。</p>
+  </div>
+  <div class="arch-card">
+    <h4>🎯 自适应共识停止</h4>
+    <p>在线模式中，每完成一条轨迹后检查当前所有答案的"共识度"。当最高票答案的占比 ≥ τ（默认 0.95）或达到预算上限 K 时，停止采样。这避免了不必要的冗余计算。</p>
+  </div>
+</div>
+</div>
+
+<hr class="divider">
+
+<!-- ===== 目录 ===== -->
+<div class="toc">
+<h3>📑 文档目录</h3>
+<ol>
+  <li><a href="#sec0">核心问题与研究动机</a></li>
+  <li><a href="#sec1">背景知识与前置概念</a></li>
+  <li><a href="#sec2">方法论：核心模块详解</a></li>
+  <li><a href="#sec3">核心创新点深度解析</a></li>
+  <li><a href="#sec4">数据流解析：训练与推理</a></li>
+  <li><a href="#sec5">训练策略与损失函数</a></li>
+  <li><a href="#sec6">实验结果与消融分析</a></li>
+  <li><a href="#sec7">设计精妙之处</a></li>
+  <li><a href="#sec8">Q&A 深度解析</a></li>
+  <li><a href="#sec9">代码使用与实战</a></li>
+</ol>
+</div>
+
+<hr class="divider">
+
+<!-- ===== 第0节：核心问题与研究动机 ===== -->
+<div class="section" id="sec0">
+<h2 class="section-title"><span class="num">0</span> 核心问题与研究动机</h2>
+
+<p class="section-desc">
+大语言模型在推理任务中展现出了令人瞩目的能力，尤其是通过"测试时缩放"（test-time scaling）方法——如自洽性（self-consistency）配合多数投票——可以显著提升推理准确率。然而，这种方法存在两个根本性问题，正是 DeepConf 要解决的痛点。
+</p>
+
+<div class="warn-box">
+<h4>痛点一：计算开销巨大且线性增长</h4>
+<p>
+标准多数投票需要为每个问题采样大量推理轨迹（如 512 条），每条轨迹可能包含数千个 token。论文指出：将 Qwen3-8B 在 AIME 2025 上的 pass@1 准确率从 68% 提升到 82%，需要额外生成 511 条推理轨迹，消耗超过 1 亿个额外 token。这种线性增长的计算成本严重限制了实际部署——每次推理调用都等价于跑 500+ 次完整生成，对延迟和成本都是巨大负担。
+</p>
+</div>
+
+<div class="warn-box">
+<h4>痛点二：多数投票的收益递减</h4>
+<p>
+更令人困扰的是，简单增加采样数量并不能持续提升性能。随着投票轨迹数量增加，准确率的增长会迅速饱和甚至下降。这是因为标准多数投票对所有轨迹一视同仁——无论是经过深思熟虑的高质量推理，还是混乱的低质量"胡言乱语"，每条轨迹的投票权重都相同。当低质量轨迹数量占优时，它们可能"淹没"正确答案，导致投票结果反而变差。
+</p>
+</div>
+
+<div class="highlight-box">
+<h4>DeepConf 的核心洞察</h4>
+<p>
+论文提出了一个关键观察：<strong>模型自身的输出概率分布（logprobs）天然携带了推理质量的信号</strong>。当模型在推理中"迷失方向"时，其 token 预测的置信度会显著下降——模型在出错时往往"不确定自己在说什么"。这种置信度波动不是随机噪声，而是推理质量的真实指标。DeepConf 的核心思想就是：与其盲目地"多想"，不如学会"有自知之明地想"——用置信度信号动态识别并淘汰低质量推理，同时提升准确率和效率。
+</p>
+</div>
+
+<!-- 论文原图：置信度分布 -->
+<div class="paper-figure">
+  <img src="images/deepconf_mean_confidence.png" alt="Confidence Distribution" style="background:#fff;padding:10px;">
+  <p class="fc">📄 论文原图 — Figure 2: 正确 vs 错误推理轨迹在不同置信度度量下的分布差异。可以看到，正确轨迹（蓝色）的置信度分布明显高于错误轨迹（红色），验证了置信度信号的有效性。</p>
+</div>
+
+<p class="section-desc">
+上图直观展示了 DeepConf 的理论基础：正确推理轨迹与错误轨迹在置信度分布上存在显著差异。无论是平均置信度、底部 10% 组置信度还是尾部置信度，正确轨迹的分布都系统性偏高。这意味着——我们确实可以通过置信度来区分推理轨迹的质量，而不需要任何外部标注或额外模型。
+</p>
+</div>
+
+<hr class="divider">
+
+<!-- ===== 第1节：背景知识与前置概念 ===== -->
+<div class="section" id="sec1">
+<h2 class="section-title"><span class="num">1</span> 背景知识与前置概念</h2>
+
+<p class="section-desc">
+在深入 DeepConf 的技术细节之前，我们需要理解几个关键的前置概念。这些不是通用的基础知识（如 Transformer 架构），而是与本文方法直接相关的特定技术和术语。
+</p>
+
+<div class="module-card">
+<h3>1. Self-Consistency（自洽性 / 自我一致性）</h3>
+<p>
+Self-Consistency 是目前最主流的测试时推理增强方法，由 Wang et al. (2023) 提出。其核心流程是：<strong>对同一个问题采样多条不同的推理轨迹</strong>（通过 temperature > 0 的采样实现），然后<strong>通过多数投票选择出现次数最多的最终答案</strong>。直觉上，如果多条独立的推理路径都指向同一个答案，那么这个答案更可能是正确的。Self-Consistency 显著提升了推理准确率，但代价是需要生成大量轨迹，计算成本线性增长。DeepConf 正是在 Self-Consistency 的基础上，用置信度信号来"精炼"投票过程。
+</p>
+</div>
+
+<div class="module-card">
+<h3>1.2 Test-Time Scaling（测试时缩放）</h3>
+<p>
+Test-Time Scaling 是指在推理阶段（而非训练阶段）通过增加计算量来提升模型性能的策略。主要分为两大类：<strong>并行思考</strong>（Parallel Thinking）——同时采样多条推理轨迹并聚合结果，如 Self-Consistency；<strong>串行思考</strong>（Sequential Thinking）——在单条轨迹上进行更长时间的推理，如增加思维链长度。DeepConf 属于并行思考范式的优化——它不改变"多路采样"的基本策略，而是让采样过程更智能、更高效。
+</p>
+</div>
+
+<div class="module-card">
+<h3>1.3 Logprobs 与 Token 级置信度</h3>
+<p>
+大语言模型在生成每个 token 时，不仅输出最终选中的 token，还会输出整个词汇表上每个 token 的对数概率（log probabilities, logprobs）。这些 logprobs 反映了模型对该位置预测的"确定程度"：<strong>如果模型非常确定，top-1 token 的概率会接近 1，其余 token 的概率极低</strong>；如果模型犹豫不决，概率会分散到多个候选 token 上。DeepConf 利用的是 top-k token 的 logprobs（而非仅 top-1），通过计算它们的负平均对数概率来量化模型的不确定性——这就是"Token 置信度"的基础。论文中默认使用 k=20，即考虑 top-20 个候选 token 的 logprobs。
+</p>
+</div>
+
+<div class="module-card">
+<h3>1.4 全局置信度 vs 局部置信度</h3>
+<p>
+已有工作（如 Kang et al., 2025）提出了"平均轨迹置信度"（Average Trace Confidence），即对整条轨迹所有 token 的置信度取平均。这属于<strong>全局置信度</strong>度量——它需要等整条轨迹生成完毕才能计算，且会被高置信度区域"拉高"而掩盖局部的推理崩溃。DeepConf 的关键创新在于引入<strong>局部置信度</strong>度量——通过滑动窗口关注最不自信的推理片段（如底部 10% 的组置信度或最后 2048 个 token 的尾部置信度），既能更精准地识别推理崩溃，又能在生成过程中实时计算，实现早停。
+</p>
+</div>
+
+<div class="module-card">
+<h3>1.5 vLLM 推理框架</h3>
+<p>
+vLLM 是当前最流行的高性能 LLM 推理服务框架之一，以 PagedAttention 技术实现高效的 KV cache 管理。DeepConf 的在线早停功能被直接实现在 vLLM 的推理引擎中——通过在采样循环中嵌入置信度检查逻辑，当滑动窗口的组置信度低于阈值时，将当前请求标记为"停止生成"。这种深度集成使得 DeepConf 的早停机制不会引入额外的调度开销，实现真正的"零成本"质量过滤。
+</p>
+</div>
+</div>
+
+<hr class="divider">
+
+<!-- ===== 第2节：方法论：核心模块详解 ===== -->
+<div class="section" id="sec2">
+<h2 class="section-title"><span class="num">2</span> 方法论：核心模块详解</h2>
+
+<p class="section-desc">
+DeepConf 的方法分为三个紧密衔接的层次：首先定义 Token 级的置信度度量，然后将其聚合为轨迹级的置信度指标，最后基于这些指标实现离线过滤和在线早停两种推理增强模式。下面逐层展开讲解。
+</p>
+
+<!-- 2.1 Token 置信度 -->
+<div class="module-card">
+<h3>2.1 Token 置信度（Token Confidence）</h3>
+<p>
+Token 置信度是整个 DeepConf 框架的原子度量单元。对于模型在第 i 个位置生成的 token，DeepConf 不仅仅看选中 token 的概率，而是利用 top-k 个候选 token 的 logprobs 来衡量模型的整体确定性。具体公式如下：
+</p>
+
+<div class="formula-box">
+<div class="label">公式 (2): Token 置信度</div>
+C<sub>i</sub> = −(1/k) &sum;<sub>j=1</sub><sup>k</sup> log P<sub>i</sub>(j)
+</div>
+
+<p class="section-desc">
+<strong>直觉解释</strong>：这个公式计算的是 top-k 候选 token 的平均负对数概率。当模型的概率分布很"尖锐"（即对某个 token 非常确定）时，top-k 个 token 的概率之和较高，负对数概率之和较小，因此 C<sub>i</sub> 值较高——代表高置信度。反之，当模型犹豫不决时，概率分散在多个 token 上，C<sub>i</sub> 值较低。论文中默认 k=20，即考虑 top-20 个候选 token，这使得度量不仅关注"最可能的 token"，还考虑了"候选集的整体确定性"。
+</p>
+</div>
+
+<!-- SVG: Token 置信度示意图 -->
+<div class="svg-wrap">
+<svg viewBox="0 0 900 260" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="hg" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0cebeb"/><stop offset="100%" stop-color="#20e3b2"/>
+    </linearGradient>
+  </defs>
+  <!-- 高置信度示例 -->
+  <rect x="20" y="20" width="420" height="220" rx="12" fill="#1a2340" stroke="#0cebeb" stroke-width="1"/>
+  <text x="230" y="48" text-anchor="middle" fill="#0cebeb" font-size="14" font-weight="600">高置信度 (C=18)</text>
+  <text x="230" y="70" text-anchor="middle" fill="#8b949e" font-size="11">概率分布尖锐 → 模型很确定</text>
+  <!-- 柱状图 -->
+  <rect x="50" y="180" width="30" height="100" rx="3" fill="#0cebeb" opacity=".9"/>
+  <text x="65" y="200" text-anchor="middle" fill="#fff" font-size="9">0.85</text>
+  <rect x="90" y="250" width="30" height="30" rx="3" fill="#20e3b2" opacity=".6"/>
+  <rect x="130" y="262" width="30" height="18" rx="3" fill="#20e3b2" opacity=".4"/>
+  <rect x="170" y="268" width="30" height="12" rx="3" fill="#20e3b2" opacity=".3"/>
+  <rect x="210" y="272" width="30" height="8" rx="3" fill="#20e3b2" opacity=".2"/>
+  <rect x="250" y="275" width="30" height="5" rx="3" fill="#20e3b2" opacity=".15"/>
+  <rect x="290" y="277" width="30" height="3" rx="3" fill="#8b949e" opacity=".1"/>
+  <rect x="330" y="278" width="30" height="2" rx="3" fill="#8b949e" opacity=".08"/>
+  <text x="65" y="290" text-anchor="middle" fill="#8b949e" font-size="9">P<sub>1</sub></text>
+  <text x="105" y="290" text-anchor="middle" fill="#8b949e" font-size="9">P<sub>2</sub></text>
+  <text x="145" y="290" text-anchor="middle" fill="#8b949e" font-size="9">P<sub>3</sub></text>
+  <text x="230" y="290" text-anchor="middle" fill="#8b949e" font-size="9">......</text>
+  <text x="345" y="290" text-anchor="middle" fill="#8b949e" font-size="9">P<sub>k</sub></text>
+
+  <!-- 低置信度示例 -->
+  <rect x="460" y="20" width="420" height="220" rx="12" fill="#2a1a3a" stroke="#b794f4" stroke-width="1"/>
+  <text x="670" y="48" text-anchor="middle" fill="#b794f4" font-size="14" font-weight="600">低置信度 (C=11)</text>
+  <text x="670" y="70" text-anchor="middle" fill="#8b949e" font-size="11">概率分布平坦 → 模型犹豫不决</text>
+  <!-- 柱状图 -->
+  <rect x="490" y="210" width="30" height="70" rx="3" fill="#b794f4" opacity=".7"/>
+  <text x="505" y="230" text-anchor="middle" fill="#fff" font-size="9">0.25</text>
+  <rect x="530" y="220" width="30" height="60" rx="3" fill="#b794f4" opacity=".6"/>
+  <text x="545" y="238" text-anchor="middle" fill="#fff" font-size="9">0.20</text>
+  <rect x="570" y="228" width="30" height="52" rx="3" fill="#b794f4" opacity=".5"/>
+  <rect x="610" y="234" width="30" height="46" rx="3" fill="#b794f4" opacity=".45"/>
+  <rect x="650" y="240" width="30" height="40" rx="3" fill="#b794f4" opacity=".4"/>
+  <rect x="690" y="245" width="30" height="35" rx="3" fill="#8b949e" opacity=".3"/>
+  <rect x="730" y="250" width="30" height="30" rx="3" fill="#8b949e" opacity=".25"/>
+  <rect x="770" y="255" width="30" height="25" rx="3" fill="#8b949e" opacity=".2"/>
+  <text x="505" y="290" text-anchor="middle" fill="#8b949e" font-size="9">P<sub>1</sub></text>
+  <text x="545" y="290" text-anchor="middle" fill="#8b949e" font-size="9">P<sub>2</sub></text>
+  <text x="585" y="290" text-anchor="middle" fill="#8b949e" font-size="9">P<sub>3</sub></text>
+  <text x="670" y="290" text-anchor="middle" fill="#8b949e" font-size="9">......</text>
+  <text x="785" y="290" text-anchor="middle" fill="#8b949e" font-size="9">P<sub>k</sub></text>
+</svg>
+</div>
+<p class="fc">图：Token 置信度对比 — 高置信度时概率分布尖锐（左），低置信度时概率分散（右）</p>
+
+<!-- 2.2 轨迹级置信度 -->
+<div class="module-card">
+<h3>2.2 轨迹级置信度度量（Trace-Level Confidence）</h3>
+<p>
+Token 级置信度需要聚合为轨迹级指标才能评估整条推理轨迹的质量。DeepConf 提出了三种轨迹级置信度度量，从全局到局部逐步聚焦：
+</p>
+</div>
+
+<!-- SVG: 三种轨迹级度量 -->
+<div class="svg-wrap">
+<svg viewBox="0 0 1100 340" xmlns="http://www.w3.org/2000/svg">
+  <!-- 平均轨迹置信度 -->
+  <rect x="15" y="15" width="340" height="310" rx="12" fill="#1a2340" stroke="#0cebeb" stroke-width="1"/>
+  <text x="185" y="45" text-anchor="middle" fill="#0cebeb" font-size="13" font-weight="600">Average Trace Conf</text>
+  <text x="185" y="65" text-anchor="middle" fill="#8b949e" font-size="11">全局平均 — 基线方法</text>
+  <!-- 模拟 token 序列 -->
+  <rect x="35" y="85" width="30" height="40" rx="4" fill="#0cebeb" opacity=".8"/><text x="50" y="110" text-anchor="middle" fill="#fff" font-size="9">16</text>
+  <rect x="70" y="85" width="30" height="40" rx="4" fill="#0cebeb" opacity=".8"/><text x="85" y="110" text-anchor="middle" fill="#fff" font-size="9">17</text>
+  <rect x="105" y="85" width="30" height="40" rx="4" fill="#20e3b2" opacity=".6"/><text x="120" y="110" text-anchor="middle" fill="#fff" font-size="9">14</text>
+  <rect x="140" y="85" width="30" height="40" rx="4" fill="#f0883e" opacity=".7"/><text x="155" y="110" text-anchor="middle" fill="#fff" font-size="9">10</text>
+  <rect x="175" y="85" width="30" height="40" rx="4" fill="#0cebeb" opacity=".8"/><text x="190" y="110" text-anchor="middle" fill="#fff" font-size="9">18</text>
+  <rect x="210" y="85" width="30" height="40" rx="4" fill="#0cebeb" opacity=".8"/><text x="225" y="110" text-anchor="middle" fill="#fff" font-size="9">17</text>
+  <rect x="245" y="85" width="30" height="40" rx="4" fill="#20e3b2" opacity=".6"/><text x="260" y="110" text-anchor="middle" fill="#fff" font-size="9">15</text>
+  <rect x="280" y="85" width="30" height="40" rx="4" fill="#0cebeb" opacity=".8"/><text x="295" y="110" text-anchor="middle" fill="#fff" font-size="9">16</text>
+  <!-- 平均线 -->
+  <line x1="35" y1="145" x2="310" y2="145" stroke="#fbbf24" stroke-width="2" stroke-dasharray="6,3"/>
+  <text x="185" y="165" text-anchor="middle" fill="#fbbf24" font-size="11">C<sub>avg</sub> = 1/N &sum;C<sub>i</sub> ≈ 15.4</text>
+  <text x="185" y="195" text-anchor="middle" fill="#8b949e" font-size="11">✅ 简单直观</text>
+  <text x="185" y="215" text-anchor="middle" fill="#8b949e" font-size="11">❌ 被高值拉高，掩盖局部崩溃</text>
+  <text x="185" y="235" text-anchor="middle" fill="#8b949e" font-size="11">❌ 需完整轨迹才能计算</text>
+  <rect x="50" y="255" width="270" height="50" rx="8" fill="#252a3a"/>
+  <text x="185" y="280" text-anchor="middle" fill="#0cebeb" font-size="11" font-family="JetBrains Mono,monospace">C<sub>avg</sub> = (1/N) &sum;<sub>i=1</sub><sup>N</sup> C<sub>i</sub></text>
+  <text x="185" y="298" text-anchor="middle" fill="#8b949e" font-size="10">公式 (3)</text>
+
+  <!-- Bottom-10% Group Confidence -->
+  <rect x="380" y="15" width="340" height="310" rx="12" fill="#1a2340" stroke="#20e3b2" stroke-width="1"/>
+  <text x="550" y="45" text-anchor="middle" fill="#20e3b2" font-size="13" font-weight="600">Bottom-10% Group Conf</text>
+  <text x="550" y="65" text-anchor="middle" fill="#8b949e" font-size="11">局部最弱信号 — DeepConf 核心</text>
+  <!-- 模拟 token 序列 + 窗口 -->
+  <rect x="400" y="85" width="30" height="40" rx="4" fill="#0cebeb" opacity=".8"/><text x="415" y="110" text-anchor="middle" fill="#fff" font-size="9">16</text>
+  <rect x="435" y="85" width="30" height="40" rx="4" fill="#0cebeb" opacity=".8"/><text x="450" y="110" text-anchor="middle" fill="#fff" font-size="9">17</text>
+  <rect x="470" y="85" width="30" height="40" rx="4" fill="#20e3b2" opacity=".6"/><text x="485" y="110" text-anchor="middle" fill="#fff" font-size="9">14</text>
+  <!-- 高亮最弱区域 -->
+  <rect x="505" y="80" width="100" height="52" rx="6" fill="none" stroke="#f0883e" stroke-width="2" stroke-dasharray="4,2"/>
+  <rect x="505" y="85" width="30" height="40" rx="4" fill="#f0883e" opacity=".8"/><text x="520" y="110" text-anchor="middle" fill="#fff" font-size="9">9</text>
+  <rect x="540" y="85" width="30" height="40" rx="4" fill="#f0883e" opacity=".8"/><text x="555" y="110" text-anchor="middle" fill="#fff" font-size="9">8</text>
+  <rect x="575" y="85" width="30" height="40" rx="4" fill="#f0883e" opacity=".7"/><text x="590" y="110" text-anchor="middle" fill="#fff" font-size="9">10</text>
+  <rect x="610" y="85" width="30" height="40" rx="4" fill="#0cebeb" opacity=".8"/><text x="625" y="110" text-anchor="middle" fill="#fff" font-size="9">18</text>
+  <rect x="645" y="85" width="30" height="40" rx="4" fill="#0cebeb" opacity=".8"/><text x="660" y="110" text-anchor="middle" fill="#fff" font-size="9">17</text>
+  <text x="555" y="150" text-anchor="middle" fill="#f0883e" font-size="11">底部 10% 的组置信度均值</text>
+  <text x="550" y="180" text-anchor="middle" fill="#8b949e" font-size="11">✅ 精准捕捉推理崩溃</text>
+  <text x="550" y="200" text-anchor="middle" fill="#8b949e" font-size="11">✅ 不被高值区域掩盖</text>
+  <text x="550" y="220" text-anchor="middle" fill="#8b949e" font-size="11">✅ 支持在线早停</text>
+  <rect x="415" y="255" width="270" height="50" rx="8" fill="#252a3a"/>
+  <text x="550" y="280" text-anchor="middle" fill="#20e3b2" font-size="11" font-family="JetBrains Mono,monospace">C<sub>10%</sub> = avg(Bottom-10% of C<sub>G</sub>)</text>
+  <text x="550" y="298" text-anchor="middle" fill="#8b949e" font-size="10">公式 (5-6)</text>
+
+  <!-- Tail Confidence -->
+  <rect x="745" y="15" width="340" height="310" rx="12" fill="#1a2340" stroke="#48bb78" stroke-width="1"/>
+  <text x="915" y="45" text-anchor="middle" fill="#48bb78" font-size="13" font-weight="600">Tail Confidence</text>
+  <text x="915" y="65" text-anchor="middle" fill="#8b949e" font-size="11">尾部信号 — 收尾阶段的确定性</text>
+  <!-- 模拟 token 序列 -->
+  <rect x="765" y="85" width="30" height="40" rx="4" fill="#8b949e" opacity=".4"/><text x="780" y="110" text-anchor="middle" fill="#fff" font-size="9">···</text>
+  <rect x="800" y="85" width="30" height="40" rx="4" fill="#8b949e" opacity=".4"/><text x="815" y="110" text-anchor="middle" fill="#fff" font-size="9">···</text>
+  <rect x="835" y="85" width="30" height="40" rx="4" fill="#8b949e" opacity=".4"/><text x="850" y="110" text-anchor="middle" fill="#fff" font-size="9">···</text>
+  <!-- 高亮尾部 -->
+  <rect x="870" y="80" width="195" height="52" rx="6" fill="none" stroke="#48bb78" stroke-width="2" stroke-dasharray="4,2"/>
+  <rect x="870" y="85" width="30" height="40" rx="4" fill="#48bb78" opacity=".7"/><text x="885" y="110" text-anchor="middle" fill="#fff" font-size="9">13</text>
+  <rect x="905" y="85" width="30" height="40" rx="4" fill="#48bb78" opacity=".7"/><text x="920" y="110" text-anchor="middle" fill="#fff" font-size="9">14</text>
+  <rect x="940" y="85" width="30" height="40" rx="4" fill="#48bb78" opacity=".6"/><text x="955" y="110" text-anchor="middle" fill="#fff" font-size="9">12</text>
+  <rect x="975" y="85" width="30" height="40" rx="4" fill="#48bb78" opacity=".6"/><text x="990" y="110" text-anchor="middle" fill="#fff" font-size="9">15</text>
+  <rect x="1010" y="85" width="30" height="40" rx="4" fill="#48bb78" opacity=".7"/><text x="1025" y="110" text-anchor="middle" fill="#fff" font-size="9">13</text>
+  <text x="965" y="150" text-anchor="middle" fill="#48bb78" font-size="11">最后 K 个 token 的置信度均值</text>
+  <text x="915" y="180" text-anchor="middle" fill="#8b949e" font-size="11">✅ 捕捉收尾阶段质量</text>
+  <text x="915" y="200" text-anchor="middle" fill="#8b949e" font-size="11">✅ 适合检测"仓促结论"</text>
+  <text x="915" y="220" text-anchor="middle" fill="#8b949e" font-size="11">⚠️ 不如 Bottom-10% 精准</text>
+  <rect x="780" y="255" width="270" height="50" rx="8" fill="#252a3a"/>
+  <text x="915" y="280" text-anchor="middle" fill="#48bb78" font-size="11" font-family="JetBrains Mono,monospace">C<sub>tail</sub> = avg(C<sub>N-K+1</sub>,...,C<sub>N</sub>)</text>
+  <text x="915" y="298" text-anchor="middle" fill="#8b949e" font-size="10">公式 (7)</text>
+</svg>
+</div>
+<p class="fc">图：三种轨迹级置信度度量对比 — 全局平均（左）、底部10%组置信度（中）、尾部置信度（右），从全局到局部逐步聚焦推理崩溃信号</p>
+
+<!-- 2.3 Group Confidence -->
+<div class="module-card">
+<h3>2.3 组置信度（Group Confidence）与滑动窗口</h3>
+<p>
+组置信度是连接 Token 级和轨迹级的关键桥梁。它使用一个固定大小的滑动窗口（默认 group size = 2048 tokens），计算当前窗口内所有 token 置信度的平均值：
+</p>
+
+<div class="formula-box">
+<div class="label">公式 (4): 组置信度</div>
+C<sub>G</sub> = avg(C<sub>k-n+1</sub>, C<sub>k-n+2</sub>, ..., C<sub>k-1</sub>, C<sub>k</sub>)
+</div>
+
+<p class="section-desc">
+<strong>直觉解释</strong>：想象你在阅读一个长篇推理过程，如果其中连续 2048 个 token 的平均置信度都很低，那就意味着在这段相当长的区间内，模型一直在"瞎猜"——这极可能表示推理已经走偏。Group Confidence 的滑动窗口设计使得我们可以在生成过程中实时计算（每生成一个新 token，窗口滑动一位），而不必等到整条轨迹完成。这是实现在线早停的数学基础。
+</p>
+
+<p class="section-desc">
+<strong>Lowest Group Confidence</strong> 是 Bottom-10% 方法的在线版本——它取所有滑动窗口组置信度中的最小值作为轨迹的质量指标。在在线模式下，一旦当前的 Group Confidence 低于阈值 s，生成立即终止。
+</p>
+</div>
+
+<!-- 2.4 离线模式 -->
+<div class="module-card">
+<h3>2.4 离线模式：过滤 + 加权投票</h3>
+<p>
+离线模式适用于"先全部生成、后处理筛选"的场景。完整流程包含三步：
+</p>
+
+<p class="section-desc">
+<strong>Step 1 — 生成与置信度计算</strong>：采样 K 条完整的推理轨迹，计算每条轨迹的置信度分数（可用 Avg / Bottom-10% / Tail 任一度量）。
+</p>
+
+<p class="section-desc">
+<strong>Step 2 — 置信度过滤</strong>：按置信度排序，只保留 top-η% 的轨迹。η=10% 表示仅保留置信度最高的约 10% 轨迹（如 K=512 时保留约 51 条）；η=90% 则保留绝大部分轨迹，仅去掉最差的 10%。
+</p>
+
+<div class="formula-box">
+<div class="label">置信度过滤</div>
+T<sub>top</sub> = top-η% traces by confidence C<sub>t</sub>
+</div>
+
+<p class="section-desc">
+<strong>Step 3 — 置信度加权多数投票</strong>：对过滤后的轨迹集合，不是简单地"一人一票"，而是按置信度加权：
+</p>
+
+<div class="formula-box">
+<div class="label">置信度加权投票</div>
+V(a) = &sum;<sub>t&isin;T</sub> C<sub>t</sub> &middot; &1opf;{answer(t) = a} &nbsp;&nbsp;&nbsp; â = arg max<sub>a</sub> V(a)
+</div>
+
+<p class="section-desc">
+<strong>直觉解释</strong>：如果答案 A 被 3 条高置信度轨迹（C≈18）支持，而答案 B 被 5 条低置信度轨迹（C≈10）支持，那么加权后 A 的总票数 = 3×18 = 54，B 的总票数 = 5×10 = 50，A 胜出——尽管支持 B 的轨迹数量更多，但 A 有更强的"质量背书"。
+</p>
+</div>
+
+<!-- 2.5 在线模式 -->
+<div class="module-card">
+<h3>2.5 在线模式：早停 + 自适应共识</h3>
+<p>
+在线模式是 DeepConf 的核心实用创新——它不需要等所有轨迹生成完毕，而是在生成过程中实时决策。流程如下：
+</p>
+
+<p class="section-desc">
+<strong>Warm-up 阶段</strong>：先生成 N<sub>init</sub>=16 条轨迹，用它们的 Lowest Group Confidence 确定早停阈值 s。具体地，取 top-η% warm-up 轨迹中的最低置信度作为阈值——η=10% 时阈值较严格（只容忍极高置信度），η=90% 时阈值较宽松。
+</p>
+
+<p class="section-desc">
+<strong>在线采样阶段</strong>：逐条生成新轨迹。每生成一个 token，实时更新滑动窗口的 Group Confidence。一旦低于阈值 s，立即终止该轨迹（early stop）。完成一条轨迹后，检查所有已完成轨迹的答案共识度：
+</p>
+
+<div class="formula-box">
+<div class="label">自适应共识停止</div>
+if max<sub>a</sub> V(a) / &sum; V(a) ≥ τ &nbsp;&nbsp;or&nbsp;&nbsp; #traces ≥ K &nbsp;→&nbsp; 停止采样
+</div>
+
+<p class="section-desc">
+<strong>直觉解释</strong>：τ=0.95 意味着当某个答案已经获得了 95% 以上的加权投票时，继续采样不太可能改变结果，因此提前结束。这就像选举中的"提前宣布获胜"——当领先优势已经不可逆转时，不必等待所有选票统计完毕。
+</p>
+
+<div class="info-box">
+<h4>DeepConf-low vs DeepConf-high</h4>
+<p>
+论文定义了两种在线变体：<strong>DeepConf-low</strong>（η=10%）使用激进的过滤阈值，只保留极高置信度的轨迹，Token 节省最多（43-85%）但偶尔可能因模型过度自信而损失准确率；<strong>DeepConf-high</strong>（η=90%）使用保守阈值，保留大部分轨迹，Token 节省较少（18-59%）但准确率更稳定。实际应用中可以根据场景的容错度选择。
+</p>
+</div>
+</div>
+</div>
+
+<hr class="divider">
+
+<!-- ===== 第3节：核心创新点深度解析 ===== -->
+<div class="section" id="sec3">
+<h2 class="section-title"><span class="num">3</span> 核心创新点深度解析</h2>
+
+<p class="section-desc">
+DeepConf 的创新不在于发明全新的技术组件，而在于对已有信号（logprobs）的巧妙运用和系统化整合。以下深入解析三个核心创新点。
+</p>
+
+<div class="module-card">
+<h3>创新点一：从全局到局部的置信度度量转变</h3>
+<p>
+已有工作使用"平均轨迹置信度"作为质量指标，这相当于对整条推理轨迹做"体检总评"——各项指标取平均，看似综合实则模糊。DeepConf 的关键洞察是：<strong>推理崩溃是局部的，不是全局的</strong>。一条轨迹可能大部分时间推理正确（高置信度），但在某个关键步骤犯了错（低置信度），全局平均会被高值拉高而掩盖这个致命错误。
+</p>
+<p class="section-desc">
+Bottom-10% Group Confidence 就像体检中的"最弱项指标"——不管你其他指标多好，只要某一项严重不达标，就标记为高风险。Tail Confidence 则关注"收尾质量"——推理过程可能前半段很好，但最后得出结论时犹豫了，说明结论可能不可靠。这两种局部度量都比全局平均更敏锐地捕捉推理中的问题信号。
+</p>
+</div>
+
+<!-- SVG: 全局 vs 局部对比 -->
+<div class="svg-wrap">
+<svg viewBox="0 0 1000 280" xmlns="http://www.w3.org/2000/svg">
+  <!-- 全局平均的问题 -->
+  <rect x="15" y="15" width="470" height="250" rx="12" fill="#1a2340" stroke="#f0883e" stroke-width="1"/>
+  <text x="250" y="42" text-anchor="middle" fill="#f0883e" font-size="14" font-weight="600">全局平均：掩盖崩溃信号</text>
+  <!-- 置信度曲线 -->
+  <polyline points="40,200 80,170 120,160 160,100 200,90 240,180 280,165 320,155 360,145 400,140 440,135"
+    fill="none" stroke="#0cebeb" stroke-width="2"/>
+  <!-- 高亮低置信度区域 -->
+  <rect x="140" y="80" width="110" height="120" rx="4" fill="#f0883e" opacity=".15"/>
+  <text x="195" y="100" text-anchor="middle" fill="#f0883e" font-size="10">崩溃区域</text>
+  <!-- 平均线 -->
+  <line x1="40" y1="150" x2="440" y2="150" stroke="#fbbf24" stroke-width="1.5" stroke-dasharray="6,3"/>
+  <text x="440" y="145" text-anchor="end" fill="#fbbf24" font-size="10">全局平均 ≈ 15</text>
+  <text x="250" y="250" text-anchor="middle" fill="#8b949e" font-size="11">平均后崩溃被"拉高"→ 看似正常</text>
+
+  <!-- 局部度量的优势 -->
+  <rect x="515" y="15" width="470" height="250" rx="12" fill="#1a2340" stroke="#0cebeb" stroke-width="1"/>
+  <text x="750" y="42" text-anchor="middle" fill="#0cebeb" font-size="14" font-weight="600">局部度量：精准定位崩溃</text>
+  <!-- 置信度曲线 -->
+  <polyline points="540,200 580,170 620,160 660,100 700,90 740,180 780,165 820,155 860,145 900,140 940,135"
+    fill="none" stroke="#0cebeb" stroke-width="2"/>
+  <!-- 高亮检测到崩溃 -->
+  <rect x="640" y="80" width="110" height="120" rx="4" fill="#0cebeb" opacity=".1"/>
+  <line x1="640" y1="210" x2="750" y2="210" stroke="#0cebeb" stroke-width="2"/>
+  <text x="695" y="228" text-anchor="middle" fill="#0cebeb" font-size="10">Bottom-10% ≈ 9</text>
+  <text x="750" y="250" text-anchor="middle" fill="#8b949e" font-size="11">底部10%精准捕捉崩溃 → 标记低质量</text>
+</svg>
+</div>
+<p class="fc">图：全局平均 vs 局部度量 — 全局平均被高值拉高掩盖崩溃（左），局部度量精准定位最弱信号（右）</p>
+
+<div class="module-card">
+<h3>创新点二：在线早停机制——从"事后审查"到"实时拦截"</h3>
+<p>
+离线过滤虽然有效，但本质上还是"先浪费算力生成垃圾，再扔掉"——低质量轨迹的完整生成成本已经付出。DeepConf 的在线早停将质量控制在生成过程中实时执行，相当于把"事后审查"升级为"实时拦截"。一旦滑动窗口的 Group Confidence 低于阈值，生成立即终止，后续所有 token 的计算全部节省。
+</p>
+<p class="section-desc">
+这个设计的关键在于：置信度崩溃通常不是在最后才出现的——推理走偏时，模型会持续表现出不确定（在错误的基础上继续推理只会越推越不确定），因此 Group Confidence 的下降往往是持续性的，而不是偶发的。这意味着我们不需要等整条轨迹结束才能判断质量——"崩溃的苗头"早在生成过程中就已经暴露了。
+</p>
+</div>
+
+<div class="module-card">
+<h3>创新点三：零训练零调优的即插即用设计</h3>
+<p>
+DeepConf 不需要任何额外的模型训练、微调或超参数搜索。它的置信度信号直接来自模型自身的输出分布（logprobs），这些信号在任何经过标准训练的 LLM 上都天然可用。阈值 s 通过 16 条 warm-up 轨迹自动确定，无需手动设置。整个方法可以作为一个"推理增强插件"集成到任何现有的 LLM 服务框架中——论文展示了在 vLLM 中的实现，仅需约 30 行代码修改。
+</p>
+<p class="section-desc">
+这种"零成本"设计哲学在工程上有重大意义：你不需要重新训练模型、不需要额外的标注数据、不需要复杂的部署流程——只需要在推理服务中启用 logprobs 输出并添加置信度检查逻辑，就可以立即获得准确率提升和 Token 节省的双重收益。
+</p>
+</div>
+</div>
+
+<hr class="divider">
+
+<!-- ===== 第4节：数据流解析 ===== -->
+<div class="section" id="sec4">
+<h2 class="section-title"><span class="num">4</span> 数据流解析：离线与在线</h2>
+
+<p class="section-desc">
+DeepConf 没有传统意义上的"训练"阶段——它是一个纯推理时方法。因此这里我们分析两种推理模式（离线和在线）的完整数据流。
+</p>
+
+<h3 style="color:#20e3b2;margin:20px 0 12px;font-size:1.2rem;">离线模式数据流</h3>
+
+<!-- SVG: 离线数据流 -->
+<div class="svg-wrap">
+<svg viewBox="0 0 1100 380" xmlns="http://www.w3.org/2000/svg">
+  <defs><marker id="arr2" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#0cebeb"/></marker></defs>
+  <!-- Step 1 -->
+  <rect x="20" y="30" width="180" height="70" rx="10" fill="#1a2340" stroke="#0cebeb" stroke-width="1.2"/>
+  <text x="110" y="55" text-anchor="middle" fill="#0cebeb" font-size="12" font-weight="600">① 输入问题</text>
+  <text x="110" y="78" text-anchor="middle" fill="#8b949e" font-size="10">Question + Prompt</text>
+
+  <line x1="200" y1="65" x2="240" y2="65" stroke="#0cebeb" stroke-width="1.5" marker-end="url(#arr2)"/>
+
+  <!-- Step 2 -->
+  <rect x="240" y="20" width="200" height="90" rx="10" fill="#1a2340" stroke="#20e3b2" stroke-width="1.2"/>
+  <text x="340" y="45" text-anchor="middle" fill="#20e3b2" font-size="12" font-weight="600">② 并行采样 K=512</text>
+  <text x="340" y="65" text-anchor="middle" fill="#8b949e" font-size="10">temperature>0 采样</text>
+  <text x="340" y="82" text-anchor="middle" fill="#8b949e" font-size="10">记录每个 token 的</text>
+  <text x="340" y="98" text-anchor="middle" fill="#8b949e" font-size="10">top-20 logprobs</text>
+
+  <line x1="440" y1="65" x2="480" y2="65" stroke="#20e3b2" stroke-width="1.5" marker-end="url(#arr2)"/>
+
+  <!-- Step 3 -->
+  <rect x="480" y="20" width="200" height="90" rx="10" fill="#1a2340" stroke="#48bb78" stroke-width="1.2"/>
+  <text x="580" y="45" text-anchor="middle" fill="#48bb78" font-size="12" font-weight="600">③ 计算轨迹置信度</text>
+  <text x="580" y="65" text-anchor="middle" fill="#8b949e" font-size="10">Avg / Bottom-10% / Tail</text>
+  <text x="580" y="82" text-anchor="middle" fill="#8b949e" font-size="10">每条轨迹一个分数</text>
+  <text x="580" y="98" text-anchor="middle" fill="#8b949e" font-size="10">C<sub>t</sub> ∈ ℝ</text>
+
+  <line x1="680" y1="50" x2="720" y2="35" stroke="#48bb78" stroke-width="1.2" marker-end="url(#arr2)"/>
+  <line x1="680" y1="80" x2="720" y2="95" stroke="#48bb78" stroke-width="1.2" marker-end="url(#arr2)"/>
+
+  <!-- Step 4a -->
+  <rect x="720" y="10" width="170" height="55" rx="10" fill="#1a2b30" stroke="#48bb78" stroke-width="1"/>
+  <text x="805" y="32" text-anchor="middle" fill="#48bb78" font-size="11" font-weight="600">④a 过滤 top-η%</text>
+  <text x="805" y="50" text-anchor="middle" fill="#8b949e" font-size="9">保留最高置信度轨迹</text>
+
+  <!-- Step 4b -->
+  <rect x="720" y="75" width="170" height="55" rx="10" fill="#1a2b30" stroke="#48bb78" stroke-width="1"/>
+  <text x="805" y="97" text-anchor="middle" fill="#48bb78" font-size="11" font-weight="600">④b 加权投票</text>
+  <text x="805" y="115" text-anchor="middle" fill="#8b949e" font-size="9">C<sub>t</sub> × vote(answer)</text>
+
+  <line x1="890" y1="38" x2="930" y2="55" stroke="#48bb78" stroke-width="1.2" marker-end="url(#arr2)"/>
+  <line x1="890" y1="102" x2="930" y2="85" stroke="#48bb78" stroke-width="1.2" marker-end="url(#arr2)"/>
+
+  <!-- Step 5 -->
+  <rect x="930" y="40" width="150" height="60" rx="10" fill="#1a2340" stroke="#0cebeb" stroke-width="1.5"/>
+  <text x="1005" y="65" text-anchor="middle" fill="#0cebeb" font-size="12" font-weight="600">⑤ 最终答案</text>
+  <text x="1005" y="85" text-anchor="middle" fill="#8b949e" font-size="10">â = argmax V(a)</text>
+
+  <!-- 下方数据流说明 -->
+  <rect x="20" y="140" width="1060" height="220" rx="12" fill="#10182a" stroke="rgba(255,255,255,.08)" stroke-width="1"/>
+  <text x="550" y="170" text-anchor="middle" fill="#0cebeb" font-size="14" font-weight="600">离线模式详细数据流</text>
+
+  <text x="50" y="200" fill="#8b949e" font-size="12">输入: Question Q</text>
+  <text x="50" y="225" fill="#8b949e" font-size="12">→ 采样 K=512 条轨迹 {t<sub>1</sub>,...,t<sub>512</sub>}，每条包含 tokens + logprobs</text>
+  <text x="50" y="250" fill="#8b949e" font-size="12">→ 对每条轨迹 t<sub>i</sub>，计算 C<sub>i</sub> = TokenConf &rarr; GroupConf &rarr; TraceConf</text>
+  <text x="50" y="275" fill="#8b949e" font-size="12">→ 按置信度排序，保留 top-η% → T<sub>top</sub></text>
+  <text x="50" y="300" fill="#8b949e" font-size="12">→ 加权投票: V(a) = &sum;<sub>t&isin;T<sub>top</sub></sub> C<sub>t</sub> &middot; &1opf;{answer(t)=a}</text>
+  <text x="50" y="325" fill="#8b949e" font-size="12">→ 输出: â = argmax<sub>a</sub> V(a)，即加权票数最高的答案</text>
+
+  <text x="750" y="200" fill="#20e3b2" font-size="12">关键数据形状:</text>
+  <text x="750" y="225" fill="#8b949e" font-size="12">每条轨迹: ~8000 tokens</text>
+  <text x="750" y="250" fill="#8b949e" font-size="12">每个 token: top-20 logprobs</text>
+  <text x="750" y="275" fill="#8b949e" font-size="12">Group size: 2048 tokens</text>
+  <text x="750" y="300" fill="#8b949e" font-size="12">η=10%: 保留 ~51 条</text>
+  <text x="750" y="325" fill="#8b949e" font-size="12">η=90%: 保留 ~461 条</text>
+</svg>
+</div>
+<p class="fc">图：离线模式完整数据流 — 从问题输入到最终答案的五个步骤</p>
+
+<h3 style="color:#b794f4;margin:20px 0 12px;font-size:1.2rem;">在线模式数据流</h3>
+
+<!-- SVG: 在线数据流 -->
+<div class="svg-wrap">
+<svg viewBox="0 0 1100 400" xmlns="http://www.w3.org/2000/svg">
+  <!-- Warm-up -->
+  <rect x="20" y="20" width="240" height="80" rx="10" fill="#2a1a3a" stroke="#b794f4" stroke-width="1.2"/>
+  <text x="140" y="45" text-anchor="middle" fill="#b794f4" font-size="12" font-weight="600">① Warm-up: 16条轨迹</text>
+  <text x="140" y="65" text-anchor="middle" fill="#8b949e" font-size="10">计算 Lowest Group Conf</text>
+  <text x="140" y="82" text-anchor="middle" fill="#8b949e" font-size="10">设定阈值 s</text>
+
+  <line x1="260" y1="60" x2="300" y2="60" stroke="#b794f4" stroke-width="1.5" marker-end="url(#arr2)"/>
+
+  <!-- 在线采样 -->
+  <rect x="300" y="10" width="260" height="100" rx="10" fill="#2a1a3a" stroke="#b794f4" stroke-width="1.2"/>
+  <text x="430" y="35" text-anchor="middle" fill="#b794f4" font-size="12" font-weight="600">② 在线采样循环</text>
+  <text x="430" y="55" text-anchor="middle" fill="#8b949e" font-size="10">每生成一个 token:</text>
+  <text x="430" y="72" text-anchor="middle" fill="#8b949e" font-size="10">更新 Group Conf (滑动窗口)</text>
+  <text x="430" y="89" text-anchor="middle" fill="#8b949e" font-size="10">if GC < s → 早停该轨迹</text>
+  <text x="430" y="104" text-anchor="middle" fill="#8b949e" font-size="10">if 轨迹完成 → 加入投票池</text>
+
+  <line x1="560" y1="60" x2="600" y2="60" stroke="#b794f4" stroke-width="1.5" marker-end="url(#arr2)"/>
+
+  <!-- 共识检查 -->
+  <rect x="600" y="10" width="230" height="100" rx="10" fill="#2a1a3a" stroke="#b794f4" stroke-width="1.2"/>
+  <text x="715" y="35" text-anchor="middle" fill="#b794f4" font-size="12" font-weight="600">③ 共识检查</text>
+  <text x="715" y="55" text-anchor="middle" fill="#8b949e" font-size="10">计算加权投票 V(a)</text>
+  <text x="715" y="72" text-anchor="middle" fill="#8b949e" font-size="10">if max V(a)/&sum;V(a) ≥ τ</text>
+  <text x="715" y="89" text-anchor="middle" fill="#8b949e" font-size="10">&nbsp;&nbsp;→ 达成共识，停止</text>
+  <text x="715" y="104" text-anchor="middle" fill="#8b949e" font-size="10">if #traces ≥ K → 预算耗尽</text>
+
+  <line x1="830" y1="60" x2="870" y2="60" stroke="#b794f4" stroke-width="1.5" marker-end="url(#arr2)"/>
+
+  <!-- 输出 -->
+  <rect x="870" y="25" width="200" height="70" rx="10" fill="#1a2340" stroke="#0cebeb" stroke-width="1.5"/>
+  <text x="970" y="52" text-anchor="middle" fill="#0cebeb" font-size="12" font-weight="600">④ 输出答案</text>
+  <text x="970" y="75" text-anchor="middle" fill="#8b949e" font-size="10">置信度加权多数投票</text>
+
+  <!-- 下方：时间轴示意 -->
+  <rect x="20" y="130" width="1060" height="250" rx="12" fill="#10182a" stroke="rgba(255,255,255,.08)" stroke-width="1"/>
+  <text x="550" y="160" text-anchor="middle" fill="#b794f4" font-size="14" font-weight="600">在线模式时间轴：早停如何节省 Token</text>
+
+  <!-- 轨迹示例 -->
+  <text x="50" y="195" fill="#8b949e" font-size="11">Trace 1:</text>
+  <rect x="110" y="182" width="350" height="18" rx="3" fill="#0cebeb" opacity=".3"/>
+  <rect x="110" y="182" width="350" height="18" rx="3" fill="#0cebeb" opacity=".5"/>
+  <text x="290" y="196" text-anchor="middle" fill="#fff" font-size="9">完整生成 — 高置信度 ✓</text>
+
+  <text x="50" y="225" fill="#8b949e" font-size="11">Trace 2:</text>
+  <rect x="110" y="212" width="200" height="18" rx="3" fill="#0cebeb" opacity=".3"/>
+  <rect x="310" y="212" width="80" height="18" rx="3" fill="#f0883e" opacity=".4"/>
+  <text x="230" y="226" text-anchor="middle" fill="#fff" font-size="9">低GC → 早停 ✗</text>
+  <line x1="390" y1="221" x2="460" y2="221" stroke="#f0883e" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <text x="500" y="226" fill="#f0883e" font-size="9">节省这部分 Token!</text>
+
+  <text x="50" y="255" fill="#8b949e" font-size="11">Trace 3:</text>
+  <rect x="110" y="242" width="350" height="18" rx="3" fill="#0cebeb" opacity=".5"/>
+  <text x="290" y="256" text-anchor="middle" fill="#fff" font-size="9">完整生成 — 高置信度 ✓</text>
+
+  <text x="50" y="285" fill="#8b949e" font-size="11">Trace 4:</text>
+  <rect x="110" y="272" width="150" height="18" rx="3" fill="#0cebeb" opacity=".3"/>
+  <rect x="260" y="272" width="60" height="18" rx="3" fill="#f0883e" opacity=".4"/>
+  <text x="200" y="286" text-anchor="middle" fill="#fff" font-size="9">早停 ✗</text>
+  <line x1="320" y1="281" x2="460" y2="281" stroke="#f0883e" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <text x="420" y="286" fill="#f0883e" font-size="9">更多 Token 节省</text>
+
+  <text x="50" y="325" fill="#20e3b2" font-size="12">效果：只有高置信度轨迹完整生成，低置信度轨迹被提前终止</text>
+  <text x="50" y="350" fill="#8b949e" font-size="12">实际节省：33%-85% 的 Token 生成量，同时保持或提升准确率</text>
+  <text x="50" y="370" fill="#8b949e" font-size="12">共识机制：当答案已经很确定时，提前结束整个采样过程</text>
+</svg>
+</div>
+<p class="fc">图：在线模式数据流与时间轴 — Warm-up 设阈值 → 在线循环实时早停 → 共识达成后停止采样</p>
+
+<!-- 论文原图：在线模式 -->
+<div class="paper-figure">
+  <img src="images/deepconf_online_diagram.png" alt="DeepConf Online Mode" style="background:#fff;padding:10px;">
+  <p class="fc">📄 论文原图 — 在线模式示意图：展示并行思考过程中，低置信度轨迹被提前终止，高置信度轨迹完成生成后参与加权投票。</p>
+</div>
+</div>
+
+<hr class="divider">
+
+<!-- ===== 第5节：关键技术细节 ===== -->
+<div class="section" id="sec5">
+<h2 class="section-title"><span class="num">5</span> 关键技术细节</h2>
+
+<p class="section-desc">
+本节深入解析 DeepConf 中几个关键的技术设计决策和实现细节，这些细节虽不是核心方法论，但对理解和正确使用 DeepConf 至关重要。
+</p>
+
+<div class="module-card">
+<h3>5.1 置信度度量为什么选 top-k 而非 top-1？</h3>
+<p>
+一个自然的问题是：为什么不直接用 top-1 token 的概率作为置信度，而要计算 top-k 的负平均 logprobs？原因有三：
+</p>
+<p class="section-desc">
+<strong>更丰富的信号</strong>：top-1 概率只反映了"最可能选项"的确定性，但无法区分"第二选项也很可能"和"第二选项极不可能"的情况。top-k 度量考虑了整个候选集的分布形态，提供了更全面的不确定性画像。
+</p>
+<p class="section-desc">
+<strong>与熵的一致性</strong>：论文证明了 Token 置信度 C<sub>i</sub> 实际上是 token 预测分布熵的上界（相差一个常数），因此它携带了与熵类似的信息量，但计算更简单（只需 top-k logprobs，无需遍历整个词汇表）。
+</p>
+<p class="section-desc">
+<strong>计算效率</strong>：在实际推理中，获取 top-20 logprobs 的开销很小（vLLM 等框架原生支持），而遍历整个词汇表计算完整熵则代价高昂。
+</p>
+</div>
+
+<div class="module-card">
+<h3>5.2 滑动窗口大小为何选择 2048？</h3>
+<p>
+Group Confidence 的滑动窗口大小（group size）是一个关键超参数。论文选择 2048 tokens 的原因如下：
+</p>
+<p class="section-desc">
+<strong>与推理步骤对齐</strong>：典型的数学推理步骤（如解方程的一个阶段）大约包含数百到数千个 token。2048 的窗口大小足以覆盖一个完整的推理步骤，从而检测到步骤级别的崩溃。
+</p>
+<p class="section-desc">
+<strong>平衡灵敏度与噪声</strong>：窗口太小（如 128）会导致置信度波动过于频繁，产生大量误报；窗口太大（如 8192）则失去了局部性优势，退化为全局平均。2048 是一个合理的折中——论文的消融实验也验证了这一点。
+</p>
+<p class="section-desc">
+<strong>计算便捷</strong>：2048 是 2 的幂次，在 GPU 计算中具有天然的内存对齐优势。
+</p>
+</div>
+
+<div class="module-card">
+<h3>5.3 Warm-up 阶段为什么只需 16 条轨迹？</h3>
+<p>
+阈值 s 的确定仅依赖 16 条 warm-up 轨迹，这看起来很少，但论文的消融实验表明这已经足够。原因在于：
+</p>
+<p class="section-desc">
+<strong>统计稳定性</strong>：16 条轨迹的置信度分布已经能够提供合理的阈值估计——因为置信度分数的方差在轨迹间并不大，少量的样本就能捕获其统计特征（均值和分位数）。
+</p>
+<p class="section-desc">
+<strong>效率考虑</strong>：warm-up 轨迹的生成成本是"必须付出的代价"——无论结果如何，这些轨迹都要参与后续投票。因此 warm-up 数量不宜过大，16 条是一个低开销的起点。
+</p>
+<p class="section-desc">
+<strong>自校准特性</strong>：阈值 s 是相对于当前问题自身的 warm-up 分布设定的（取 top-η% 分位数），这意味着它是"自适应"的——不同问题的阈值可能不同，但都在各自的上下文中是合理的。
+</p>
+</div>
+
+<div class="module-card">
+<h3>5.4 共识阈值 τ=0.95 的选择</h3>
+<p>
+τ 控制了"何时认为答案已经足够确定而停止采样"。τ=0.95 意味着当某个答案获得 95% 以上的加权投票时就停止。论文指出：
+</p>
+<p class="section-desc">
+<strong>τ 过低</strong>（如 0.8）：会导致过早停止，可能在答案尚未稳定时就做出决定，牺牲准确率。<br>
+<strong>τ 过高</strong>（如 0.99）：几乎等价于不使用共识停止，退化到纯预算模式，浪费 Token。<br>
+<strong>τ=0.95</strong> 是一个经验上的甜蜜点——在大多数情况下，95% 的共识已经意味着结果不太可能逆转，同时还能节省大量采样预算。
+</p>
+</div>
+
+<div class="module-card">
+<h3>5.5 vLLM 集成实现细节</h3>
+<p>
+DeepConf 在 vLLM 中的实现非常轻量，核心修改仅涉及三个文件、约 30 行代码：
+</p>
+
+<div class="code-block">
+<pre><span class="cg"># vllm/v1/engine/output_processor.py — 在 decode 循环中插入早停检查</span>
+<span class="ck">if</span> req_state.logprobs_processor.check_conf_stop():
+    finish_reason = FinishReason.STOP
+    stop_reason = <span class="cs">f"&lt;gconf&lt; {req_state.logprobs_processor.conf_threshold}&gt;"</span>
+
+<span class="cg"># logprobs_processor.py — 置信度滑动窗口更新</span>
+<span class="ck">if</span> self.conf_list <span class="ck">is not None</span>:
+    <span class="ck">if</span> len(logprobs) > <span class="cn">1</span>:
+        new_conf = -sum(logprobs[<span class="cn">1</span>:]) / len(logprobs[<span class="cn">1</span>:])
+    <span class="ck">else</span>:
+        new_conf = <span class="cn">0.0</span>
+    self.conf_list.append(new_conf)
+    <span class="cg"># 滑动窗口更新</span>
+    <span class="ck">if</span> len(self.conf_group_list) < self.conf_group_size:
+        self.conf_group_list.append(new_conf)
+        self.conf_grouped += new_conf
+    <span class="ck">else</span>:
+        self.conf_grouped -= self.conf_group_list.popleft()
+        self.conf_group_list.append(new_conf)
+        self.conf_grouped += new_conf</pre>
+</div>
+<p class="section-desc">
+关键设计：置信度使用 <code>deque(maxlen=window_size)</code> 实现滑动窗口，每步更新是 O(1) 复杂度——弹出最老的值、推入新值、维护累加和。当窗口平均低于阈值时，<code>check_conf_stop()</code> 返回 True，触发停止。整个过程的计算开销极低，不影响推理吞吐量。
+</p>
+</div>
+</div>
+
+<hr class="divider">
+
+<!-- ===== 第6节：实验结果与消融分析 ===== -->
+<div class="section" id="sec6">
+<h2 class="section-title"><span class="num">6</span> 实验结果与消融分析</h2>
+
+<p class="section-desc">
+DeepConf 在 5 个推理基准上、3-5 个不同规模模型上进行了全面评估。以下从离线评估、在线评估和消融实验三个维度展开分析。
+</p>
+
+<h3 style="color:#20e3b2;margin:20px 0 12px;font-size:1.2rem;">6.1 离线评估结果</h3>
+
+<p class="section-desc">
+离线评估在 K=512 的投票预算下，比较多种置信度度量+过滤策略与标准多数投票的效果。
+</p>
+
+<table class="data-table">
+<thead>
+<tr>
+  <th>模型</th><th>数据集</th><th>Pass@1</th><th>Cons@512</th><th>DeepConf-low<br>(η=10%)</th><th>DeepConf-high<br>(η=90%)</th>
+</tr>
+</thead>
+<tbody>
+<tr><td rowspan="5">DeepSeek-8B</td>
+  <td>AIME24</td><td>68.0%</td><td>83.0%</td><td style="color:#0cebeb;font-weight:600">86.7%</td><td>86.7%</td></tr>
+<tr><td>AIME25</td><td>76.9%</td><td>82.3%</td><td style="color:#0cebeb;font-weight:600">87.4%</td><td>81.3%</td></tr>
+<tr><td>BRUMO25</td><td>80.0%</td><td>93.2%</td><td style="color:#0cebeb;font-weight:600">93.3%</td><td>93.3%</td></tr>
+<tr><td>HMMT25</td><td>58.1%</td><td>69.6%</td><td style="color:#0cebeb;font-weight:600">83.9%</td><td>69.9%</td></tr>
+<tr><td>GPQA-D</td><td>62.8%</td><td>72.5%</td><td style="color:#0cebeb;font-weight:600">74.0%</td><td>72.8%</td></tr>
+<tr><td rowspan="5">Qwen3-32B</td>
+  <td>AIME24</td><td>80.6%</td><td>85.3%</td><td style="color:#0cebeb;font-weight:600">90.8%</td><td>86.8%</td></tr>
+<tr><td>AIME25</td><td>71.7%</td><td>80.1%</td><td style="color:#0cebeb;font-weight:600">80.2%</td><td>80.1%</td></tr>
+<tr><td>BRUMO25</td><td>78.0%</td><td>93.3%</td><td style="color:#0cebeb;font-weight:600">91.2%</td><td>93.3%</td></tr>
+<tr><td>HMMT25</td><td>51.9%</td><td>63.3%</td><td>62.9%</td><td style="color:#0cebeb;font-weight:600">63.4%</td></tr>
+<tr><td>GPQA-D</td><td>68.9%</td><td>72.2%</td><td>72.5%</td><td style="color:#0cebeb;font-weight:600">72.8%</td></tr>
+<tr><td rowspan="4">GPT-OSS-120B</td>
+  <td>AIME24</td><td>91.9%</td><td>96.7%</td><td style="color:#0cebeb;font-weight:600">97.4%</td><td>96.7%</td></tr>
+<tr><td>AIME25</td><td>91.8%</td><td>97.0%</td><td style="color:#20e3b2;font-weight:700">99.9%</td><td>97.8%</td></tr>
+<tr><td>BRUMO25</td><td>75.6%</td><td>86.7%</td><td>89.4%</td><td style="color:#0cebeb;font-weight:600">89.9%</td></tr>
+<tr><td>HMMT25</td><td>78.9%</td><td>92.9%</td><td>88.9%</td><td style="color:#0cebeb;font-weight:600">92.9%</td></tr>
+</tbody>
+</table>
+<p class="fc">表：离线评估结果（K=512），绿色高亮为每组最优结果。GPT-OSS-120B 在 AIME 2025 上达到 99.9%。</p>
+
+<div class="highlight-box">
+<h4>离线评估核心发现</h4>
+<p>
+<strong>1. 置信度过滤+加权投票全面超越标准多数投票</strong>：在几乎所有设置下，DeepConf 都优于 Cons@512，提升幅度从 +0.1% 到 +14.3% 不等。<br>
+<strong>2. η=10% 激进过滤带来最大增益</strong>：DeepConf-low（仅保留约 51 条最高置信度轨迹）在多数场景下准确率最高，如 DeepSeek-8B AIME25 从 82.3% 跃升至 87.4%（+5.1%）。<br>
+<strong>3. 模型过度自信的风险</strong>：η=10% 偶尔会因模型过度自信而失手——如 GPT-OSS-120B HMMT25 从 92.9% 降至 88.9%，此时 η=90% 更安全。<br>
+<strong>4. 局部度量优于全局度量</strong>：Bottom-10% 和 Tail 置信度在多数情况下优于 Avg Trace Conf，验证了"聚焦局部崩溃"的设计理念。
+</p>
+</div>
+
+<!-- 论文原图 -->
+<div class="paper-figure">
+  <img src="images/deepconf_aime25_bar.png" alt="AIME 2025 Accuracy Comparison" style="background:#fff;padding:10px;">
+  <p class="fc">📄 论文原图 — AIME 2025 准确率对比：DeepConf@512 在不同模型上均显著优于 Cons@512 和 Pass@1。</p>
+</div>
+
+<h3 style="color:#20e3b2;margin:30px 0 12px;font-size:1.2rem;">6.2 在线评估结果</h3>
+
+<p class="section-desc">
+在线评估的核心问题是：<strong>在节省 Token 的同时，能否保持甚至提升准确率？</strong>
+</p>
+
+<table class="data-table">
+<thead>
+<tr>
+  <th>模型</th><th>数据集</th><th>Cons@512<br>Token / Acc</th><th>DeepConf-high<br>Token(节省) / Acc</th><th>DeepConf-low<br>Token(节省) / Acc</th>
+</tr>
+</thead>
+<tbody>
+<tr><td rowspan="4">DeepSeek-8B</td>
+  <td>AIME24</td><td>3.55B / 86.7%</td><td>1.45B (-59%) / 86.7%</td><td style="color:#0cebeb">0.78B (-78%) / <b>92.5%</b></td></tr>
+<tr><td>AIME25</td><td>4.01B / 82.3%</td><td>2.37B (-41%) / 81.4%</td><td style="color:#0cebeb">1.24B (-69%) / <b>86.4%</b></td></tr>
+<tr><td>BRUMO25</td><td>3.56B / 93.3%</td><td>2.17B (-39%) / 93.3%</td><td style="color:#0cebeb">1.07B (-70%) / 93.3%</td></tr>
+<tr><td>HMMT25</td><td>4.49B / 69.8%</td><td>3.43B (-24%) / 70.0%</td><td style="color:#0cebeb">1.60B (-64%) / <b>77.6%</b></td></tr>
+<tr><td rowspan="4">Qwen3-32B</td>
+  <td>AIME24</td><td>2.00B / 84.8%</td><td>0.88B (-56%) / 86.4%</td><td style="color:#0cebeb">0.66B (-67%) / <b>89.5%</b></td></tr>
+<tr><td>AIME25</td><td>2.43B / 80.1%</td><td>1.61B (-34%) / 80.2%</td><td style="color:#0cebeb">1.14B (-53%) / 80.2%</td></tr>
+<tr><td>BRUMO25</td><td>2.17B / 93.3%</td><td>1.37B (-37%) / 93.3%</td><td>0.96B (-56%) / 92.4%</td></tr>
+<tr><td>HMMT25</td><td>2.76B / 63.4%</td><td>2.24B (-19%) / 63.6%</td><td style="color:#0cebeb">1.55B (-44%) / 64.5%</td></tr>
+<tr><td rowspan="4">GPT-OSS-120B</td>
+  <td>AIME24</td><td>2.66B / 96.7%</td><td>1.20B (-55%) / 96.7%</td><td style="color:#20e3b2">0.53B (-80%) / <b>97.0%</b></td></tr>
+<tr><td>AIME25</td><td>3.23B / 97.1%</td><td>1.42B (-56%) / 97.0%</td><td style="color:#20e3b2">0.49B (-<b>85%</b>) / <b>97.9%</b></td></tr>
+<tr><td>BRUMO25</td><td>2.68B / 83.8%</td><td>1.81B (-33%) / 84.0%</td><td>0.73B (-73%) / 83.4%</td></tr>
+<tr><td>HMMT25</td><td>4.09B / 92.8%</td><td>2.78B (-32%) / 93.0%</td><td>0.97B (-76%) / 92.0%</td></tr>
+</tbody>
+</table>
+<p class="fc">表：在线评估结果（K=512）— Token 生成量与准确率。加粗为显著提升项。</p>
+
+<!-- 论文原图：Token节省 -->
+<div class="paper-figure">
+  <img src="images/deepconf_generated_tokens.png" alt="Token Reduction Comparison" style="background:#fff;padding:10px;">
+  <p class="fc">📄 论文原图 — GPT-OSS-120B 在线模式下的 Token 生成量对比。DeepConf-low 在 AIME 2025 上节省 84.7% 的 Token。</p>
+</div>
+
+<div class="highlight-box">
+<h4>在线评估核心发现</h4>
+<p>
+<strong>1. Token 大幅节省</strong>：DeepConf-low 节省 43-85% Token，DeepConf-high 节省 18-59% Token。最大节省出现在 GPT-OSS-120B AIME25：85% 的 Token 被节省。<br>
+<strong>2. 准确率不降反升</strong>：在多数场景下，DeepConf 不仅节省 Token，还提升了准确率。最惊人的是 DeepSeek-8B AIME24：Token 减少 78%，准确率反而从 86.7% 升至 92.5%（+5.8%）。<br>
+<strong>3. 高低端权衡</strong>：DeepConf-low 在数学推理任务（AIME/HMMT）上表现优异，但在某些场景（如 Qwen3-32B BRUMO25）可能因过度自信导致准确率微降。DeepConf-high 更稳健，适合风险敏感场景。
+</p>
+</div>
+
+<h3 style="color:#20e3b2;margin:30px 0 12px;font-size:1.2rem;">6.3 消融实验</h3>
+
+<div class="module-card">
+<h3>过滤比例 η 的影响</h3>
+<p>
+论文系统测试了 η 从 10% 到 90% 的效果。核心结论：
+</p>
+<p class="section-desc">
+<strong>趋势明确</strong>：更激进的过滤（更小的 η）在大多数情况下带来更高的准确率。例如 DeepSeek-8B AIME24：Maj=86.7%, Top90%=87.2%, Top50%=88.9%, Top10%=93.3%。<br>
+<strong>存在最优点</strong>：但 η 不是越小越好。某些数据集上 Top25% 或 Top50% 反而优于 Top10%，说明最优过滤比例取决于任务特性。<br>
+<strong>过度自信陷阱</strong>：当模型在错误答案上表现得很"自信"时，激进过滤可能保留这些"自信的错误"轨迹，导致性能下降。
+</p>
+</div>
+
+<div class="module-card">
+<h3>Warm-up 规模 N<sub>init</sub> 的影响</h3>
+<p>
+论文测试了 N<sub>init</sub> 从 4 到 64 的效果。结果显示：
+</p>
+<p class="section-desc">
+<strong>4 条太少</strong>：阈值估计不稳定，导致早停过于激进或过于保守。<br>
+<strong>16 条足够</strong>：在准确率和 Token 节省之间取得了最佳平衡。<br>
+<strong>32/64 条</strong>：进一步提升有限，但增加了 warm-up 阶段的计算成本。16 条是推荐的默认值。
+</p>
+</div>
+
+<div class="module-card">
+<h3>不同置信度度量在在线模式中的对比</h3>
+<p>
+论文对比了 Average Trace Conf、Bottom-10% Group Conf 和 Tail Conf 三种度量在在线模式中的表现。核心发现是 Lowest Group Confidence（即 Bottom-10% 的在线版本）在准确率和 Token 节省之间取得了最佳平衡，因此被选为在线模式的默认度量。Avg Trace Conf 无法支持在线早停（需要完整轨迹），Tail Conf 虽支持在线使用但信号不够精准。
+</p>
+</div>
+
+<!-- 论文原图：离线对比 -->
+<div class="paper-figure">
+  <img src="images/deepconf_bottom_0.1.png" alt="Offline Bottom-10% Results" style="background:#fff;padding:10px;">
+  <p class="fc">📄 论文原图 — Figure 5: 使用 Lowest Group Confidence 过滤的离线准确率（DeepSeek-8B）。不同投票预算下 η=10% 和 η=90% 的效果。</p>
+</div>
+</div>
+
+<hr class="divider">
+
+<!-- ===== 第7节：设计精妙之处 ===== -->
+<div class="section" id="sec7">
+<h2 class="section-title"><span class="num">7</span> 设计精妙之处</h2>
+
+<p class="section-desc">
+DeepConf 的每个设计决策背后都有深刻的洞察。本节从宏观角度总结其设计的精妙之处——这些是论文中没有显式总结，但贯穿全文的设计哲学。
+</p>
+
+<div class="insight-box">
+<h4>精妙一："自知之明"——利用模型自身信号而非外部裁判</h4>
+<p>
+判断推理轨迹质量的一种直觉方法是训练一个外部"裁判模型"来评估，但这需要额外的模型、训练数据和推理开销。DeepConf 的精妙之处在于：模型在生成每个 token 时，已经"知道"自己有多确定——logprobs 就是它的"自知之明"。与其引入外部裁判，不如直接倾听模型自己的声音。这不仅零成本，而且信号天然与生成质量相关——因为同一个模型在同一个推理过程中的不确定，就是推理出错的最好指示器。
+</p>
+</div>
+
+<div class="insight-box">
+<h4>精妙二：从"多想"到"想得聪明"的范式转换</h4>
+<p>
+Self-Consistency 的哲学是"多想几遍，投票决定"，但忽略了"想得差不如不想"这个简单事实。DeepConf 实现了从"多想"（brute-force parallel thinking）到"想得聪明"（confidence-guided smart thinking）的范式转换——不是简单地增加采样数量，而是确保每一条被计入的推理轨迹都达到了足够的"自信"水平。这就像从"全民投票"进化为"有资格的选民投票"——不是所有人都能投票，只有经过质量验证的推理才能参与决策。
+</p>
+</div>
+
+<div class="insight-box">
+<h4>精妙三：局部信号的全局价值</h4>
+<p>
+Bottom-10% Group Confidence 只关注推理轨迹中"最弱的一环"，看似是一种极端的度量，实则蕴含了深刻洞察：推理是链式过程，一个环节出错，后续所有步骤都建立在错误基础上。因此，整条轨迹的质量由其最弱环节决定——木桶效应。关注最弱的局部信号，反而能最准确地评估全局质量。这是"局部到全局"推理的优雅实例。
+</p>
+</div>
+
+<div class="insight-box">
+<h4>精妙四：自适应阈值——不预设"好"与"坏"的边界</h4>
+<p>
+DeepConf 不使用固定的置信度阈值来判断轨迹的好坏——不同问题、不同模型、甚至不同采样温度下，"好的置信度"范围可能完全不同。通过 warm-up 阶段自适应地确定阈值 s，DeepConf 让每个问题都有自己的"及格线"。这种相对标准而非绝对标准的设计，使得方法在不同模型和任务间具有极强的泛化能力。
+</p>
+</div>
+
+<div class="insight-box">
+<h4>精妙五：双重效率提升——早停 + 共识停止</h4>
+<p>
+DeepConf 的 Token 节省来自两个独立机制的叠加：<strong>早停</strong>省掉了低质量轨迹后续 token 的生成成本；<strong>共识停止</strong>省掉了达成共识后继续采样的冗余成本。前者是"单条轨迹级别"的节省，后者是"全局采样级别"的节省。两者正交互补——即使所有轨迹都没有触发早停，共识停止仍然可以节省 Token；即使共识一直未达成，早停仍然在逐条节省。这种双重保险设计确保了在各种场景下都有可观的效率提升。
+</p>
+</div>
+
+<div class="limit-box">
+<h4>局限性：过度自信问题</h4>
+<p>
+DeepConf 的根本假设是"高置信度 = 高质量"，但这个假设并不总是成立。模型可能在错误答案上表现得很"自信"——这种现象被称为"过度自信"（overconfidence）。论文也坦诚地指出了这一点：GPT-OSS-120B 在 HMMT25 上使用 η=10% 时，准确率从 92.9% 降至 88.9%，正是因为模型对某些错误推理过度自信，激进过滤反而保留了这些错误轨迹。这是所有基于置信度的方法的共同挑战——如何区分"真正的自信"和"盲目的自信"。论文建议使用 η=90% 的保守策略来缓解此问题，但更深层的解决方案仍有待探索。
+</p>
+</div>
+</div>
+
+<hr class="divider">
+
+<!-- ===== 第8节：Q&A 深度解析 ===== -->
+<div class="section" id="sec8">
+<h2 class="section-title"><span class="num">8</span> Q&A 深度解析</h2>
+
+<div class="qa-card">
+<div class="qa-q">Q1: DeepConf 和 Self-Consistency 的关系是什么？是替代还是增强？</div>
+<div class="qa-a">
+DeepConf 是 Self-Consistency 的<strong>增强</strong>，而非替代。Self-Consistency 的核心流程——"采样多条轨迹 + 多数投票"——在 DeepConf 中被完整保留。DeepConf 在此基础上做了两个关键改进：（1）将等权投票升级为置信度加权投票，让高质量轨迹的话语权更大；（2）在投票前加入置信度过滤，丢弃明显低质量的轨迹。在线模式则进一步加入了早停机制，在生成过程中就淘汰低质量轨迹。可以把 DeepConf 理解为 Self-Consistency 的"精装版"——同样的核心思想，但更聪明地执行。
+</div>
+</div>
+
+<div class="qa-card">
+<div class="qa-q">Q2: 为什么不用外部模型（如奖励模型）来评估轨迹质量？</div>
+<div class="qa-a">
+使用外部奖励模型（ORM/PRM）评估轨迹质量是一个可行方案，但有几个实际限制：（1）<strong>额外开销</strong>——需要运行一个额外的模型，增加推理延迟和成本；（2）<strong>训练数据依赖</strong>——奖励模型需要专门的过程级标注数据来训练，而这类数据获取成本极高；（3）<strong>泛化性</strong>——奖励模型通常针对特定任务训练，跨任务泛化能力有限。DeepConf 的置信度信号来自生成模型自身，无需任何额外模型或标注，且天然适用于任何推理任务。当然，如果已有高质量的过程奖励模型，将其与 DeepConf 的置信度信号结合使用可能效果更好——这是一个有前景的研究方向。
+</div>
+</div>
+
+<div class="qa-card">
+<div class="qa-q">Q3: DeepConf 在非数学推理任务（如代码生成、常识推理）上效果如何？</div>
+<div class="qa-a">
+论文主要在数学推理基准（AIME、BRUMO、HMMT）和科学推理（GPQA-Diamond）上进行了评估。GPQA-Diamond 包含了研究生级别的科学问题，不是纯数学，可以代表一类"需要专业知识+推理"的任务。在 GPQA-D 上的结果显示 DeepConf 仍然有效，但提升幅度不如纯数学推理任务大。论文没有在代码生成或常识推理任务上评估，但原理上置信度信号应该仍然有效——只要模型在推理出错时倾向于表现出不确定。不过，某些任务（如简单的事实检索）中，模型可能即使答案错误也表现得很自信，此时 DeepConf 的效果可能有限。
+</div>
+</div>
+
+<div class="qa-card">
+<div class="qa-q">Q4: DeepConf-low 和 DeepConf-high 在实际应用中如何选择？</div>
+<div class="qa-a">
+选择取决于你的<strong>风险偏好</strong>和<strong>成本约束</strong>：<br>
+- <strong>选 DeepConf-low（η=10%）</strong>：当你最看重准确率且成本敏感时。它在数学推理等"高置信度=高质量"的场景下效果最佳，Token 节省也最多（43-85%）。但要注意，如果模型容易过度自信（在错误答案上也表现自信），激进过滤可能适得其反。<br>
+- <strong>选 DeepConf-high（η=90%）</strong>：当你更关心稳定性、可以容忍较少的 Token 节省时。它几乎不会损害准确率（仅去掉最差的 10% 轨迹），Token 节省仍然可观（18-59%）。适合生产环境中的风险敏感场景。<br>
+- <strong>实际建议</strong>：先用 DeepConf-high 部署，评估效果后再考虑是否切换到 DeepConf-low 以获取更大收益。
+</div>
+</div>
+
+<div class="qa-card">
+<div class="qa-q">Q5: 置信度信号能否用于串行推理（Sequential Thinking）而非并行推理？</div>
+<div class="qa-a">
+理论上可以，但需要不同的实现方式。在串行推理中（如单条长思维链），可以在推理过程中实时监控 Group Confidence，当置信度持续下降时触发"重试"或"回溯"——即放弃当前推理方向，从某个检查点重新开始。这与并行模式中的"早停"本质相同，但需要额外的回溯机制。论文没有探索这个方向，但在 Future Work 中提到可以将 DeepConf 扩展到强化学习设置中，用置信度信号引导策略探索——这与串行推理中的"回溯"思路是相通的。
+</div>
+</div>
+
+<div class="qa-card">
+<div class="qa-q">Q6: DeepConf 对采样温度（temperature）有要求吗？</div>
+<div class="qa-a">
+DeepConf 本身对温度没有特殊要求，但它的效果受温度影响。温度越高，采样出的轨迹多样性越大，但置信度整体会偏低（因为概率分布更平坦）；温度越低，轨迹更一致但多样性不足。论文使用各模型推荐的默认采样设置（通常是 temperature=0.6-1.0），没有特别调优。一个值得注意的交互效应是：温度较高时，不同轨迹的置信度差异更大，置信度过滤的区分度也更高，DeepConf 的效果可能更好。但这需要进一步实验验证。
+</div>
+</div>
+
+<div class="qa-card">
+<div class="qa-q">Q7: 99.9% 的 AIME 2025 准确率是否意味着"解决了数学推理"？</div>
+<div class="qa-a">
+绝对不是。99.9% 的结果需要放在具体语境下理解：<strong>这是在 K=512 的超大投票预算下、使用 GPT-OSS-120B 这一超大模型、仅针对 AIME 2025 这 30 道题取得的</strong>。AIME 2025 只有 30 道题，99.9% 可能意味着 30 题中只有极少数错误（甚至可能因为随机性而全部正确）。这个数字主要展示了 DeepConf 的上限潜力——在计算预算充足时，置信度引导的投票可以将模型性能推到接近完美的水平。但对于更广泛、更开放的推理任务，以及更小的模型/更低的预算下，DeepConf 的提升幅度会更温和。
+</div>
+</div>
+
+<div class="qa-card">
+<div class="qa-q">Q8: DeepConf 与其他 test-time scaling 方法（如 Best-of-N、beam search）有何区别？</div>
+<div class="qa-a">
+<strong>Best-of-N</strong>：从 N 条轨迹中选择一条"最好的"，但需要外部评分器来判断哪条最好。DeepConf 的加权投票则不需要外部评分器，且通过聚合多条轨迹的信息来降低随机性。<br>
+<strong>Beam Search</strong>：在生成过程中维护多个候选序列，按某种得分选择最优。DeepConf 与 beam search 的关键区别在于：（1）DeepConf 的多条轨迹是完全独立采样的，不存在 beam search 中的"束宽限制"问题；（2）DeepConf 的"选择"发生在轨迹级别（基于置信度），而 beam search 的选择发生在 token 级别；（3）DeepConf 的目标是投票聚合而非选择单条最优。<br>
+<strong>核心区别</strong>：DeepConf 的独特定位是"置信度引导的并行推理增强"——它既不是选择单条最优（如 Best-of-N），也不是在 token 级别搜索（如 beam search），而是在轨迹级别用置信度信号来精炼投票过程。
+</div>
+</div>
+
+<div class="qa-card">
+<div class="qa-q">Q9: 在线早停是否会导致"幸存者偏差"——只保留简单问题的轨迹？</div>
+<div class="qa-a">
+这是一个很好的问题。确实，如果某些问题本身就很难（模型整体置信度偏低），早停可能会把所有轨迹都停掉，导致该问题没有有效答案。但 DeepConf 的设计有几个缓解机制：（1）<strong>阈值是相对的</strong>——warm-up 阶段确定的阈值 s 是相对于当前问题的置信度分布的，难问题的阈值会自动降低，不会一刀切；（2）<strong>预算保障</strong>——即使所有轨迹都被早停，已经完成的 warm-up 轨迹（16条）仍然可以参与投票，保证至少有答案输出；（3）<strong>共识停止的兜底</strong>——如果一直无法达成共识，采样会持续到预算上限 K。实际上，论文的实验结果显示，在线早停在难题上节省的 Token 更多（因为难问题更容易产生低置信度轨迹），但准确率并未因此显著下降。
+</div>
+</div>
+
+<div class="qa-card">
+<div class="qa-q">Q10: DeepConf 的置信度信号能否用于训练阶段的优化？</div>
+<div class="qa-a">
+论文在 Future Work 中明确提到了这个方向——将 DeepConf 扩展到强化学习（RL）设置中。具体思路是：用置信度信号作为"过程奖励"（process reward）来引导 RL 训练中的策略探索。当模型在某一步的置信度下降时，可以给予负奖励，促使模型学会在推理过程中保持更高的确定性。另一个方向是用置信度来改进 GRPO（Group Relative Policy Optimization）等训练方法中的样本效率——在训练时也实施"早停"，跳过低置信度的 rollout，将计算资源集中在高质量样本上。这些都是 DeepConf 核心思想从推理时向训练时的延伸，但目前仍处于探索阶段。
+</div>
+</div>
+</div>
+
+<hr class="divider">
+
+<!-- ===== 第9节：代码使用与实战 ===== -->
+<div class="section" id="sec9">
+<h2 class="section-title"><span class="num">9</span> 代码使用与实战</h2>
+
+<p class="section-desc">
+DeepConf 的官方实现在 <a href="https://github.com/facebookresearch/deepconf" target="_blank" style="color:#0cebeb;">facebookresearch/deepconf</a>，基于 vLLM 推理框架构建。以下介绍其安装和使用方式。
+</p>
+
+<h3 style="color:#20e3b2;margin:20px 0 12px;font-size:1.2rem;">9.1 安装</h3>
+
+<div class="code-block">
+<pre><span class="cg"># 克隆仓库</span>
+<span class="ck">git clone</span> https://github.com/facebookresearch/deepconf.git
+<span class="ck">cd</span> deepconf
+
+<span class="cg"># 安装依赖（需要 Python 3.10+）</span>
+<span class="ck">pip install</span> -r requirements.txt
+<span class="ck">pip install</span> -e .
+
+<span class="cg"># DeepConf 依赖 vLLM 作为推理后端</span>
+<span class="ck">pip install</span> vllm</pre>
+</div>
+
+<h3 style="color:#20e3b2;margin:20px 0 12px;font-size:1.2rem;">9.2 项目目录结构</h3>
+
+<div class="code-block">
+<pre>deepconf/
+├── deepconf/           <span class="cg"># 核心代码包</span>
+│   ├── __init__.py
+│   ├── conf_metrics.py <span class="cg"># 置信度度量实现（Avg/Bot10/Tail/Lowest）</span>
+│   ├── voting.py       <span class="cg"># 置信度加权投票 + 过滤</span>
+│   ├── online.py       <span class="cg"># 在线模式（早停 + 共识停止）</span>
+│   └── utils.py        <span class="cg"># 工具函数</span>
+├── examples/           <span class="cg"># 示例代码</span>
+│   ├── offline_eval.py <span class="cg"># 离线评估示例</span>
+│   └── online_eval.py  <span class="cg"># 在线评估示例</span>
+├── images/             <span class="cg"># 图片资源</span>
+├── requirements.txt    <span class="cg"># Python 依赖</span>
+├── setup.py            <span class="cg"># 安装打包脚本</span>
+└── README.md           <span class="cg"># 项目文档</span></pre>
+</div>
+
+<h3 style="color:#20e3b2;margin:20px 0 12px;font-size:1.2rem;">9.3 离线模式使用示例</h3>
+
+<div class="code-block">
+<pre><span class="ck">from</span> deepconf <span class="ck">import</span> ConfidenceMetrics, ConfidenceVoting
+
+<span class="cg"># Step 1: 采样 K 条轨迹（使用 vLLM 或其他框架）</span>
+<span class="cg"># traces: List[dict]，每个包含 "text" 和 "logprobs"</span>
+traces = model.generate(question, n=<span class="cn">512</span>, temperature=<span class="cn">0.7</span>)
+
+<span class="cg"># Step 2: 计算轨迹级置信度</span>
+metrics = ConfidenceMetrics(metric=<span class="cs">"bottom_10"</span>, group_size=<span class="cn">2048</span>)
+conf_scores = [metrics.compute(t[<span class="cs">"logprobs"</span>]) <span class="ck">for</span> t <span class="ck">in</span> traces]
+
+<span class="cg"># Step 3: 置信度过滤 + 加权投票</span>
+voter = ConfidenceVoting(eta=<span class="cn">10</span>)  <span class="cg"># eta=10 → DeepConf-low</span>
+answer = voter.vote(traces, conf_scores)
+<span class="ck">print</span>(<span class="cs">f"Final answer: </span>{answer}<span class="cs">"</span>)</pre>
+</div>
+
+<h3 style="color:#20e3b2;margin:20px 0 12px;font-size:1.2rem;">9.4 在线模式使用示例</h3>
+
+<div class="code-block">
+<pre><span class="ck">from</span> deepconf <span class="ck">import</span> OnlineDeepConf
+
+<span class="cg"># 初始化在线 DeepConf</span>
+runner = OnlineDeepConf(
+    model_name=<span class="cs">"Qwen/Qwen3-8B"</span>,
+    n_init=<span class="cn">16</span>,           <span class="cg"># warm-up 轨迹数</span>
+    eta=<span class="cn">10</span>,             <span class="cg"># 过滤比例 (10=激进, 90=保守)</span>
+    window_size=<span class="cn">2048</span>,    <span class="cg"># 滑动窗口大小</span>
+    consensus_tau=<span class="cn">0.95</span>,  <span class="cg"># 共识停止阈值</span>
+    budget_K=<span class="cn">512</span>,       <span class="cg"># 最大采样预算</span>
+)
+
+<span class="cg"># 运行推理</span>
+result = runner.run(question=<span class="cs">"Find the value of x such that..."</span>)
+<span class="ck">print</span>(<span class="cs">f"Answer: </span>{result[<span class="cs">'answer'</span>]}<span class="cs">"</span>)
+<span class="ck">print</span>(<span class="cs">f"Tokens used: </span>{result[<span class="cs">'total_tokens'</span>]}<span class="cs">"</span>)
+<span class="ck">print</span>(<span class="cs">f"Token savings: </span>{result[<span class="cs">'savings_pct'</span>]}<span class="cs">%"</span>)</pre>
+</div>
+
+<h3 style="color:#20e3b2;margin:20px 0 12px;font-size:1.2rem;">9.5 vLLM 原生集成</h3>
+
+<p class="section-desc">
+DeepConf 也提供了 vLLM 的原生集成方案，只需在请求中添加几个参数即可启用早停功能：
+</p>
+
+<div class="code-block">
+<pre><span class="cg"># vLLM 请求中启用 DeepConf 早停</span>
+response = client.completions.create(
+    model=<span class="cs">"Qwen/Qwen3-8B"</span>,
+    prompt=question,
+    n=<span class="cn">512</span>,
+    temperature=<span class="cn">0.7</span>,
+    max_tokens=<span class="cn">8192</span>,
+    logprobs=<span class="cn">20</span>,  <span class="cg"># 必须启用 logprobs</span>
+    extra_args={
+        <span class="cs">"enable_conf"</span>: <span class="cn">True</span>,      <span class="cg"># 启用置信度早停</span>
+        <span class="cs">"window_size"</span>: <span class="cn">2048</span>,     <span class="cg"># 滑动窗口大小</span>
+        <span class="cs">"threshold"</span>: <span class="cn">17</span>,         <span class="cg"># 置信度阈值（由 warm-up 确定）</span>
+    }
+)
+
+<span class="cg"># 早停的轨迹会在 stop_reason 中标记</span>
+<span class="ck">for</span> choice <span class="ck">in</span> response.choices:
+    <span class="ck">if</span> <span class="cs">"&lt;gconf&lt;"</span> <span class="ck">in</span> choice.finish_reason:
+        <span class="ck">print</span>(<span class="cs">"Trace early-stopped due to low confidence"</span>)</pre>
+</div>
+
+<h3 style="color:#20e3b2;margin:20px 0 12px;font-size:1.2rem;">9.6 关键参数速查</h3>
+
+<table class="data-table">
+<thead>
+<tr><th>参数</th><th>默认值</th><th>说明</th></tr>
+</thead>
+<tbody>
+<tr><td><code>K</code></td><td>512</td><td>最大采样轨迹数（投票预算）</td></tr>
+<tr><td><code>N<sub>init</sub></sub></code></td><td>16</td><td>Warm-up 轨迹数量，用于设定阈值</td></tr>
+<tr><td><code>η</code></td><td>10 或 90</td><td>过滤比例：10=激进(DeepConf-low)，90=保守(DeepConf-high)</td></tr>
+<tr><td><code>window_size</code></td><td>2048</td><td>Group Confidence 滑动窗口大小</td></tr>
+<tr><td><code>τ</code></td><td>0.95</td><td>共识停止阈值</td></tr>
+<tr><td><code>k</code></td><td>20</td><td>Token 置信度使用的 top-k 候选数</td></tr>
+<tr><td><code>temperature</code></td><td>0.6-1.0</td><td>采样温度，使用模型推荐值</td></tr>
+</tbody>
+</table>
+</div>
+
+<hr class="divider">
+
+<!-- ===== 页尾 ===== -->
+<div class="footer">
+  <p>Deep Think with Confidence 深度解读 — 生成于 2026 年 5 月</p>
+  <p style="margin-top:6px;">论文: <a href="https://arxiv.org/abs/2508.15260" target="_blank" style="color:#0cebeb;text-decoration:none;">arXiv:2508.15260</a> | 代码: <a href="https://github.com/facebookresearch/deepconf" target="_blank" style="color:#0cebeb;text-decoration:none;">facebookresearch/deepconf</a></p>
+</div>
+</div>
+<script src="theme.js"></script>
+</body>
+</html>
