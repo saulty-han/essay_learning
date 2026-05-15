@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>论文深度解读</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
+body{
+  font-family:'Noto Sans SC',system-ui,sans-serif;
+  background:#0d1117;color:#c9d1d9;
+  line-height:1.8;font-size:16px;min-height:100vh;
+}
+.container{max-width:1400px;margin:0 auto;padding:0 24px;}
+header{padding:60px 0 30px;text-align:center;}
+header h1{
+  font-size:2.2rem;font-weight:700;
+  background:linear-gradient(135deg,#0cebeb,#20e3b2,#29ffc6);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+}
+header p{color:#8b949e;margin-top:8px;font-size:1.05rem;}
+.stats{
+  display:flex;justify-content:center;gap:40px;margin:24px 0;
+}
+.stat{text-align:center;}
+.stat .num{font-size:2rem;font-weight:700;color:#0cebeb;}
+.stat .label{font-size:.85rem;color:#8b949e;}
+.grid{
+  display:grid;grid-template-columns:repeat(auto-fill,minmax(380px,1fr));
+  gap:24px;padding:20px 0 60px;
+}
+.card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:16px;padding:24px;transition:all .3s;
+  text-decoration:none;color:inherit;display:block;
+}
+.card:hover{border-color:rgba(12,235,235,.3);transform:translateY(-3px);}
+.card .date{font-size:.85rem;color:#8b949e;}
+.card .tags{display:flex;gap:8px;margin:8px 0;flex-wrap:wrap;}
+.card .tag{
+  padding:2px 10px;border-radius:12px;font-size:.78rem;
+  border:1px solid rgba(12,235,235,.3);color:#0cebeb;background:rgba(12,235,235,.06);
+}
+.card h2{font-size:1.15rem;color:#e6edf3;margin:10px 0 6px;font-weight:600;}
+.card .sub{font-size:.9rem;color:#8b949e;margin-bottom:8px;}
+.card .desc{font-size:.9rem;color:#8b949e;line-height:1.7;margin-bottom:12px;}
+.card .chips{display:flex;gap:6px;flex-wrap:wrap;}
+.card .chip{
+  padding:2px 8px;border-radius:8px;font-size:.75rem;
+  background:rgba(255,255,255,.05);color:#8b949e;
+}
+.card .read-time{font-size:.8rem;color:#8b949e;margin-top:8px;}
+</style>
+</head>
+<body>
+<div class="container">
+<header>
+  <h1>论文深度解读</h1>
+  <p>AI 论文的深度解析与架构可视化</p>
+</header>
+<div class="stats">
+  <div class="stat"><div class="num">2</div><div class="label">文章总数</div></div>
+  <div class="stat"><div class="num">2</div><div class="label">论文解读</div></div>
+  <div class="stat"><div class="num">2</div><div class="label">架构分析</div></div>
+</div>
+<div class="grid">
+
+<a class="card" href="emulating_rag_deep_analysis.html">
+  <div class="date">2026-05-14</div>
+  <div class="tags">
+    <span class="tag" style="border-color:rgba(12,235,235,.4);color:#0cebeb;">Preprint 2025</span>
+    <span class="tag">论文解读</span>
+  </div>
+  <h2>Emulating RAG via Prompt Engineering</h2>
+  <div class="sub">通过提示工程模拟检索增强生成，增强 LLM 长上下文理解</div>
+  <div class="desc">提出在单次前向传播中模拟 RAG 的方法，让 LLM 同时充当检索器和推理器——先标记相关片段，再通过 CoT 逐步整合证据。在 BABILong 多跳推理任务上显著优于传统 RAG，揭示了提示词排列顺序对长上下文性能的巨大影响。</div>
+  <div class="chips">
+    <span class="chip">Prompt Engineering</span>
+    <span class="chip">RAG Emulation</span>
+    <span class="chip">Long Context</span>
+    <span class="chip">Chain-of-Thought</span>
+    <span class="chip">BABILong</span>
+  </div>
+  <div class="read-time">📖 约 25 分钟阅读</div>
+</a>
+
+<a class="card" href="booster_deep_analysis.html">
+  <div class="date">2026-05-14</div>
+  <div class="tags">
+    <span class="tag" style="border-color:rgba(249,115,22,.4);color:#f97316;">SIGMOD 2026</span>
+    <span class="tag">论文解读</span>
+  </div>
+  <h2>Booster: LLM 驱动的数据库自动调优加速框架</h2>
+  <div class="sub">利用大语言模型从历史经验中推理查询级配置建议，帮助调优器更快适应环境变化</div>
+  <div class="desc">提出 Booster 框架，通过三阶段架构（经验分析→引导推荐→约束组合）将历史调优制品重混为查询级洞察。利用 LLM 作为推理引擎在检索增强的提示上生成配置建议，再通过 Beam Search 组合为全局配置。在 7 大场景 × 4 种调优器上验证，性能提升最高 74%，速度提升最高 4.7×。</div>
+  <div class="chips">
+    <span class="chip">Database Tuning</span>
+    <span class="chip">LLM Reasoning</span>
+    <span class="chip">Query-Level Adaptation</span>
+    <span class="chip">Beam Search</span>
+    <span class="chip">Transfer Learning</span>
+  </div>
+  <div class="read-time">📖 约 30 分钟阅读</div>
+</a>
+
+</div>
+</div>
+</body>
+</html>

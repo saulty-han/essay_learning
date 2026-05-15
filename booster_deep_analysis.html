@@ -1,0 +1,892 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>深度解读 — Booster: LLM-Boosted Automatic Database Tuning</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{
+  font-family:'Noto Sans SC',system-ui,-apple-system,sans-serif;
+  background:#0d1117;color:#c9d1d9;
+  line-height:1.8;font-size:16px;
+  min-height:100vh;
+}
+.container{
+  max-width:1400px;margin:0 auto;padding:0 24px;
+  background:#0d1117;position:relative;
+}
+.back-btn{
+  position:fixed;top:16px;left:16px;z-index:9999;
+  background:rgba(20,20,35,.75);color:#c9d1d9;
+  border:1px solid rgba(255,255,255,.15);border-radius:10px;
+  padding:8px 16px;font-size:14px;cursor:pointer;
+  backdrop-filter:blur(6px);transition:all .3s;
+  text-decoration:none;display:flex;align-items:center;gap:6px;
+}
+.back-btn:hover{background:rgba(30,30,55,.9);border-color:rgba(255,255,255,.3);}
+.hero{padding:80px 0 40px;text-align:center;}
+.hero-title{
+  font-size:2.2rem;font-weight:700;
+  background:linear-gradient(135deg,#f97316,#fb923c,#fbbf24);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  background-clip:text;margin-bottom:12px;line-height:1.3;
+}
+.hero-sub{font-size:1.1rem;color:#8b949e;margin-bottom:8px;}
+.venue{font-size:.95rem;color:#8b949e;margin-top:8px;}
+.venue a{color:#f97316;text-decoration:none;}
+.venue a:hover{text-decoration:underline;}
+.tag-row{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:16px;}
+.tag{
+  display:inline-block;padding:4px 14px;border-radius:20px;font-size:.85rem;
+  border:1px solid rgba(249,115,22,.3);color:#f97316;
+  background:rgba(249,115,22,.06);
+}
+.divider{border:none;border-top:1px solid rgba(255,255,255,.08);margin:48px 0;}
+.section{margin:40px 0;}
+.section-title{
+  font-size:1.75rem;font-weight:700;margin-bottom:20px;
+  color:#e6edf3;display:flex;align-items:center;gap:10px;
+}
+.section-title .num{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:36px;height:36px;border-radius:50%;
+  background:linear-gradient(135deg,#f97316,#fbbf24);
+  color:#0d1117;font-size:1rem;font-weight:700;flex-shrink:0;
+}
+.section-desc{font-size:16px;line-height:1.9;color:#c9d1d9;margin-bottom:16px;}
+.toc{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:16px;padding:28px 36px;margin:30px 0;
+}
+.toc h3{font-size:1.2rem;color:#e6edf3;margin-bottom:14px;}
+.toc ol{list-style:none;counter-reset:toc;padding:0;}
+.toc li{counter-increment:toc;margin:8px 0;}
+.toc li::before{content:counter(toc) ".";color:#f97316;font-weight:600;margin-right:8px;}
+.toc a{color:#8b949e;text-decoration:none;transition:color .2s;}
+.toc a:hover{color:#f97316;}
+.module-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:24px;margin:18px 0;transition:all .3s;
+}
+.module-card:hover{border-color:rgba(249,115,22,.3);transform:translateY(-2px);}
+.module-card h3{font-size:1.15rem;font-weight:600;margin-bottom:10px;color:#f97316;}
+.module-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.arch-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:22px;margin:14px 0;transition:all .3s;
+}
+.arch-card:hover{border-color:rgba(249,115,22,.3);}
+.arch-card h4{font-size:1.05rem;font-weight:600;color:#fb923c;margin-bottom:8px;}
+.arch-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.step-flow{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:22px;margin:14px 0;
+}
+.step-flow h4{font-size:1.05rem;font-weight:600;color:#f97316;margin-bottom:8px;}
+.step-flow p{font-size:15px;line-height:1.8;color:#8b949e;}
+.data-table{
+  width:100%;border-collapse:collapse;margin:18px 0;
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;overflow:hidden;font-size:14px;
+}
+.data-table th{
+  background:rgba(249,115,22,.1);color:#f97316;
+  padding:12px 16px;text-align:left;font-weight:600;
+}
+.data-table td{
+  padding:10px 16px;border-top:1px solid rgba(255,255,255,.06);
+  color:#c9d1d9;
+}
+.data-table tr:hover td{background:rgba(249,115,22,.04);}
+.formula-box{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;padding:20px 24px;margin:16px 0;
+  font-size:18px;text-align:center;color:#e6edf3;
+  font-family:'JetBrains Mono',monospace;
+}
+.code-block{
+  background:rgba(20,20,35,.8);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;padding:18px 22px;margin:16px 0;
+  overflow-x:auto;
+}
+.code-block pre{
+  font-family:'JetBrains Mono',monospace;font-size:14px;
+  line-height:1.7;color:#c9d1d9;white-space:pre;
+}
+.ck{color:#f97316;}.cs{color:#f0883e;}.cf{color:#d2a8ff;}.cg{color:#8b949e;}.cv{color:#79c0ff;}
+.qa-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:24px;margin:16px 0;
+}
+.qa-q{font-size:1.05rem;font-weight:600;color:#f97316;margin-bottom:12px;}
+.qa-a{font-size:15px;line-height:1.9;color:#8b949e;}
+.highlight-box{
+  background:rgba(249,115,22,.06);border:1px solid rgba(249,115,22,.2);
+  border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;
+}
+.warn-box{
+  background:rgba(240,136,62,.08);border:1px solid rgba(240,136,62,.25);
+  border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;
+}
+.info-box{
+  background:rgba(249,115,22,.06);border:1px solid rgba(249,115,22,.2);
+  border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;
+}
+.prompt-box{
+  background:rgba(20,20,35,.8);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;padding:18px 22px;margin:16px 0;
+  font-family:'JetBrains Mono',monospace;font-size:13px;
+  line-height:1.7;color:#c9d1d9;white-space:pre-wrap;
+}
+.prompt-label{
+  display:inline-block;padding:2px 10px;border-radius:6px;
+  font-size:.85rem;font-weight:600;margin-bottom:8px;
+  background:rgba(249,115,22,.15);color:#f97316;
+}
+.fc{font-size:14px;color:#8b949e;text-align:center;margin:10px 0;line-height:1.6;}
+.comp-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:22px;margin:14px 0;transition:all .3s;
+}
+.comp-card:hover{border-color:rgba(249,115,22,.3);}
+.comp-card h4{font-size:1.05rem;font-weight:600;color:#fb923c;margin-bottom:8px;}
+.comp-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.insight-box{
+  background:rgba(249,115,22,.06);border:1px solid rgba(249,115,22,.2);
+  border-radius:12px;padding:18px 22px;margin:16px 0;
+}
+.insight-box h4{color:#f97316;font-size:1.05rem;margin-bottom:8px;}
+.insight-box p{font-size:15px;line-height:1.8;color:#c9d1d9;}
+.limit-box{
+  background:rgba(240,136,62,.08);border:1px solid rgba(240,136,62,.25);
+  border-radius:12px;padding:18px 22px;margin:16px 0;
+}
+.limit-box h4{color:#f0883e;font-size:1.05rem;margin-bottom:8px;}
+.limit-box p{font-size:15px;line-height:1.8;color:#c9d1d9;}
+.kv-row{
+  display:flex;border-bottom:1px solid rgba(255,255,255,.06);padding:8px 0;
+}
+.kv-row:last-child{border-bottom:none;}
+.kv-key{width:180px;flex-shrink:0;color:#f97316;font-weight:500;font-size:14px;}
+.kv-val{color:#c9d1d9;font-size:14px;line-height:1.7;}
+.footer{text-align:center;color:#555;font-size:14px;padding:48px 0 32px;}
+/* SVG architecture */
+.svg-container{
+  background:rgba(20,20,35,.4);border:1px solid rgba(255,255,255,.06);
+  border-radius:14px;padding:20px;margin:24px 0;overflow-x:auto;
+  text-align:center;
+}
+.svg-container svg{max-width:100%;height:auto;}
+/* Phase badge */
+.phase-badge{
+  display:inline-block;padding:3px 12px;border-radius:8px;
+  font-size:.85rem;font-weight:600;margin-right:8px;
+}
+.phase-1{background:rgba(99,102,241,.15);color:#818cf8;}
+.phase-2{background:rgba(249,115,22,.15);color:#fb923c;}
+.phase-3{background:rgba(34,197,94,.15);color:#4ade80;}
+/* Grid layout */
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
+.grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;}
+@media(max-width:900px){
+  .grid-2,.grid-3{grid-template-columns:1fr;}
+  .hero-title{font-size:1.6rem;}
+  .kv-row{flex-direction:column;}
+  .kv-key{width:auto;}
+}
+/* Animated arrow */
+@keyframes flowPulse{
+  0%,100%{opacity:.6;}
+  50%{opacity:1;}
+}
+.flow-arrow{animation:flowPulse 2s ease-in-out infinite;}
+</style>
+</head>
+<body>
+<div class="container">
+
+<a class="back-btn" href="index.html">&#8592; 返回目录</a>
+
+<!-- ========== HERO ========== -->
+<div class="hero">
+  <h1 class="hero-title">Booster: LLM 驱动的数据库自动调优加速框架</h1>
+  <p class="hero-sub">利用大语言模型从历史经验中推理查询级配置建议，帮助现有调优器更快适应环境变化</p>
+  <div class="venue">
+    SIGMOD 2026 &nbsp;|&nbsp; Proc. ACM Manag. Data, Vol.4, No.1, Article 90 &nbsp;|&nbsp;
+    <a href="https://doi.org/10.1145/3786704">DOI: 10.1145/3786704</a> &nbsp;|&nbsp;
+    <a href="https://arxiv.org/abs/2510.17748">arXiv: 2510.17748</a>
+  </div>
+  <div class="tag-row">
+    <span class="tag">Database Tuning</span>
+    <span class="tag">LLM Reasoning</span>
+    <span class="tag">Query-Level Adaptation</span>
+    <span class="tag">Beam Search</span>
+    <span class="tag">Transfer Learning</span>
+  </div>
+</div>
+
+<!-- ========== TOC ========== -->
+<div class="toc">
+  <h3>目录</h3>
+  <ol>
+    <li><a href="#sec-motivation">研究动机：调优器的适应性困境</a></li>
+    <li><a href="#sec-overview">框架概览：Booster 三阶段架构</a></li>
+    <li><a href="#sec-phase1">Phase I：经验分析 — QConfig 构建与向量化</a></li>
+    <li><a href="#sec-phase2">Phase II：引导推荐 — 检索 + LLM 生成 + Sanitizer</a></li>
+    <li><a href="#sec-phase3">Phase III：约束组合 — 排序 + Beam Search</a></li>
+    <li><a href="#sec-integration">集成机制：Parse / Link / Digest</a></li>
+    <li><a href="#sec-experiment">实验评估：七大场景全覆盖</a></li>
+    <li><a href="#sec-sensitivity">敏感性分析：六大消融实验</a></li>
+    <li><a href="#sec-insight">核心洞察与局限性</a></li>
+    <li><a href="#sec-summary">总结与未来展望</a></li>
+  </ol>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 1. MOTIVATION ========== -->
+<div class="section" id="sec-motivation">
+  <h2 class="section-title"><span class="num">1</span> 研究动机：调优器的适应性困境</h2>
+  <p class="section-desc">
+    数据库管理系统 (DBMS) 暴露了数万亿种可能的配置选项（旋钮、索引、查询提示），同时应用负载不断演变。
+    现有自动调优器虽然能针对固定工作负载找到优良配置，但在环境变化（负载漂移、跨 Schema 迁移）时却力不从心。
+  </p>
+
+  <div class="grid-2">
+    <div class="module-card">
+      <h3>刚性与脆弱性 (Rigidity &amp; Brittleness)</h3>
+      <p><strong>基于成本的调优器</strong>：缺乏将先验洞察注入搜索过程的机制——即便历史经验揭示了两个索引的不良交互，也无法优先排除它们。</p>
+      <p><strong>基于 ML 的调优器</strong>：环境变化导致内部模型表示损坏（如 Q1 不再存在），必须重新优化，而预训练因目标环境差异和重新评估开销过大而不可行。</p>
+    </div>
+    <div class="module-card">
+      <h3>工作负载粒度问题 (Workload Granularity)</h3>
+      <p>现有调优器在<em>工作负载级别</em>做适应性调整，使用负载级遥测来映射历史配置。但这种方式无法跨配置组合<em>单个查询的洞察</em>——例如 C1 优化了 Q1，C2 优化了 Q2，调优器无法将两者最佳方面组合起来。</p>
+      <p><strong>LLM 调优器</strong>同样忽视了按查询逐个增强提示的机会。</p>
+    </div>
+  </div>
+
+  <div class="highlight-box">
+    <strong>关键实验证据 (Fig.1)</strong>：在 Transfer (TPC-H → DSB) 和 Drift (DSB 50% 参数变化) 场景下，"Total Knowledge Remix"（完全重组历史知识）比"Continue From History"（从历史继续调优）发现性能提升 <strong>13%–74%</strong>。这揭示了历史知识中蕴藏的巨大潜力。
+  </div>
+
+  <div class="module-card">
+    <h3>LLM 适应性技术对比 (Fig.2)</h3>
+    <p>论文对比了四种 LLM 适应性技术：</p>
+    <table class="data-table">
+      <tr><th>技术</th><th>策略</th><th>DSB 运行时间</th><th>分析</th></tr>
+      <tr><td>WL-Prompt</td><td>工作负载级提示，不用历史</td><td>79s</td><td>最差，未利用历史经验</td></tr>
+      <tr><td>WL-FT</td><td>工作负载级微调</td><td>71s</td><td>改进有限，粒度太粗</td></tr>
+      <tr><td>Q-FT</td><td>查询级微调</td><td>69s</td><td>查询配置组合时冲突</td></tr>
+      <tr><td><strong>Enrich Q+Compose</strong></td><td>查询级增强提示 + 组合机制</td><td><strong>31s</strong></td><td><strong>最优，Booster 基础</strong></td></tr>
+    </table>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 2. OVERVIEW ========== -->
+<div class="section" id="sec-overview">
+  <h2 class="section-title"><span class="num">2</span> 框架概览：Booster 三阶段架构</h2>
+  <p class="section-desc">
+    Booster 作为现有调优器的"加速器"插件：分析历史制品仓库，将发现注入调优器，被注入的调优器进一步精炼配置并存回制品。
+  </p>
+
+  <!-- SVG Architecture Diagram -->
+  <div class="svg-container">
+    <svg viewBox="0 0 1100 420" xmlns="http://www.w3.org/2000/svg" style="font-family:'Noto Sans SC',system-ui,sans-serif;">
+      <!-- Background -->
+      <defs>
+        <linearGradient id="gPhase1" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#312e81"/><stop offset="100%" stop-color="#1e1b4b"/>
+        </linearGradient>
+        <linearGradient id="gPhase2" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#7c2d12"/><stop offset="100%" stop-color="#431407"/>
+        </linearGradient>
+        <linearGradient id="gPhase3" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#14532d"/><stop offset="100%" stop-color="#052e16"/>
+        </linearGradient>
+        <marker id="ah1" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+          <path d="M0,0 L8,3 L0,6" fill="#818cf8"/>
+        </marker>
+        <marker id="ah2" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+          <path d="M0,0 L8,3 L0,6" fill="#fb923c"/>
+        </marker>
+        <marker id="ah3" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+          <path d="M0,0 L8,3 L0,6" fill="#4ade80"/>
+        </marker>
+      </defs>
+
+      <!-- Phase I -->
+      <rect x="20" y="30" width="320" height="360" rx="16" fill="url(#gPhase1)" stroke="#818cf8" stroke-width="1.5"/>
+      <text x="180" y="65" fill="#818cf8" font-size="16" font-weight="700" text-anchor="middle">Phase I: 经验分析</text>
+      <rect x="40" y="85" width="280" height="55" rx="10" fill="#1e1b4b" stroke="#6366f1" stroke-width="1"/>
+      <text x="180" y="108" fill="#c7d2fe" font-size="13" text-anchor="middle">调优制品仓库 (Artifacts)</text>
+      <text x="180" y="126" fill="#818cf8" font-size="11" text-anchor="middle">轨迹 → 有趣配置 → QConfig</text>
+      <line x1="180" y1="140" x2="180" y2="165" stroke="#818cf8" stroke-width="1.5" marker-end="url(#ah1)" class="flow-arrow"/>
+      <rect x="40" y="170" width="280" height="55" rx="10" fill="#1e1b4b" stroke="#6366f1" stroke-width="1"/>
+      <text x="180" y="193" fill="#c7d2fe" font-size="13" text-anchor="middle">QConfig 构建 + 链接</text>
+      <text x="180" y="211" fill="#818cf8" font-size="11" text-anchor="middle">Schema + Plan + Config + Link</text>
+      <line x1="180" y1="225" x2="180" y2="250" stroke="#818cf8" stroke-width="1.5" marker-end="url(#ah1)" class="flow-arrow"/>
+      <rect x="40" y="255" width="280" height="55" rx="10" fill="#1e1b4b" stroke="#6366f1" stroke-width="1"/>
+      <text x="180" y="278" fill="#c7d2fe" font-size="13" text-anchor="middle">Schematic → Embedder → IVs</text>
+      <text x="180" y="296" fill="#818cf8" font-size="11" text-anchor="middle">Voyage 3 Large → 向量数据库</text>
+      <rect x="60" y="330" width="240" height="40" rx="8" fill="#1e1b4b" stroke="#6366f1" stroke-width="1" stroke-dasharray="4"/>
+      <text x="180" y="355" fill="#818cf8" font-size="12" text-anchor="middle">输出：向量数据库 (QConfig+IVs)</text>
+
+      <!-- Arrow Phase I → II -->
+      <line x1="340" y1="210" x2="385" y2="210" stroke="#818cf8" stroke-width="2" marker-end="url(#ah2)" class="flow-arrow"/>
+
+      <!-- Phase II -->
+      <rect x="390" y="30" width="320" height="360" rx="16" fill="url(#gPhase2)" stroke="#fb923c" stroke-width="1.5"/>
+      <text x="550" y="65" fill="#fb923c" font-size="16" font-weight="700" text-anchor="middle">Phase II: 引导推荐</text>
+      <rect x="410" y="85" width="280" height="55" rx="10" fill="#431407" stroke="#ea580c" stroke-width="1"/>
+      <text x="550" y="108" fill="#fed7aa" font-size="13" text-anchor="middle">目标查询 → Schematic → IVs</text>
+      <text x="550" y="126" fill="#fb923c" font-size="11" text-anchor="middle">与 Phase I 相同的 Embedder</text>
+      <line x1="550" y1="140" x2="550" y2="165" stroke="#fb923c" stroke-width="1.5" marker-end="url(#ah2)" class="flow-arrow"/>
+      <rect x="410" y="170" width="280" height="55" rx="10" fill="#431407" stroke="#ea580c" stroke-width="1"/>
+      <text x="550" y="193" fill="#fed7aa" font-size="13" text-anchor="middle">向量检索 + 链接追踪</text>
+      <text x="550" y="211" fill="#fb923c" font-size="11" text-anchor="middle">Top-k QConfig → 最优下游 QConfig</text>
+      <line x1="550" y1="225" x2="550" y2="250" stroke="#fb923c" stroke-width="1.5" marker-end="url(#ah2)" class="flow-arrow"/>
+      <rect x="410" y="255" width="280" height="55" rx="10" fill="#431407" stroke="#ea580c" stroke-width="1"/>
+      <text x="550" y="278" fill="#fed7aa" font-size="13" text-anchor="middle">LLM Prompt + 生成 + Sanitizer</text>
+      <text x="550" y="296" fill="#fb923c" font-size="11" text-anchor="middle">Llama 3.1 8B → JSON → 清洗 → Seeds</text>
+      <rect x="430" y="330" width="240" height="40" rx="8" fill="#431407" stroke="#ea580c" stroke-width="1" stroke-dasharray="4"/>
+      <text x="550" y="355" fill="#fb923c" font-size="12" text-anchor="middle">输出：每查询的 Seed 配置</text>
+
+      <!-- Arrow Phase II → III -->
+      <line x1="710" y1="210" x2="755" y2="210" stroke="#fb923c" stroke-width="2" marker-end="url(#ah3)" class="flow-arrow"/>
+
+      <!-- Phase III -->
+      <rect x="760" y="30" width="320" height="360" rx="16" fill="url(#gPhase3)" stroke="#4ade80" stroke-width="1.5"/>
+      <text x="920" y="65" fill="#4ade80" font-size="16" font-weight="700" text-anchor="middle">Phase III: 约束组合</text>
+      <rect x="780" y="85" width="280" height="55" rx="10" fill="#052e16" stroke="#16a34a" stroke-width="1"/>
+      <text x="920" y="108" fill="#bbf7d0" font-size="13" text-anchor="middle">Seed 排序</text>
+      <text x="920" y="126" fill="#4ade80" font-size="11" text-anchor="middle">实际执行 + 替代索引估计</text>
+      <line x1="920" y1="140" x2="920" y2="165" stroke="#4ade80" stroke-width="1.5" marker-end="url(#ah3)" class="flow-arrow"/>
+      <rect x="780" y="170" width="280" height="55" rx="10" fill="#052e16" stroke="#16a34a" stroke-width="1"/>
+      <text x="920" y="193" fill="#bbf7d0" font-size="13" text-anchor="middle">Beam Search 组合</text>
+      <text x="920" y="211" fill="#4ade80" font-size="11" text-anchor="middle">Merge → Select → Rollout (M1–M4)</text>
+      <line x1="920" y1="225" x2="920" y2="250" stroke="#4ade80" stroke-width="1.5" marker-end="url(#ah3)" class="flow-arrow"/>
+      <rect x="780" y="255" width="280" height="55" rx="10" fill="#052e16" stroke="#16a34a" stroke-width="1"/>
+      <text x="920" y="278" fill="#bbf7d0" font-size="13" text-anchor="middle">全局配置 → 注入调优器</text>
+      <text x="920" y="296" fill="#4ade80" font-size="11" text-anchor="middle">调优器继续精炼 → 更新制品仓库</text>
+      <rect x="800" y="330" width="240" height="40" rx="8" fill="#052e16" stroke="#16a34a" stroke-width="1" stroke-dasharray="4"/>
+      <text x="920" y="355" fill="#4ade80" font-size="12" text-anchor="middle">输出：全局最优配置 (Findings)</text>
+    </svg>
+  </div>
+  <p class="fc">图：Booster 三阶段架构流程图 — Phase I (紫) → Phase II (橙) → Phase III (绿)</p>
+
+  <div class="highlight-box">
+    <strong>核心思想</strong>：Booster 不替代现有调优器，而是<em>加速</em>其适应环境变化。它通过<strong>查询级</strong>（而非工作负载级）的洞察重混历史知识，实现了"Total Knowledge Remix"。
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 3. PHASE I ========== -->
+<div class="section" id="sec-phase1">
+  <h2 class="section-title"><span class="num">3</span> Phase I：经验分析 — QConfig 构建与向量化</h2>
+  <p class="section-desc">Booster 监控调优器的制品仓库，将非结构化的历史经验标准化为可搜索的 QConfig 对象，并向量化存入向量数据库。</p>
+
+  <div class="arch-card">
+    <h4>QConfig 数据结构</h4>
+    <p>每个 QConfig 封装了<strong>一个查询在某配置下的行为</strong>，包含：</p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;">
+      <div style="background:rgba(99,102,241,.08);padding:10px 14px;border-radius:8px;">
+        <strong style="color:#818cf8;">Schema 元数据</strong><br>
+        <span style="color:#8b949e;font-size:14px;">表名、列类型、统计信息、已有索引</span>
+      </div>
+      <div style="background:rgba(99,102,241,.08);padding:10px 14px;border-radius:8px;">
+        <strong style="color:#818cf8;">查询信息</strong><br>
+        <span style="color:#8b949e;font-size:14px;">SQL 文本 / 查询模板 / 执行计划</span>
+      </div>
+      <div style="background:rgba(99,102,241,.08);padding:10px 14px;border-radius:8px;">
+        <strong style="color:#818cf8;">配置信息</strong><br>
+        <span style="color:#8b949e;font-size:14px;">系统旋钮、索引、查询提示</span>
+      </div>
+      <div style="background:rgba(99,102,241,.08);padding:10px 14px;border-radius:8px;">
+        <strong style="color:#818cf8;">链接指针</strong><br>
+        <span style="color:#8b949e;font-size:14px;">指向同一查询的下一个 QConfig (Next)</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="arch-card">
+    <h4>Schematic 构建 — 多视角向量化</h4>
+    <p>每个 QConfig 生成多种 Schematic（文本表示），涵盖从高层到低层的查询语义：</p>
+    <table class="data-table">
+      <tr><th>Schematic 类型</th><th>Schema 部分</th><th>查询部分</th><th>变体</th></tr>
+      <tr><td>SQL 原文</td><td>Schema 元数据</td><td>SQL 文本</td><td>原始 / 匿名化</td></tr>
+      <tr><td>查询模板</td><td>Schema 元数据</td><td>参数化 SQL</td><td>原始 / 匿名化</td></tr>
+      <tr><td>执行计划</td><td>Schema 元数据</td><td>Plan 文本</td><td>原始 / 匿名化</td></tr>
+    </table>
+    <p style="margin-top:10px;">每种 Schematic 通过 <strong>Voyage 3 Large</strong> 嵌入模型生成一个 Identity Vector (IV)，共 6 个 IV（3 类型 × 2 变体）。</p>
+  </div>
+
+  <div class="info-box">
+    <strong>为什么需要链接？</strong> 最语义相似的 QConfig 往往来自同一查询在初始配置下的记录——但它不包含任何有用的调优指导。通过链接追踪到<em>最优下游 QConfig</em>，才能获取真正有价值的配置参考。
+  </div>
+
+  <div class="module-card">
+    <h3>Phase I 开销 (Table 1)</h3>
+    <table class="data-table">
+      <tr><th>调优器</th><th>DSB #QConfigs</th><th>TPC-H #QConfigs</th><th>JOB #QConfigs</th><th>最大嵌入成本</th></tr>
+      <tr><td>Proto-X</td><td>1,852</td><td>373</td><td>3,325</td><td>$4.5</td></tr>
+      <tr><td>P+DTA+AS</td><td>3,451</td><td>4662</td><td>4,628</td><td>$8.0</td></tr>
+      <tr><td>UniTune</td><td>185</td><td>94</td><td>791</td><td>$1.1</td></tr>
+      <tr><td>λ-Tune+AS</td><td>1,295</td><td>592</td><td>1,732</td><td>$2.8</td></tr>
+    </table>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 4. PHASE II ========== -->
+<div class="section" id="sec-phase2">
+  <h2 class="section-title"><span class="num">4</span> Phase II：引导推荐 — 检索 + LLM 生成 + Sanitizer</h2>
+  <p class="section-desc">当环境变化时，Booster 对工作负载中每个查询，从向量数据库检索相关历史经验，增强 LLM 提示词生成配置建议，再经 Sanitizer 清洗得到可行的查询 Seeds。</p>
+
+  <div class="step-flow">
+    <h4>Step 1: 查询向量化 + 相似检索</h4>
+    <p>对目标查询生成 Schematic 和 IVs（与 Phase I 相同流程），然后在向量数据库中按<strong>欧氏距离</strong>检索同类 Schematic 的最相似 QConfig。<strong>关键设计</strong>：仅在同类型 Schematic 间比较，避免跨类型误排。</p>
+  </div>
+
+  <div class="step-flow">
+    <h4>Step 2: 链接追踪 — 获取最优下游 QConfig</h4>
+    <p>从每个检索到的 QConfig 出发，沿链接追踪到<strong>最优下游 QConfig</strong>（运行时最短的那个）。这确保 LLM 参考的是历史中表现最好的配置，而非初始状态的"空"配置。</p>
+  </div>
+
+  <div class="step-flow">
+    <h4>Step 3: Prompt 增强 + LLM 推理</h4>
+    <p>将 top-k（默认 k=2）参考 QConfig 封装入提示词，指导 LLM 基于参考推理出目标查询的配置建议：</p>
+    <div class="prompt-box">
+<span class="prompt-label">Booster Prompt 模板</span>
+You are an experienced DBA asked to suggest possible configs for ${SYSTEM}.
+Your objective is to fill in the user requested parameters to optimize performance.
+These are the ranges of the system knobs set in the system.
+${SYSTEM_KNOB_RANGES}
+
+You are provided with several reference configurations from
+similar prior query runs. ${REFERENCES_FORMAT}
+Here are the references: ${REFERENCES}
+
+**Instruction**:
+1. Analyze the below **TARGET** query information.
+2. Remember that you are optimizing for ${SYSTEM}.
+3. Think carefully, consult references, and make suggestions.
+4. Output the requested information in valid *JSON*.
+
+**TARGET**: ${SCHEMATIC}
+**Output in JSON**: ${FORMAT}</div>
+    <p style="margin-top:8px;font-size:14px;color:#8b949e;">使用 <strong>Llama 3.1-8B-Instruct Q4-K-M</strong> 本地推理，温度 0，上下文 16384 tokens，最大输出 4096 tokens。</p>
+  </div>
+
+  <div class="step-flow">
+    <h4>Step 4: Sanitizer — 配置清洗与多样化</h4>
+    <p>LLM 的输出可能不完整、包含无效索引/参数或错误引用。Sanitizer 执行三步清洗：</p>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:10px;">
+      <div style="background:rgba(249,115,22,.06);padding:12px;border-radius:8px;border:1px solid rgba(249,115,22,.15);">
+        <strong style="color:#fb923c;">1. 初步列表构建</strong><br>
+        <span style="color:#8b949e;font-size:14px;">三来源：LLM 建议 + QConfig 参考 + 缺失参数填充</span>
+      </div>
+      <div style="background:rgba(249,115,22,.06);padding:12px;border-radius:8px;border:1px solid rgba(249,115,22,.15);">
+        <strong style="color:#fb923c;">2. 探索性扩展</strong><br>
+        <span style="color:#8b949e;font-size:14px;">基于谓词静态分析增强索引 + 旋钮排列产生多样化计划</span>
+      </div>
+      <div style="background:rgba(249,115,22,.06);padding:12px;border-radius:8px;border:1px solid rgba(249,115,22,.15);">
+        <strong style="color:#fb923c;">3. 去无效 + 精简</strong><br>
+        <span style="color:#8b949e;font-size:14px;">what-if 机制去除未用索引，泛化提示→具体化，保留唯一计划</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="module-card">
+    <h3>Phase II 开销</h3>
+    <table class="data-table">
+      <tr><th>工作负载</th><th>#查询</th><th>嵌入成本</th><th>LLM 运行时间</th><th>LLM 功耗</th><th>云推理估算</th></tr>
+      <tr><td>DSB</td><td>49</td><td>$0.08</td><td>~10 min</td><td>0.05 kWh</td><td>$0.01</td></tr>
+      <tr><td>TPC-H</td><td>22</td><td>$0.02</td><td>~3 min</td><td>0.02 kWh</td><td>$0.001</td></tr>
+      <tr><td>JOB</td><td>113</td><td>$0.15</td><td>~21 min</td><td>0.12 kWh</td><td>$0.01</td></tr>
+    </table>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 5. PHASE III ========== -->
+<div class="section" id="sec-phase3">
+  <h2 class="section-title"><span class="num">5</span> Phase III：约束组合 — 排序 + Beam Search</h2>
+  <p class="section-desc">将每个查询的 Seeds 组合为一个全局 (holistic) 配置，解决跨查询冲突，通过 Beam Search 探索最优组合。</p>
+
+  <div class="arch-card">
+    <h4>Seed 排序策略</h4>
+    <p>由于计划成本 (plan cost) 与计划质量不必然相关（尤其在查询提示干扰成本估计时），Booster 选择<strong>实际执行</strong>每个 Seed 来评估质量。</p>
+    <p style="margin-top:8px;"><strong>开销控制</strong>：构建替代索引 (alternate indexes) 覆盖原始索引，按计划成本递增顺序执行，配合逐查询超时策略。</p>
+  </div>
+
+  <div class="arch-card">
+    <h4>Beam Search 算法 (Algorithm 1)</h4>
+    <div class="code-block"><pre><span class="ck">Input:</span>  Query-Configs QC = {..., (q_i, [c_i1,...,c_ij])}
+<span class="ck">Output:</span> Target Configuration
+
+<span class="cs">1</span> seeds = {(q_i, best(c_i)) ∀(q_i, c_i) ∈ QC}     <span class="cg">// 每查询选最优 seed</span>
+<span class="cs">2</span> cand  = Merge(seeds)                                <span class="cg">// 合并为全局配置</span>
+<span class="cs">3</span> best  = Evaluate(cand)                              <span class="cg">// 评估并选最优</span>
+<span class="cs">4</span> <span class="cf">while</span> budget <span class="cf">not exhausted</span> <span class="cf">do</span>
+<span class="cs">5</span>   q_next    = Select(best)                          <span class="cg">// 选择待改进查询</span>
+<span class="cs">6</span>   alt_seeds = Rollout(q_next, best, QC)             <span class="cg">// 生成替代 seeds</span>
+<span class="cs">7</span>   cand  = Merge(best, q_next, alt_seeds)            <span class="cg">// 重新组合</span>
+<span class="cs">8</span>   best  = Evaluate(cand)
+<span class="cs">9</span> <span class="cf">end while</span>
+<span class="cs">10</span> Return best</pre></div>
+  </div>
+
+  <div class="grid-2">
+    <div class="step-flow">
+      <h4>Merge（合并）</h4>
+      <p>系统旋钮：取 Seeds 的最小/中位数/最大值生成多组配置。<br>物理设计：取索引并集，去除重复。<br>利用 DBMS 缓存消除相同计划调用。</p>
+    </div>
+    <div class="step-flow">
+      <h4>Select（选择）</h4>
+      <p>优先修复合并后退化的查询（冲突），然后贪心选择运行时间最长的查询来改进。通过查询无关配置追踪避免重复选择。</p>
+    </div>
+  </div>
+
+  <div class="module-card">
+    <h3>Rollout — 四种约束探索机制</h3>
+    <div class="grid-2" style="margin-top:10px;">
+      <div class="comp-card">
+        <h4>M1: 查询旋钮排列</h4>
+        <p>排列 Seed 的查询旋钮（如关闭排序、强制 NL Join），产生多样化计划。</p>
+      </div>
+      <div class="comp-card">
+        <h4>M2: 计划修复</h4>
+        <p>对比 Seed 独立计划 vs 全局配置下的计划，通过修改查询提示恢复/消除差异节点。</p>
+      </div>
+      <div class="comp-card">
+        <h4>M3: 隐藏索引</h4>
+        <p>移除 Seed 已使用的索引，探索替代高效计划（索引集组合可能损害成本优化器）。</p>
+      </div>
+      <div class="comp-card">
+        <h4>M4: 排名 Seeds</h4>
+        <p>选择估计运行时间小于当前 Seed 的其他排名 Seeds。</p>
+      </div>
+    </div>
+    <div class="info-box" style="margin-top:12px;">
+      <strong>5 步 Rollout 策略</strong>：Local (M1,M2) → 25% Seed (M3,M4) → 50% Seed → 75% Seed → 100% Seed。逐步扩大探索范围，若早期发现优良配置则避免后续次优 Seeds。
+    </div>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 6. INTEGRATION ========== -->
+<div class="section" id="sec-integration">
+  <h2 class="section-title"><span class="num">6</span> 集成机制：Parse / Link / Digest</h2>
+  <p class="section-desc">Booster 与具体调优器解耦，通过三个 API 命令实现即插即用。</p>
+
+  <div class="grid-3">
+    <div class="arch-card">
+      <h4>Parse（解析）</h4>
+      <p>将不同格式的调优器制品统一解析为 QConfig。协调调优器支持的调优项与 Booster 推理范围的差异（如全局 vs 逐表访问方法粒度）。</p>
+    </div>
+    <div class="arch-card">
+      <h4>Link（链接）</h4>
+      <p>定义 QConfig 间的链接关系。默认基于调优轨迹的时间顺序：C1 → C2 当 C2 从 C1 探索得到。</p>
+    </div>
+    <div class="arch-card">
+      <h4>Digest（消化）</h4>
+      <p>将 Booster 的发现注入调优器继续精炼。默认暴露最优全局配置，未来可扩展暴露探索过的配置或指导调优焦点。</p>
+    </div>
+  </div>
+
+  <div class="info-box">
+    <strong>部署要求</strong>：操作员需提供离线环境（安全探索）+ Embedder/Prompter LLM 的 API 或本地 GPU。启动新调优会话时先调用 Booster，再运行调优器，最后让 Booster 分析新制品。
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 7. EXPERIMENT ========== -->
+<div class="section" id="sec-experiment">
+  <h2 class="section-title"><span class="num">7</span> 实验评估：七大场景全覆盖</h2>
+  <p class="section-desc">在 PostgreSQL v15.1 上评估 Booster 协助四种 SOTA 调优器在七大环境变化场景下的表现。</p>
+
+  <div class="module-card">
+    <h3>实验配置</h3>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div>
+        <div class="kv-row"><span class="kv-key">硬件</span><span class="kv-val">2× Intel Xeon Gold 5218R (20核), 960GB NVMe SSD</span></div>
+        <div class="kv-row"><span class="kv-key">DBMS 限制</span><span class="kv-val">32GB RAM, 20 worker</span></div>
+        <div class="kv-row"><span class="kv-key">LLM 本地</span><span class="kv-val">RTX 3080 (10GB), Llama 3.1-8B Q4-K-M</span></div>
+        <div class="kv-row"><span class="kv-key">Embedder</span><span class="kv-val">Voyage 3 Large (API)</span></div>
+      </div>
+      <div>
+        <div class="kv-row"><span class="kv-key">调优时间</span><span class="kv-val">每个调优器 12hr × 4 trials</span></div>
+        <div class="kv-row"><span class="kv-key">Booster Phase III</span><span class="kv-val">1.5hr Beam Search</span></div>
+        <div class="kv-row"><span class="kv-key">评估方式</span><span class="kv-val">warm cache, 无超时, 95% 置信区间</span></div>
+        <div class="kv-row"><span class="kv-key">对比基线</span><span class="kv-val">Scratch / Continue From History / Booster</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <div class="module-card">
+      <h3>四个被辅助的调优器</h3>
+      <table class="data-table">
+        <tr><th>调优器</th><th>类型</th><th>调优范围</th></tr>
+        <tr><td>P+DTA+AS</td><td>成本+启发式</td><td>旋钮 + 索引 + 查询旋钮</td></tr>
+        <tr><td>UniTune</td><td>ML (整体)</td><td>旋钮 + 索引 + 有限查询重写</td></tr>
+        <tr><td>Proto-X</td><td>ML (整体)</td><td>旋钮 + 索引 + 查询选项 + CTE</td></tr>
+        <tr><td>λ-Tune+AS</td><td>LLM + 启发式</td><td>工作负载级分析 + GPT-4o + 查询旋钮</td></tr>
+      </table>
+    </div>
+    <div class="module-card">
+      <h3>三个 OLAP 基准</h3>
+      <table class="data-table">
+        <tr><th>基准</th><th>大小</th><th>表数</th><th>查询数</th></tr>
+        <tr><td>JOB</td><td>6.7 GB</td><td>21</td><td>113</td></tr>
+        <tr><td>TPC-H SF10</td><td>14.3 GB</td><td>8</td><td>22</td></tr>
+        <tr><td>DSB SF10</td><td>22.5 GB</td><td>25</td><td>49</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <!-- Scenario results -->
+  <div class="module-card">
+    <h3>场景 1: Exact Transfer（同一工作负载，从历史继续）</h3>
+    <p>Continue From History 策略大多无效（P+DTA+AS 和 λ-Tune+AS 无改善，UniTune 仅 3–4%）。Booster 则带来显著提升：</p>
+    <table class="data-table">
+      <tr><th>调优器</th><th>vs Scratch</th><th>vs Continue</th><th>备注</th></tr>
+      <tr><td>Proto-X</td><td>16–51%</td><td>显著</td><td>JOB 上 Continue 33% 提升，Booster 更优</td></tr>
+      <tr><td>P+DTA+AS</td><td>22–40%</td><td>显著</td><td>Continue 无改善</td></tr>
+      <tr><td>UniTune</td><td>49–62%</td><td>显著</td><td>Continue 仅 3–4%</td></tr>
+      <tr><td>λ-Tune+AS</td><td>34–50%</td><td>显著</td><td>Continue 无改善</td></tr>
+    </table>
+  </div>
+
+  <div class="grid-2">
+    <div class="module-card">
+      <h3>场景 2: Parameter Drift（参数漂移）</h3>
+      <p>DSB 工作负载 25%–100% 查询参数变化：</p>
+      <ul style="color:#8b949e;font-size:14px;padding-left:18px;line-height:2;">
+        <li>Proto-X: 23–27% 提升</li>
+        <li>P+DTA+AS: 31% 提升</li>
+        <li>UniTune: 42–64% 提升</li>
+        <li>λ-Tune+AS: 24–31% 提升</li>
+        <li>速度提升: 最高 3.6×</li>
+      </ul>
+    </div>
+    <div class="module-card">
+      <h3>场景 3: Template Drift（模板漂移）</h3>
+      <p>TPC-DS 模板替换 DSB 25%–100%：</p>
+      <ul style="color:#8b949e;font-size:14px;padding-left:18px;line-height:2;">
+        <li>Proto-X: 12–30% 提升, 最高 4.7× 快</li>
+        <li>P+DTA+AS: 24% 提升, 3.4× 快</li>
+        <li>UniTune: 52–63% 提升, 2.7× 快</li>
+        <li>λ-Tune+AS: 26–39% 提升</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <div class="module-card">
+      <h3>场景 4: Machine Transfer（硬件迁移）</h3>
+      <p>从高性能服务器迁移到弱服务器/桌面机：</p>
+      <ul style="color:#8b949e;font-size:14px;padding-left:18px;line-height:2;">
+        <li>Proto-X: 31–32% 提升, 3.1× 快</li>
+        <li>UniTune: 61–62% 提升, 2.2× 快</li>
+      </ul>
+    </div>
+    <div class="module-card">
+      <h3>场景 5: Dataset Growth（数据集增长）</h3>
+      <p>DSB SF1→10, SF1→20, SF10→20：</p>
+      <ul style="color:#8b949e;font-size:14px;padding-left:18px;line-height:2;">
+        <li>UniTune: 53–63% 提升</li>
+        <li>Proto-X: 6–29% 提升（SF1→SF20 较弱，因过拟合）</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="module-card">
+    <h3>场景 6: Cross-Schema Transfer（跨 Schema 迁移）</h3>
+    <p>使用其他基准的历史制品加速目标基准调优。Continue From History 等同于 Scratch（Schema 不同无法直接迁移配置）：</p>
+    <table class="data-table">
+      <tr><th>调优器</th><th>vs Scratch (最佳源)</th><th>关键发现</th></tr>
+      <tr><td>Proto-X</td><td>14–44%</td><td rowspan="4">无单一基准占优；Booster 利用多样化制品跨 Schema 加速</td></tr>
+      <tr><td>P+DTA+AS</td><td>15–33%</td></tr>
+      <tr><td>UniTune</td><td>51–74%</td></tr>
+      <tr><td>λ-Tune+AS</td><td>29–56%</td></tr>
+    </table>
+  </div>
+
+  <div class="highlight-box">
+    <strong>核心结论</strong>：Booster 在所有场景下均优于 Continue From History，性能提升最高 <strong>74%</strong>，速度提升最高 <strong>4.7×</strong>。即使是跨 Schema 迁移这种最困难的场景，Booster 仍能显著加速调优器。
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 8. SENSITIVITY ========== -->
+<div class="section" id="sec-sensitivity">
+  <h2 class="section-title"><span class="num">8</span> 敏感性分析：六大消融实验</h2>
+
+  <div class="grid-2">
+    <div class="module-card">
+      <h3>8.1 微调 vs 提示增强 (Fig.14)</h3>
+      <p>对比 FT-8192、FT-16384、FT-Q 与 Booster 的提示增强方法。在三种场景下，<strong>微调均不如提示增强</strong>——上下文截断限制了学习范围，查询配置组合时冲突。</p>
+    </div>
+    <div class="module-card">
+      <h3>8.2 查询旋钮排列策略 (Fig.15)</h3>
+      <p>Exact 场景下策略无影响（1:1 映射），漂移场景下 JoinTypes/AccessMethods/Sort 策略均优于 None。<strong>All 策略最优</strong>，充分利用所有多样化计划机会。</p>
+    </div>
+    <div class="module-card">
+      <h3>8.3 搜索时间 (Fig.16)</h3>
+      <p>更多搜索时间 → 更好配置，但收益递减。Exact 场景 1.5hr 后稳定，漂移场景持续微改善。<strong>默认 1.5hr 是合理的折中</strong>。</p>
+    </div>
+    <div class="module-card">
+      <h3>8.4 Embedder-Prompter 模型 (Fig.17)</h3>
+      <p>在跨 Schema 场景下模型选择影响最大（差异约 17s）。更大 Prompter (o3-mini) 比 Qwen3-1.7B 好 32%，但成本更高。简单场景无需大型模型。</p>
+    </div>
+    <div class="module-card">
+      <h3>8.5 Rollout 策略 (Fig.18)</h3>
+      <p>M2(计划修复)和 M3(隐藏索引)单独效果有限；M1(旋钮排列)和 M4(排名 Seeds)更有效。<strong>All 组合最优</strong>。Template Drift 下查询局部变化 (M1,M2) 优于物理变化 (M3,M4)。</p>
+    </div>
+    <div class="module-card">
+      <h3>8.6 输入数据量 (Fig.19)</h3>
+      <p>4-Input 通常优于 1-Input（更广查询洞察范围），但 λ-Tune+AS 例外（1-Input 提供更多样化查询模板参考）。<strong>更多数据不总是更好</strong>，取决于制品多样性。</p>
+    </div>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 9. INSIGHT ========== -->
+<div class="section" id="sec-insight">
+  <h2 class="section-title"><span class="num">9</span> 核心洞察与局限性</h2>
+
+  <div class="insight-box">
+    <h4>洞察 1: 查询粒度是关键</h4>
+    <p>工作负载级适应无法组合不同配置的最佳方面。Booster 证明了按查询推理 + 组合的范式能释放历史知识的全部潜力，实现 "Total Knowledge Remix"。</p>
+  </div>
+  <div class="insight-box">
+    <h4>洞察 2: LLM 是推理引擎而非知识库</h4>
+    <p>Booster 不依赖 LLM 的预训练知识来生成配置，而是将其作为<strong>推理引擎</strong>——在精心策划的历史参考上进行推理。这解释了为何提示增强远优于微调。</p>
+  </div>
+  <div class="insight-box">
+    <h4>洞察 3: 链接追踪是检索的灵魂</h4>
+    <p>最相似的 QConfig 往往不含调优指导，沿链接追踪到最优下游 QConfig 是关键创新。这一设计将 RAG 的"检索-增强"范式从静态片段提升为动态经验链。</p>
+  </div>
+  <div class="insight-box">
+    <h4>洞察 4: 约束探索弥补 LLM 局限</h4>
+    <p>LLM 可能生成局部次优配置。Booster 的 Sanitizer 和 Rollout 机制 (M1–M4) 通过系统性探索弥补这一不足，在 LLM 建议邻域中发现更优方案。</p>
+  </div>
+
+  <div class="limit-box">
+    <h4>局限性 1: 历史过拟合</h4>
+    <p>当 Proto-X 过拟合 SF1 配置（如关闭哈希聚合、忽略覆盖索引）时，Booster 被困于局部最优。论文坦承需要调优器同时考虑稳定性和泛化性目标。</p>
+  </div>
+  <div class="limit-box">
+    <h4>局限性 2: 仅验证 OLAP</h4>
+    <p>所有实验仅覆盖 OLAP 工作负载，OLTP 场景下的效果未验证。</p>
+  </div>
+  <div class="limit-box">
+    <h4>局限性 3: 仅验证 PostgreSQL</h4>
+    <p>所有实验在单一 DBMS 上进行，跨数据库系统的泛化能力未知。</p>
+  </div>
+  <div class="limit-box">
+    <h4>局限性 4: 何时调用 Booster</h4>
+    <p>依赖操作员判断何时触发 Booster，缺乏自动化的成本-收益平衡机制。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 10. SUMMARY ========== -->
+<div class="section" id="sec-summary">
+  <h2 class="section-title"><span class="num">10</span> 总结与未来展望</h2>
+
+  <div class="module-card">
+    <h3>核心贡献</h3>
+    <ol style="color:#8b949e;line-height:2.2;padding-left:20px;">
+      <li>提出 <strong>Booster 框架</strong>，通过查询级洞察重混历史知识，辅助现有调优器适应环境变化</li>
+      <li>设计 <strong>QConfig + Schematic + IV</strong> 体系，将非结构化调优经验标准化为可搜索的向量表示</li>
+      <li>创新性地使用 <strong>链接追踪</strong>机制，从最相似 QConfig 获取最优下游配置作为 LLM 参考</li>
+      <li>设计 <strong>Sanitizer + Beam Search + 四种 Rollout 机制</strong>，系统性地组合查询级 Seeds 为全局配置</li>
+      <li>在 <strong>7 大场景 × 4 种调优器</strong> 上全面验证，最高 74% 性能提升和 4.7× 速度提升</li>
+    </ol>
+  </div>
+
+  <div class="module-card">
+    <h3>未来方向</h3>
+    <ul style="color:#8b949e;line-height:2.2;padding-left:20px;">
+      <li>构建考虑<strong>稳定性和泛化性</strong>目标的调优器（避免过拟合）</li>
+      <li>开发自动化决定<strong>何时调用 Booster</strong>的机制</li>
+      <li>基于查询动态选择<strong>最优 QConfig 数量</strong>来增强提示</li>
+      <li>基于泛化性和成本需求<strong>选择最优 LLM</strong></li>
+      <li>扩展至<strong>OLTP 工作负载</strong>和<strong>多 DBMS</strong>场景</li>
+      <li>支持 Digest 暴露更多制品（如探索过的配置、调优焦点指导）</li>
+    </ul>
+  </div>
+
+  <div class="highlight-box">
+    <strong>一句话总结</strong>：Booster 证明了 LLM 不必替代调优器——当作为"经验推理引擎"与查询级检索增强和约束组合结合时，LLM 能解锁历史知识中隐藏的巨大潜力，让现有调优器在环境变化时更快找到更好的配置。
+  </div>
+
+  <!-- Q&A -->
+  <h3 style="color:#e6edf3;margin:30px 0 16px;font-size:1.2rem;">深度问答</h3>
+
+  <div class="qa-card">
+    <div class="qa-q">Q1: 为什么 Booster 选择提示增强而非微调？</div>
+    <div class="qa-a">
+      两个原因：(1) 微调需要截断上下文到固定长度（8192/16384 tokens），限制了 LLM 能学习的查询范围；(2) 即使采用查询级微调 (FT-Q)，不同查询的配置在组合为全局配置时会发生冲突。而提示增强允许 LLM 在推理时参考精心策划的历史经验，通过 Sanitizer 和 Beam Search 系统性地解决组合冲突。实验表明提示增强在所有场景下均优于微调。
+    </div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-q">Q2: 链接追踪 (Link Following) 为什么重要？</div>
+    <div class="qa-a">
+      向量检索返回的最相似 QConfig 往往来自同一查询在初始（如 stock）配置下的记录——这个 QConfig 不包含任何调优指导（没有有用的旋钮设置、没有推荐的索引）。沿链接追踪到最优下游 QConfig，才能获取调优器经过多轮探索后发现的真正有效的配置。这一设计将检索范式从"找最相似的状态"升级为"找最相似状态下最好的调优结果"。
+    </div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-q">Q3: Booster 如何处理跨 Schema 迁移中的查询匹配？</div>
+    <div class="qa-a">
+      关键在于<em>匿名化 Schematic</em>。Booster 不仅使用原始 SQL/Plan，还生成匿名化版本（表名、列名替换为占位符），这样不同 Schema 中结构相似的查询（如两个多表 JOIN 聚合查询）即使表名不同，其匿名化后的表示也会在向量空间中相近，从而实现跨 Schema 的语义匹配。
+    </div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-q">Q4: Booster 为什么选择小型本地 LLM 而非 GPT-4？</div>
+    <div class="qa-a">
+      主要出于成本和部署考量：(1) 查询级提示需要为每个查询调用 LLM（49–113 次），使用 GPT-4 成本高昂；(2) Booster 依赖离线环境安全探索，本地 LLM 无需网络传输敏感数据；(3) 实验表明 Llama 3.1-8B 已能配合检索增强产生有效建议，Sanitizer 和 Beam Search 弥补了 LLM 输出的不足。敏感性实验也显示在简单场景下小型模型已足够，仅在跨 Schema 场景才需要更大型模型。
+    </div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-q">Q5: Beam Search 的四种 Rollout 机制各自解决什么问题？</div>
+    <div class="qa-a">
+      <strong>M1 (查询旋钮排列)</strong>：解决 LLM 可能遗漏有效计划变体的问题，通过系统性排列产生多样化候选。<br>
+      <strong>M2 (计划修复)</strong>：解决合并为全局配置后查询计划偏离独立 Seed 的问题，通过修改查询提示恢复原计划。<br>
+      <strong>M3 (隐藏索引)</strong>：解决索引集组合损害成本优化器判断的问题，通过移除已用索引探索替代路径。<br>
+      <strong>M4 (排名 Seeds)</strong>：解决仅使用最优 Seed 可能错过更好组合的问题，引入其他低运行时间 Seeds。<br>
+      四者互补，All 组合下效果最佳。
+    </div>
+  </div>
+</div>
+
+<div class="footer">
+  <p>Booster 论文深度解读 &nbsp;|&nbsp; William Zhang, Wan Shen Lim, Andrew Pavlo &nbsp;|&nbsp; CMU &nbsp;|&nbsp; SIGMOD 2026</p>
+  <p style="margin-top:6px;">本解读由 AI 生成，仅供学术参考</p>
+</div>
+
+</div><!-- /container -->
+
+<script src="theme.js"></script>
+</body>
+</html>

@@ -1,0 +1,1440 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>深度解读 — Emulating RAG via Prompt Engineering</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{
+  font-family:'Noto Sans SC',system-ui,-apple-system,sans-serif;
+  background:#0d1117;color:#c9d1d9;
+  line-height:1.8;font-size:16px;
+  min-height:100vh;
+}
+.container{
+  max-width:1400px;margin:0 auto;padding:0 24px;
+  background:#0d1117;position:relative;
+}
+/* ---------- back btn ---------- */
+.back-btn{
+  position:fixed;top:16px;left:16px;z-index:9999;
+  background:rgba(20,20,35,.75);color:#c9d1d9;
+  border:1px solid rgba(255,255,255,.15);border-radius:10px;
+  padding:8px 16px;font-size:14px;cursor:pointer;
+  backdrop-filter:blur(6px);transition:all .3s;
+  text-decoration:none;display:flex;align-items:center;gap:6px;
+}
+.back-btn:hover{background:rgba(30,30,55,.9);border-color:rgba(255,255,255,.3);}
+/* ---------- hero ---------- */
+.hero{padding:80px 0 40px;text-align:center;}
+.hero-title{
+  font-size:2.4rem;font-weight:700;
+  background:linear-gradient(135deg,#0cebeb,#20e3b2,#29ffc6);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  background-clip:text;margin-bottom:12px;line-height:1.3;
+}
+.hero-sub{font-size:1.1rem;color:#8b949e;margin-bottom:8px;}
+.venue{font-size:.95rem;color:#8b949e;margin-top:8px;}
+.venue a{color:#0cebeb;text-decoration:none;}
+.venue a:hover{text-decoration:underline;}
+/* ---------- tags ---------- */
+.tag-row{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:16px;}
+.tag{
+  display:inline-block;padding:4px 14px;border-radius:20px;font-size:.85rem;
+  border:1px solid rgba(12,235,235,.3);color:#0cebeb;
+  background:rgba(12,235,235,.06);
+}
+/* ---------- divider ---------- */
+.divider{
+  border:none;border-top:1px solid rgba(255,255,255,.08);
+  margin:48px 0;
+}
+/* ---------- section ---------- */
+.section{margin:40px 0;}
+.section-title{
+  font-size:1.75rem;font-weight:700;margin-bottom:20px;
+  color:#e6edf3;display:flex;align-items:center;gap:10px;
+}
+.section-title .num{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:36px;height:36px;border-radius:50%;
+  background:linear-gradient(135deg,#0cebeb,#20e3b2);
+  color:#0d1117;font-size:1rem;font-weight:700;flex-shrink:0;
+}
+.section-desc{font-size:16px;line-height:1.9;color:#c9d1d9;margin-bottom:16px;}
+/* ---------- TOC ---------- */
+.toc{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:16px;padding:28px 36px;margin:30px 0;
+}
+.toc h3{font-size:1.2rem;color:#e6edf3;margin-bottom:14px;}
+.toc ol{list-style:none;counter-reset:toc;padding:0;}
+.toc li{counter-increment:toc;margin:8px 0;}
+.toc li::before{content:counter(toc) ".";color:#0cebeb;font-weight:600;margin-right:8px;}
+.toc a{color:#8b949e;text-decoration:none;transition:color .2s;}
+.toc a:hover{color:#0cebeb;}
+/* ---------- module card ---------- */
+.module-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:24px;margin:18px 0;transition:all .3s;
+}
+.module-card:hover{border-color:rgba(12,235,235,.3);transform:translateY(-2px);}
+.module-card h3{
+  font-size:1.15rem;font-weight:600;margin-bottom:10px;
+  color:#0cebeb;
+}
+.module-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+/* ---------- arch card ---------- */
+.arch-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:22px;margin:14px 0;transition:all .3s;
+}
+.arch-card:hover{border-color:rgba(12,235,235,.3);}
+.arch-card h4{font-size:1.05rem;font-weight:600;color:#20e3b2;margin-bottom:8px;}
+.arch-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+/* ---------- step flow ---------- */
+.step-flow{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:22px;margin:14px 0;
+}
+.step-flow h4{font-size:1.05rem;font-weight:600;color:#0cebeb;margin-bottom:8px;}
+.step-flow p{font-size:15px;line-height:1.8;color:#8b949e;}
+/* ---------- data table ---------- */
+.data-table{
+  width:100%;border-collapse:collapse;margin:18px 0;
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;overflow:hidden;font-size:14px;
+}
+.data-table th{
+  background:rgba(12,235,235,.1);color:#0cebeb;
+  padding:12px 16px;text-align:left;font-weight:600;
+}
+.data-table td{
+  padding:10px 16px;border-top:1px solid rgba(255,255,255,.06);
+  color:#c9d1d9;
+}
+.data-table tr:hover td{background:rgba(12,235,235,.04);}
+/* ---------- formula box ---------- */
+.formula-box{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;padding:20px 24px;margin:16px 0;
+  font-size:18px;text-align:center;color:#e6edf3;
+  font-family:'JetBrains Mono',monospace;
+}
+/* ---------- code block ---------- */
+.code-block{
+  background:rgba(20,20,35,.8);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;padding:18px 22px;margin:16px 0;
+  overflow-x:auto;
+}
+.code-block pre{
+  font-family:'JetBrains Mono',monospace;font-size:14px;
+  line-height:1.7;color:#c9d1d9;white-space:pre;
+}
+.ck{color:#0cebeb;}.cs{color:#f0883e;}.cf{color:#d2a8ff;}.cg{color:#8b949e;}.cv{color:#79c0ff;}
+/* ---------- Q&A ---------- */
+.qa-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:24px;margin:16px 0;
+}
+.qa-q{font-size:1.05rem;font-weight:600;color:#0cebeb;margin-bottom:12px;}
+.qa-a{font-size:15px;line-height:1.9;color:#8b949e;}
+/* ---------- highlight / warn / info boxes ---------- */
+.highlight-box{
+  background:rgba(12,235,235,.06);border:1px solid rgba(12,235,235,.2);
+  border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;
+}
+.warn-box{
+  background:rgba(240,136,62,.08);border:1px solid rgba(240,136,62,.25);
+  border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;
+}
+.info-box{
+  background:rgba(12,235,235,.06);border:1px solid rgba(12,235,235,.2);
+  border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;
+}
+/* ---------- prompt box ---------- */
+.prompt-box{
+  background:rgba(20,20,35,.8);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;padding:18px 22px;margin:16px 0;
+  font-family:'JetBrains Mono',monospace;font-size:14px;
+  line-height:1.7;color:#c9d1d9;white-space:pre-wrap;
+}
+.prompt-label{
+  display:inline-block;padding:2px 10px;border-radius:6px;
+  font-size:.85rem;font-weight:600;margin-bottom:8px;
+  background:rgba(12,235,235,.15);color:#0cebeb;
+}
+/* ---------- paper figure ---------- */
+.paper-figure{
+  background:rgba(20,20,35,.4);border:1px solid rgba(255,255,255,.06);
+  border-radius:14px;padding:16px;margin:18px 0;text-align:center;
+}
+.paper-figure img{max-width:100%;border-radius:10px;}
+/* ---------- fig caption ---------- */
+.fc{
+  font-size:14px;color:#8b949e;text-align:center;
+  margin:10px 0;line-height:1.6;
+}
+/* ---------- comparison card ---------- */
+.comp-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:22px;margin:14px 0;transition:all .3s;
+}
+.comp-card:hover{border-color:rgba(12,235,235,.3);}
+.comp-card h4{font-size:1.05rem;font-weight:600;color:#20e3b2;margin-bottom:8px;}
+.comp-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+/* ---------- insight / limit box ---------- */
+.insight-box{
+  background:rgba(12,235,235,.06);border:1px solid rgba(12,235,235,.2);
+  border-radius:12px;padding:18px 22px;margin:16px 0;
+}
+.insight-box h4{color:#0cebeb;font-size:1.05rem;margin-bottom:8px;}
+.insight-box p{font-size:15px;line-height:1.8;color:#c9d1d9;}
+.limit-box{
+  background:rgba(240,136,62,.08);border:1px solid rgba(240,136,62,.25);
+  border-radius:12px;padding:18px 22px;margin:16px 0;
+}
+.limit-box h4{color:#f0883e;font-size:1.05rem;margin-bottom:8px;}
+.limit-box p{font-size:15px;line-height:1.8;color:#c9d1d9;}
+/* ---------- kv row ---------- */
+.kv-row{
+  display:flex;gap:12px;padding:8px 0;
+  border-bottom:1px solid rgba(255,255,255,.05);
+}
+.kv-key{color:#8b949e;min-width:120px;font-weight:500;}
+.kv-val{color:#e6edf3;}
+/* ---------- footer ---------- */
+.footer{
+  text-align:center;padding:40px 0;color:#8b949e;font-size:.9rem;
+  border-top:1px solid rgba(255,255,255,.06);margin-top:60px;
+}
+/* ---------- SVG wrap ---------- */
+.svg-wrap{
+  background:rgba(20,20,35,.4);border:1px solid rgba(255,255,255,.06);
+  border-radius:14px;padding:20px;margin:20px 0;overflow-x:auto;
+}
+.svg-wrap svg{width:100%;height:auto;display:block;}
+/* ---------- responsive ---------- */
+@media(max-width:768px){
+  .hero-title{font-size:1.6rem;}
+  .section-title{font-size:1.3rem;}
+  .container{padding:0 14px;}
+  .toc{padding:18px 22px;}
+  .data-table{font-size:13px;}
+  .data-table th,.data-table td{padding:8px 10px;}
+}
+</style>
+</head>
+<body>
+<div class="container">
+
+<a href="index.html" class="back-btn">← 返回主页</a>
+
+<!-- ====== HERO ====== -->
+<section class="hero">
+  <h1 class="hero-title">Emulating RAG via Prompt Engineering</h1>
+  <p class="hero-sub">通过提示工程模拟检索增强生成，增强大语言模型的长上下文理解能力</p>
+  <p class="venue">
+    <span>📄 Preprint 2025</span> &nbsp;|&nbsp;
+    <a href="https://arxiv.org/abs/2502.12462" target="_blank">arXiv: 2502.12462</a>
+  </p>
+  <div class="tag-row">
+    <span class="tag">Prompt Engineering</span>
+    <span class="tag">RAG Emulation</span>
+    <span class="tag">Long Context</span>
+    <span class="tag">Chain-of-Thought</span>
+    <span class="tag">Multi-Hop Reasoning</span>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- ====== ★ 整体架构总览 ====== -->
+<section class="section">
+  <h2 class="section-title"><span class="num">★</span> 整体架构总览</h2>
+  <p class="section-desc">
+    本文提出了一种<strong>单次前向传播</strong>（single-pass）的方法，让 LLM 同时扮演"检索器"和"推理器"两个角色——通过精心设计的提示词，引导模型在长文本中标记相关片段、提取关键信息、执行多跳推理并生成最终答案，整个过程无需调用任何外部检索系统。方法的四步流水线如下：
+  </p>
+
+  <!-- SVG 架构总览图 -->
+  <div class="svg-wrap">
+    <svg viewBox="0 0 1200 420" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="g1" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#0cebeb"/><stop offset="100%" stop-color="#20e3b2"/>
+        </linearGradient>
+        <linearGradient id="g2" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#20e3b2"/><stop offset="100%" stop-color="#29ffc6"/>
+        </linearGradient>
+        <filter id="sh"><feDropShadow dx="0" dy="3" stdDeviation="5" flood-color="#000" flood-opacity=".35"/></filter>
+        <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 1 L 9 5 L 0 9 z" fill="#0cebeb"/>
+        </marker>
+      </defs>
+
+      <!-- Step 1 -->
+      <rect x="30" y="60" width="250" height="300" rx="16" fill="#0d1520" stroke="#0cebeb" stroke-width="1.5" filter="url(#sh)"/>
+      <rect x="30" y="60" width="250" height="48" rx="16" fill="url(#g1)"/>
+      <text x="155" y="90" text-anchor="middle" fill="#0d1117" font-size="15" font-weight="700">Step 1 · 标记相关片段</text>
+      <text x="155" y="90" text-anchor="middle" fill="#0d1117" font-size="11" dy="16">Tagging / Relevance Detection</text>
+      <text x="50" y="140" fill="#8b949e" font-size="12">输入：长文本 + 问题</text>
+      <text x="50" y="162" fill="#c9d1d9" font-size="12">模型扫描全文，定位与</text>
+      <text x="50" y="180" fill="#c9d1d9" font-size="12">问题相关的句子/段落</text>
+      <rect x="50" y="200" width="210" height="56" rx="8" fill="#111118" stroke="#20e3b2" stroke-width="1"/>
+      <text x="155" y="222" text-anchor="middle" fill="#0cebeb" font-size="11" font-family="JetBrains Mono,monospace">&lt;relevant_section&gt;</text>
+      <text x="155" y="240" text-anchor="middle" fill="#20e3b2" font-size="11" font-family="JetBrains Mono,monospace">position="12.3%"</text>
+      <text x="50" y="290" fill="#8b949e" font-size="11">→ 模拟检索器的检索阶段</text>
+      <text x="50" y="310" fill="#8b949e" font-size="11">→ 无需外部向量索引</text>
+      <text x="50" y="330" fill="#8b949e" font-size="11">→ 支持句子/段落级标记</text>
+
+      <!-- Arrow 1→2 -->
+      <line x1="280" y1="210" x2="320" y2="210" stroke="#0cebeb" stroke-width="2" marker-end="url(#arr)"/>
+
+      <!-- Step 2 -->
+      <rect x="330" y="60" width="250" height="300" rx="16" fill="#0d1520" stroke="#20e3b2" stroke-width="1.5" filter="url(#sh)"/>
+      <rect x="330" y="60" width="250" height="48" rx="16" fill="url(#g2)"/>
+      <text x="455" y="90" text-anchor="middle" fill="#0d1117" font-size="15" font-weight="700">Step 2 · 局部摘要提取</text>
+      <text x="455" y="90" text-anchor="middle" fill="#0d1117" font-size="11" dy="16">Localized Summaries</text>
+      <text x="350" y="140" fill="#8b949e" font-size="12">输入：标记的 &lt;relevant_section&gt;</text>
+      <text x="350" y="162" fill="#c9d1d9" font-size="12">对每个相关片段生成</text>
+      <text x="350" y="180" fill="#c9d1d9" font-size="12">精炼的局部摘要</text>
+      <rect x="350" y="200" width="210" height="56" rx="8" fill="#111118" stroke="#29ffc6" stroke-width="1"/>
+      <text x="455" y="222" text-anchor="middle" fill="#0cebeb" font-size="11">• 实体: Daniel, apple</text>
+      <text x="455" y="240" text-anchor="middle" fill="#29ffc6" font-size="11">• 动作: grabbed, moved</text>
+      <text x="350" y="290" fill="#8b949e" font-size="11">→ 提取实体、动作、数值</text>
+      <text x="350" y="310" fill="#8b949e" font-size="11">→ 防止多片段信息丢失</text>
+      <text x="350" y="330" fill="#8b949e" font-size="11">→ 为推理步骤做信息压缩</text>
+
+      <!-- Arrow 2→3 -->
+      <line x1="580" y1="210" x2="620" y2="210" stroke="#0cebeb" stroke-width="2" marker-end="url(#arr)"/>
+
+      <!-- Step 3 -->
+      <rect x="630" y="60" width="250" height="300" rx="16" fill="#0d1520" stroke="#29ffc6" stroke-width="1.5" filter="url(#sh)"/>
+      <rect x="630" y="60" width="250" height="48" rx="16" fill="url(#g1)"/>
+      <text x="755" y="90" text-anchor="middle" fill="#0d1117" font-size="15" font-weight="700">Step 3 · CoT 多跳推理</text>
+      <text x="755" y="90" text-anchor="middle" fill="#0d1117" font-size="11" dy="16">Chain-of-Thought Integration</text>
+      <text x="650" y="140" fill="#8b949e" font-size="12">输入：各片段的局部摘要</text>
+      <text x="650" y="162" fill="#c9d1d9" font-size="12">按顺序整合摘要，逐步</text>
+      <text x="650" y="180" fill="#c9d1d9" font-size="12">执行多跳推理</text>
+      <rect x="650" y="200" width="210" height="56" rx="8" fill="#111118" stroke="#0cebeb" stroke-width="1"/>
+      <text x="755" y="222" text-anchor="middle" fill="#0cebeb" font-size="11">Step1: apple 在 garden</text>
+      <text x="755" y="240" text-anchor="middle" fill="#29ffc6" font-size="11">Step2: Daniel → kitchen</text>
+      <text x="650" y="290" fill="#8b949e" font-size="11">→ 核心创新：推理链整合</text>
+      <text x="650" y="310" fill="#8b949e" font-size="11">→ 解决单次检索的盲区</text>
+      <text x="650" y="330" fill="#8b949e" font-size="11">→ 可追踪的推理路径</text>
+
+      <!-- Arrow 3→4 -->
+      <line x1="880" y1="210" x2="920" y2="210" stroke="#0cebeb" stroke-width="2" marker-end="url(#arr)"/>
+
+      <!-- Step 4 -->
+      <rect x="930" y="60" width="240" height="300" rx="16" fill="#0d1520" stroke="#0cebeb" stroke-width="1.5" filter="url(#sh)"/>
+      <rect x="930" y="60" width="240" height="48" rx="16" fill="url(#g2)"/>
+      <text x="1050" y="90" text-anchor="middle" fill="#0d1117" font-size="15" font-weight="700">Step 4 · 最终答案生成</text>
+      <text x="1050" y="90" text-anchor="middle" fill="#0d1117" font-size="11" dy="16">Final Answer Generation</text>
+      <text x="950" y="140" fill="#8b949e" font-size="12">输入：CoT 推理链</text>
+      <text x="950" y="162" fill="#c9d1d9" font-size="12">基于推理步骤，输出</text>
+      <text x="950" y="180" fill="#c9d1d9" font-size="12">简洁的最终答案</text>
+      <rect x="950" y="200" width="200" height="40" rx="8" fill="#111118" stroke="#29ffc6" stroke-width="1"/>
+      <text x="1050" y="225" text-anchor="middle" fill="#29ffc6" font-size="13" font-weight="600">Answer: kitchen</text>
+      <text x="950" y="280" fill="#8b949e" font-size="11">→ 格式灵活：文本/是/否</text>
+      <text x="950" y="300" fill="#8b949e" font-size="11">→ 数值/yes/no/maybe</text>
+      <text x="950" y="320" fill="#8b949e" font-size="11">→ 支持多种 QA 格式</text>
+
+      <!-- Bottom label -->
+      <text x="600" y="400" text-anchor="middle" fill="#0cebeb" font-size="14" font-weight="600">
+        整个流程在单次 LLM 前向传播中完成（Single-Pass）—— 无需多次调用或外部检索器
+      </text>
+    </svg>
+  </div>
+  <p class="fc">图 1：Emulated RAG + CoT 方法的四步流水线架构。模型在单次生成中依次完成标记、提取、推理和回答，无需外部检索器。</p>
+
+  <!-- 论文原图 -->
+  <div class="paper-figure">
+    <img src="images/emulating_rag_proposed_method_workflow.png" alt="论文原图 - 方法流程图"
+         style="max-width:100%;border-radius:12px;margin:16px 0;background:#fff;padding:10px">
+    <p class="fc">📄 论文原图 — Figure 1: Pipeline of Our Proposed Method。展示了从长文本输入到最终答案的四步流程。</p>
+  </div>
+
+  <!-- 模块说明卡片 -->
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;margin-top:24px;">
+    <div class="arch-card">
+      <h4>🔍 内部检索器（Internal Retriever）</h4>
+      <p>Step 1 中模型充当检索器：通过指令引导，在长文本中定位并标记与问题相关的片段，使用 <code>&lt;relevant_section&gt;</code> 标签包围，替代了传统 RAG 中的外部向量检索。支持句子级和段落级两种粒度的标记。</p>
+    </div>
+    <div class="arch-card">
+      <h4>📝 信息提取器（Information Extractor）</h4>
+      <p>Step 2 对每个标记片段进行局部摘要：提取实体名称、动作类型、数值等关键信息，形成精炼的要点列表。这一步防止了多片段场景下的信息丢失问题。</p>
+    </div>
+    <div class="arch-card">
+      <h4>🧠 多跳推理器（Multi-Hop Reasoner）</h4>
+      <p>Step 3 是核心创新——将多个局部摘要按时间/逻辑顺序串联，逐步构建推理链。例如：先确定物品被拿起的地点，再追踪人物移动路径，最终推导物品位置。</p>
+    </div>
+    <div class="arch-card">
+      <h4>✅ 答案生成器（Answer Generator）</h4>
+      <p>Step 4 基于推理链输出最终答案。支持多种格式（地点、数值、yes/no/maybe），通过明确的指令约束输出格式，确保答案简洁且准确。</p>
+    </div>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- ====== 📑 目录 ====== -->
+<section class="section">
+  <div class="toc">
+    <h3>📑 文档目录</h3>
+    <ol>
+      <li><a href="#sec0">核心问题与研究动机</a></li>
+      <li><a href="#sec1">背景知识与前置概念</a></li>
+      <li><a href="#sec2">方法论：核心模块详解</a></li>
+      <li><a href="#sec3">核心创新点深度解析</a></li>
+      <li><a href="#sec4">数据流解析：推理全过程</a></li>
+      <li><a href="#sec5">提示词工程与设计选择</a></li>
+      <li><a href="#sec6">实验结果与消融分析</a></li>
+      <li><a href="#sec7">设计精妙之处</a></li>
+      <li><a href="#sec8">Q&amp;A 深度解析</a></li>
+      <li><a href="#sec9">代码使用与实战</a></li>
+    </ol>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- ====== 第0节 ====== -->
+<section class="section" id="sec0">
+  <h2 class="section-title"><span class="num">0</span> 核心问题与研究动机</h2>
+
+  <p class="section-desc">
+    近两年来，大语言模型的上下文窗口从几千 token 迅速扩展到超过 10 万 token——GPT-4o 支持 128k，Claude 2 支持 200k，Gemini 1.5 甚至号称支持百万级 token。然而，<strong>更大的上下文窗口并不意味着模型能更有效地利用其中的信息</strong>。这是本文要解决的核心矛盾。
+  </p>
+
+  <div class="highlight-box">
+    <strong>核心问题</strong>：当关键信息分散在海量文本中时，LLM 难以准确检索和组合这些远距离的碎片信息，尤其在需要<strong>多跳推理</strong>（multi-hop reasoning）的任务中，模型常常失败。
+  </div>
+
+  <p class="section-desc">
+    具体来说，现有方法存在三大困境：
+  </p>
+
+  <!-- 三大困境 SVG -->
+  <div class="svg-wrap">
+    <svg viewBox="0 0 1100 260" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <filter id="sh2"><feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#000" flood-opacity=".3"/></filter>
+      </defs>
+      <!-- 困境1 -->
+      <rect x="20" y="20" width="340" height="220" rx="14" fill="#1a1520" stroke="#f0883e" stroke-width="1.5" filter="url(#sh2)"/>
+      <text x="190" y="55" text-anchor="middle" fill="#f0883e" font-size="15" font-weight="700">困境 1：长上下文 ≠ 有效利用</text>
+      <text x="40" y="85" fill="#c9d1d9" font-size="12">扩大上下文窗口并不保证</text>
+      <text x="40" y="103" fill="#c9d1d9" font-size="12">模型能关注所有信息</text>
+      <text x="40" y="130" fill="#8b949e" font-size="11">• 注意力稀释（Context Dilution）</text>
+      <text x="40" y="150" fill="#8b949e" font-size="11">• 上下文混淆（Context Confusion）</text>
+      <text x="40" y="170" fill="#8b949e" font-size="11">• "Lost in the Middle" 现象</text>
+      <text x="40" y="200" fill="#f0883e" font-size="11">→ 关键事实被淹没，模型遗漏</text>
+
+      <!-- 困境2 -->
+      <rect x="380" y="20" width="340" height="220" rx="14" fill="#1a1520" stroke="#f0883e" stroke-width="1.5" filter="url(#sh2)"/>
+      <text x="550" y="55" text-anchor="middle" fill="#f0883e" font-size="15" font-weight="700">困境 2：单次 RAG 的盲区</text>
+      <text x="400" y="85" fill="#c9d1d9" font-size="12">传统 RAG 通常只做一次检索</text>
+      <text x="400" y="103" fill="#c9d1d9" font-size="12">无法覆盖多跳所需的全部片段</text>
+      <text x="400" y="130" fill="#8b949e" font-size="11">• Top-k 检索可能遗漏关键事实</text>
+      <text x="400" y="150" fill="#8b949e" font-size="11">• 单次检索无法组合分散信息</text>
+      <text x="400" y="170" fill="#8b949e" font-size="11">• 多轮 RAG 增加复杂度和延迟</text>
+      <text x="400" y="200" fill="#f0883e" font-size="11">→ QA2 任务中 RAG 准确率仅 0.04</text>
+
+      <!-- 困境3 -->
+      <rect x="740" y="20" width="340" height="220" rx="14" fill="#1a1520" stroke="#f0883e" stroke-width="1.5" filter="url(#sh2)"/>
+      <text x="910" y="55" text-anchor="middle" fill="#f0883e" font-size="15" font-weight="700">困境 3：纯 CoT 的幻觉风险</text>
+      <text x="760" y="85" fill="#c9d1d9" font-size="12">思维链推理依赖已有事实</text>
+      <text x="760" y="103" fill="#c9d1d9" font-size="12">缺失事实导致推理链崩溃</text>
+      <text x="760" y="130" fill="#8b949e" font-size="11">• 关键事实被噪声覆盖时失效</text>
+      <text x="760" y="150" fill="#8b949e" font-size="11">• 产生幻觉式的推理链条</text>
+      <text x="760" y="170" fill="#8b949e" font-size="11">• 无法自我纠正错误前提</text>
+      <text x="760" y="200" fill="#f0883e" font-size="11">→ 需要检索配合才能保证可靠</text>
+    </svg>
+  </div>
+  <p class="fc">图 2：现有方法在长上下文多跳推理中的三大困境。长上下文利用不足、单次 RAG 盲区、纯 CoT 幻觉——三者相互制约。</p>
+
+  <p class="section-desc">
+    本文的核心洞察是：<strong>RAG 的"检索聚焦"能力和 CoT 的"逐步推理"能力可以统一在单次前向传播中</strong>，通过提示工程让模型同时执行检索和推理，既避免了外部检索器的开销，又克服了纯 CoT 的幻觉问题。这就是"Emulating RAG"的核心思想——用提示词模拟 RAG 的检索过程，而不是真的调用外部检索系统。
+  </p>
+</section>
+
+<hr class="divider">
+
+<!-- ====== 第1节 ====== -->
+<section class="section" id="sec1">
+  <h2 class="section-title"><span class="num">1</span> 背景知识与前置概念</h2>
+
+  <p class="section-desc">
+    在深入方法细节之前，我们需要理解论文涉及的关键前置概念。本节不讲解"什么是 Transformer"这类通用基础知识，而是聚焦于论文中出现的特定术语和技术，解释它们是什么、在本文中起什么作用。
+  </p>
+
+  <!-- 1.1 RAG -->
+  <div class="module-card">
+    <h3>1.1 检索增强生成（RAG）</h3>
+    <p>
+      <strong>什么是 RAG</strong>：Retrieval-Augmented Generation，即"检索增强生成"。它是一种让 LLM 在生成答案之前，先从外部知识库中检索相关文档片段，然后将检索结果作为上下文提供给 LLM 的方法。典型的 RAG 流程为：用户提问 → 检索器从语料库中取回 Top-k 片段 → LLM 基于这些片段生成答案。
+    </p>
+    <p style="margin-top:10px;">
+      <strong>在本文中的角色</strong>：RAG 是本文要"模拟"（emulate）的对象。传统 RAG 依赖外部检索器（如 DRAGON），但单次检索往往无法覆盖多跳推理所需的全部事实片段。本文的核心思路是：不调用外部检索器，而是通过提示词让模型自己在长文本中定位相关片段——这就是"模拟 RAG"的含义。
+    </p>
+    <p style="margin-top:10px;">
+      <strong>为什么需要模拟</strong>：外部检索器引入额外开销（构建索引、调用 API），且单次检索的 Top-k 结果常常遗漏多跳任务中所需的第二个或第三个关键事实。模拟 RAG 让模型在一次生成中自主完成"检索+推理"，既省去外部依赖，又能更全面地覆盖相关片段。
+    </p>
+  </div>
+
+  <!-- 1.2 CoT -->
+  <div class="module-card">
+    <h3>1.2 思维链推理（Chain-of-Thought, CoT）</h3>
+    <p>
+      <strong>什么是 CoT</strong>：Chain-of-Thought prompting，即"思维链提示"。它通过在提示词中引导模型产出中间推理步骤，而非直接给出答案，从而提升模型在复杂任务上的表现。经典例子：不直接问"答案是什么"，而是要求模型"一步步思考"。
+    </p>
+    <p style="margin-top:10px;">
+      <strong>在本文中的角色</strong>：CoT 是本文方法的第二步核心——在模型标记相关片段后，引导它按步骤整合多个片段的信息，形成连贯的推理链。例如"Step1: 苹果在花园被拿起 → Step2: Daniel 移动到厨房 → Step3: 因此苹果在厨房"。
+    </p>
+    <p style="margin-top:10px;">
+      <strong>CoT 的局限</strong>：当关键事实被噪声文本淹没时，纯 CoT 容易产生幻觉——模型会在缺失关键前提的情况下"编造"推理链。本文通过"先标记再推理"的策略缓解这一问题：确保推理所依赖的事实已经被显式标记出来。
+    </p>
+  </div>
+
+  <!-- 1.3 BABILong -->
+  <div class="module-card">
+    <h3>1.3 BABILong 基准测试</h3>
+    <p>
+      <strong>什么是 BABILong</strong>：一个专用于评估 LLM 长上下文理解能力的 QA 基准。它将经典的 bAbI 问答任务（短文本、简单推理）嵌入到 PG19 小说语料（大量干扰文本）中，创造出从几千到几十万 token 不等的长上下文 QA 任务。核心挑战是：关键信息被海量无关文本包围，模型需要"大海捞针"并完成多步推理。
+    </p>
+    <p style="margin-top:10px;">
+      <strong>在本文中的角色</strong>：BABILong 是本文唯一的评估基准。论文选取了三个子任务——QA2（双事实定位）、QA7（物品计数）、QA10（不确定知识判断），在不同上下文长度（16k/32k/64k）下测试方法效果。
+    </p>
+    <p style="margin-top:10px;">
+      <strong>为什么选 BABILong</strong>：它的设计天然测试了"长文本中的多跳推理"能力——恰恰是本文方法要解决的问题。与 NeedleBench（单针检索）不同，BABILong 要求模型找到并组合多个分散的事实片段。
+    </p>
+  </div>
+
+  <!-- 1.4 Prompt Order -->
+  <div class="module-card">
+    <h3>1.4 提示词排列顺序（Prompt Order）</h3>
+    <p>
+      <strong>什么是 Prompt Order</strong>：指在构建提示词时，各组成部分（指令、长文本、问题、示例标签）的排列顺序。本文测试了三种顺序：标准顺序（指令→文本→问题）、问题优先（问题→指令→文本）、相关片段优先（指令→文本→问题→示例标签）。
+    </p>
+    <p style="margin-top:10px;">
+      <strong>为什么这很重要</strong>：实验表明，提示词的排列顺序对长上下文任务的性能有显著影响——在不同任务和上下文长度下，最佳顺序各不相同。这是本文的一个重要发现：不仅是"说什么"重要，"先说什么"同样关键。
+    </p>
+  </div>
+
+  <!-- 1.5 DRAGON -->
+  <div class="module-card">
+    <h3>1.5 DRAGON 检索器</h3>
+    <p>
+      <strong>什么是 DRAGON</strong>：一个基于深度学习的文档检索模型，属于"稠密检索器"（Dense Retriever）类别。它将查询和文档分别编码为向量，通过向量相似度进行检索，是 RAG pipeline 中常用的检索 backbone。
+    </p>
+    <p style="margin-top:10px;">
+      <strong>在本文中的角色</strong>：DRAGON 被用作 Baseline RAG 方法中的外部检索器——从长文本中检索 Top-k 句子，然后交给 LLM 生成答案。实验结果显示，这种单步检索在多跳任务上表现极差（QA2 仅 0.04 准确率），恰恰说明了传统 RAG 的局限。
+    </p>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- ====== 第2节 ====== -->
+<section class="section" id="sec2">
+  <h2 class="section-title"><span class="num">2</span> 方法论：核心模块详解</h2>
+
+  <p class="section-desc">
+    本节深入解析 Emulated RAG + CoT 方法的四个核心步骤。每个步骤都配有图解和详细说明，帮助理解其内部工作机制。
+  </p>
+
+  <!-- 2.1 Step 1 -->
+  <div class="module-card">
+    <h3>2.1 Step 1：标记/相关性检测（Tagging / Relevance Detection）</h3>
+    <p>
+      这是整个方法的起点，也是"模拟检索"的关键步骤。传统 RAG 使用外部检索器（如向量搜索引擎）来找到与问题相关的文档片段；而本文方法通过<strong>指令引导</strong>，让模型自己在输入的长文本中识别并标记相关内容。
+    </p>
+    <p style="margin-top:10px;">
+      <strong>具体做法</strong>：在提示词的 [INSTRUCTION] 部分，明确要求模型"找到与问题相关的句子或段落，用 <code>&lt;relevant_section position="..."&gt;</code> 标签包围"。模型在生成输出时，会先产出这些标签化的片段，模拟了检索器返回检索结果的过程。
+    </p>
+    <p style="margin-top:10px;">
+      <strong>粒度与格式</strong>：标记可以按不同粒度进行——句子级（sentence-level）或段落级（paragraph-level）。还可以要求模型输出 JSON 格式，包含 <code>content</code>（内容）、<code>position</code>（位置百分比）和 <code>reason_why_tagged</code>（标记原因），使标记过程更加结构化和可解释。
+    </p>
+    <p style="margin-top:10px;">
+      <strong>为什么有效</strong>：具备强指令遵循能力的模型能够理解问题、推断文本中哪些部分与问题相关，并忠实地将它们标记出来。这实质上是让模型的注意力机制在指令的引导下聚焦到关键片段，替代了外部搜索索引的功能。
+    </p>
+
+    <div class="prompt-box" style="margin-top:16px;">
+      <span class="prompt-label">[INSTRUCTION PART]</span>
+You will be given a very long passage. First, identify any
+sentences or paragraphs that are relevant to the question.
+Surround each relevant snippet in a &lt;relevant_section&gt; tag.
+Also note the approximate position.
+
+<span class="prompt-label">[CONTENT]</span>
+(Here is a very long text, thousands of tokens)...
+
+<span class="prompt-label">[QUESTION]</span>
+"What is the final location of the apple?"
+    </div>
+
+    <div class="prompt-box" style="margin-top:10px;background:rgba(12,235,235,.04);border-color:rgba(12,235,235,.2);">
+      <span class="prompt-label" style="background:rgba(12,235,235,.2);">模型输出示例</span>
+&lt;relevant_section position="12.3%"&gt;
+Daniel grabbed the apple in the garden
+&lt;/relevant_section&gt;
+
+&lt;relevant_section position="58.9%"&gt;
+Daniel moved to the kitchen
+&lt;/relevant_section&gt;
+    </div>
+  </div>
+
+  <!-- Step1 SVG 图解 -->
+  <div class="svg-wrap">
+    <svg viewBox="0 0 1100 300" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <filter id="sh3"><feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#000" flood-opacity=".3"/></filter>
+      </defs>
+      <!-- 长文本条 -->
+      <rect x="30" y="30" width="1040" height="36" rx="8" fill="#111118" stroke="#2a2a38" stroke-width="1"/>
+      <text x="550" y="54" text-anchor="middle" fill="#8b949e" font-size="12">[长文本 — 数千 token 的干扰文本 + 分散的关键事实]</text>
+
+      <!-- 标记片段1 -->
+      <rect x="140" y="80" width="240" height="80" rx="10" fill="#0d1520" stroke="#0cebeb" stroke-width="2" filter="url(#sh3)"/>
+      <text x="260" y="105" text-anchor="middle" fill="#0cebeb" font-size="12" font-weight="600">📍 相关片段 1 (12.3%)</text>
+      <text x="260" y="125" text-anchor="middle" fill="#c9d1d9" font-size="11">"Daniel grabbed the apple</text>
+      <text x="260" y="143" text-anchor="middle" fill="#c9d1d9" font-size="11">in the garden"</text>
+
+      <!-- 标记片段2 -->
+      <rect x="620" y="80" width="260" height="80" rx="10" fill="#0d1520" stroke="#20e3b2" stroke-width="2" filter="url(#sh3)"/>
+      <text x="750" y="105" text-anchor="middle" fill="#20e3b2" font-size="12" font-weight="600">📍 相关片段 2 (58.9%)</text>
+      <text x="750" y="125" text-anchor="middle" fill="#c9d1d9" font-size="11">"Daniel moved to the</text>
+      <text x="750" y="143" text-anchor="middle" fill="#c9d1d9" font-size="11">kitchen"</text>
+
+      <!-- 连线 -->
+      <line x1="260" y1="66" x2="260" y2="80" stroke="#0cebeb" stroke-width="1.5" stroke-dasharray="4,3"/>
+      <line x1="750" y1="66" x2="750" y2="80" stroke="#20e3b2" stroke-width="1.5" stroke-dasharray="4,3"/>
+
+      <!-- 问题 -->
+      <rect x="350" y="190" width="400" height="40" rx="10" fill="#1a1520" stroke="#f0883e" stroke-width="1.5"/>
+      <text x="550" y="215" text-anchor="middle" fill="#f0883e" font-size="13" font-weight="600">❓ "Where is the apple located at the end?"</text>
+
+      <!-- 箭头 -->
+      <path d="M 260 160 Q 260 185 400 195" stroke="#0cebeb" stroke-width="1.5" fill="none" marker-end="url(#arr)"/>
+      <path d="M 750 160 Q 750 185 700 195" stroke="#20e3b2" stroke-width="1.5" fill="none" marker-end="url(#arr)"/>
+
+      <!-- 标签 -->
+      <rect x="380" y="250" width="340" height="36" rx="8" fill="rgba(12,235,235,.08)" stroke="#0cebeb" stroke-width="1"/>
+      <text x="550" y="273" text-anchor="middle" fill="#0cebeb" font-size="13" font-weight="600">模型充当"内部检索器" — 无需外部索引</text>
+    </svg>
+  </div>
+  <p class="fc">图 3：Step 1 标记过程图解。模型在问题引导下，从长文本中定位两个相关片段（拿起事件和移动事件），并用标签标记。</p>
+
+  <!-- 2.2 Step 2 -->
+  <div class="module-card">
+    <h3>2.2 Step 2：局部摘要/提取（Localized Summaries / Extraction）</h3>
+    <p>
+      标记完相关片段后，下一步是对每个 <code>&lt;relevant_section&gt;</code> 生成精炼的局部摘要。这一步的目的是<strong>信息压缩</strong>——从可能冗长的原文片段中提取出核心实体、动作和数值，防止在后续推理中丢失关键细节。
+    </p>
+    <p style="margin-top:10px;">
+      <strong>具体做法</strong>：提示词中增加指令"对每个标记的相关片段，总结其中的实体、动作或数值，以简短的要点列表形式呈现"。例如，"Daniel grabbed the apple in the garden" → 提取出 <code>实体: Daniel, apple</code>、<code>动作: grabbed</code>、<code>地点: garden</code>。
+    </p>
+    <p style="margin-top:10px;">
+      <strong>为什么需要</strong>：在多跳查询中，相关片段可能分散在文本的不同位置，每个片段只包含部分信息。局部摘要将每个片段压缩为核心要点，为下一步的多跳整合提供"原料"。没有这一步，模型在处理多个长片段时容易遗漏细节。
+    </p>
+  </div>
+
+  <!-- 2.3 Step 3 -->
+  <div class="module-card">
+    <h3>2.3 Step 3：CoT 多跳推理/整合（Chain-of-Thought Reasoning / Multi-Hop Integration）</h3>
+    <p>
+      这是方法的核心创新步骤。模型将各片段的局部摘要按逻辑/时间顺序串联，形成一条完整的推理链（Chain-of-Thought），逐步推导出最终答案。
+    </p>
+    <p style="margin-top:10px;">
+      <strong>具体示例</strong>：对于"苹果最终在哪里"的问题，推理链为：
+    </p>
+    <div class="prompt-box" style="margin-top:10px;background:rgba(12,235,235,.04);border-color:rgba(12,235,235,.2);">
+<span class="prompt-label" style="background:rgba(12,235,235,.2);">CoT 推理输出</span>
+Step 1: Daniel initially grabbed the apple in the garden (position 12.3%).
+Step 2: Daniel moved to the kitchen (position 58.9%).
+Step 3: Therefore, the apple is now in the kitchen.
+    </div>
+    <p style="margin-top:10px;">
+      <strong>为什么是核心创新</strong>：传统 RAG 的单次检索无法保证取回所有必要的片段——例如可能只检索到"Daniel 移动到厨房"而遗漏了"苹果在花园被拿起"。本文方法通过"先标记、后推理"的策略，确保模型在推理前已经显式识别了所有相关片段，从而避免了推理链的前提缺失。
+    </p>
+    <p style="margin-top:10px;">
+      <strong>与传统多轮 RAG 的区别</strong>：多轮 RAG 也尝试解决多跳问题，但需要多次调用检索器和 LLM，增加了系统复杂度和延迟。本文方法在单次生成中完成所有步骤，无需多轮交互。
+    </p>
+  </div>
+
+  <!-- 2.4 Step 4 -->
+  <div class="module-card">
+    <h3>2.4 Step 4：最终答案生成（Final Answer Generation）</h3>
+    <p>
+      推理链完成后，模型输出简洁的最终答案。提示词中会附加明确的指令（如"Now provide the final answer in one sentence"），约束输出格式。
+    </p>
+    <p style="margin-top:10px;">
+      <strong>输出格式</strong>：根据任务类型不同，最终答案可以是：
+    </p>
+    <ul style="margin-left:24px;margin-top:8px;color:#8b949e;font-size:15px;line-height:2;">
+      <li><strong>地点名</strong>（QA2：如 "kitchen"）</li>
+      <li><strong>数值</strong>（QA7：如 "3"）</li>
+      <li><strong>yes/no/maybe</strong>（QA10：如 "maybe"）</li>
+    </ul>
+    <p style="margin-top:10px;">
+      <strong>格式控制的重要性</strong>：BABILong 的评估使用精确匹配（exact match），如果模型输出冗长的解释而非简洁答案，可能导致判为错误。因此提示词中的格式约束对最终准确率有直接影响。
+    </p>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- ====== 第3节 ====== -->
+<section class="section" id="sec3">
+  <h2 class="section-title"><span class="num">3</span> 核心创新点深度解析</h2>
+
+  <p class="section-desc">
+    本文的核心创新可以归纳为三个方面：单次传播中的检索-推理统一、提示词排列顺序的系统研究、以及"模拟 RAG"这一全新范式的提出。下面逐一深入解析。
+  </p>
+
+  <!-- 3.1 创新点1 -->
+  <div class="module-card">
+    <h3>3.1 创新点一：单次前向传播中的检索-推理统一</h3>
+    <p>
+      <strong>传统范式的割裂</strong>：在传统架构中，"检索"和"推理"是两个独立阶段——检索器（如 DRAGON）先从语料库中取回片段，然后 LLM 基于这些片段进行推理。这种割裂导致两个问题：（1）检索器和推理器之间的信息断层——检索器不知道推理器需要什么；（2）单次检索无法根据推理需求动态调整。
+    </p>
+    <p style="margin-top:10px;">
+      <strong>本文的统一方案</strong>：通过精心设计的提示词，让同一个 LLM 在一次生成中先后完成检索（标记相关片段）和推理（CoT 整合）。由于检索和推理由同一个模型完成，模型可以根据问题的需求自主决定标记哪些片段，实现了<strong>检索意图和推理需求的隐式对齐</strong>。
+    </p>
+
+    <!-- 对比 SVG -->
+    <div class="svg-wrap" style="margin-top:16px;">
+      <svg viewBox="0 0 1100 320" xmlns="http://www.w3.org/2000/svg">
+        <!-- 传统 RAG -->
+        <rect x="20" y="20" width="520" height="280" rx="14" fill="#1a1520" stroke="#f0883e" stroke-width="1.5"/>
+        <text x="280" y="50" text-anchor="middle" fill="#f0883e" font-size="14" font-weight="700">传统 RAG Pipeline</text>
+
+        <rect x="40" y="70" width="200" height="55" rx="10" fill="#111118" stroke="#f0883e" stroke-width="1"/>
+        <text x="140" y="95" text-anchor="middle" fill="#f0883e" font-size="12" font-weight="600">外部检索器 (DRAGON)</text>
+        <text x="140" y="113" text-anchor="middle" fill="#8b949e" font-size="11">Top-k 句子检索</text>
+
+        <rect x="280" y="70" width="240" height="55" rx="10" fill="#111118" stroke="#f0883e" stroke-width="1"/>
+        <text x="400" y="95" text-anchor="middle" fill="#f0883e" font-size="12" font-weight="600">LLM 生成器</text>
+        <text x="400" y="113" text-anchor="middle" fill="#8b949e" font-size="11">基于检索结果生成答案</text>
+
+        <line x1="240" y1="97" x2="280" y2="97" stroke="#f0883e" stroke-width="1.5" marker-end="url(#arr)"/>
+
+        <text x="280" y="165" text-anchor="middle" fill="#8b949e" font-size="11">❌ 检索器不知道推理器需要什么</text>
+        <text x="280" y="183" text-anchor="middle" fill="#8b949e" font-size="11">❌ Top-k 可能遗漏关键事实</text>
+        <text x="280" y="201" text-anchor="middle" fill="#8b949e" font-size="11">❌ 需要外部索引和 API 调用</text>
+        <text x="280" y="219" text-anchor="middle" fill="#8b949e" font-size="11">❌ 多跳时需多轮调用</text>
+        <text x="280" y="250" text-anchor="middle" fill="#f0883e" font-size="12" font-weight="600">QA2 准确率: 0.04</text>
+
+        <!-- 本文方法 -->
+        <rect x="560" y="20" width="520" height="280" rx="14" fill="#0d1520" stroke="#0cebeb" stroke-width="1.5"/>
+        <text x="820" y="50" text-anchor="middle" fill="#0cebeb" font-size="14" font-weight="700">本文方法：Emulated RAG + CoT</text>
+
+        <rect x="580" y="70" width="220" height="55" rx="10" fill="#111118" stroke="#0cebeb" stroke-width="1"/>
+        <text x="690" y="95" text-anchor="middle" fill="#0cebeb" font-size="12" font-weight="600">内部检索器（标记）</text>
+        <text x="690" y="113" text-anchor="middle" fill="#8b949e" font-size="11">模型自主标记相关片段</text>
+
+        <rect x="830" y="70" width="230" height="55" rx="10" fill="#111118" stroke="#20e3b2" stroke-width="1"/>
+        <text x="945" y="95" text-anchor="middle" fill="#20e3b2" font-size="12" font-weight="600">CoT 推理器（整合）</text>
+        <text x="945" y="113" text-anchor="middle" fill="#8b949e" font-size="11">逐步整合标记片段</text>
+
+        <line x1="800" y1="97" x2="830" y2="97" stroke="#0cebeb" stroke-width="1.5" marker-end="url(#arr)"/>
+
+        <text x="820" y="165" text-anchor="middle" fill="#c9d1d9" font-size="11">✅ 同一模型统一检索与推理</text>
+        <text x="820" y="183" text-anchor="middle" fill="#c9d1d9" font-size="11">✅ 模型自主决定标记哪些片段</text>
+        <text x="820" y="201" text-anchor="middle" fill="#c9d1d9" font-size="11">✅ 无需外部索引和 API</text>
+        <text x="820" y="219" text-anchor="middle" fill="#c9d1d9" font-size="11">✅ 单次生成完成全流程</text>
+        <text x="820" y="250" text-anchor="middle" fill="#0cebeb" font-size="12" font-weight="600">QA2 准确率: 0.28–0.44</text>
+      </svg>
+    </div>
+    <p class="fc">图 4：传统 RAG Pipeline 与本文 Emulated RAG + CoT 方法的对比。本文方法在同一模型内统一检索和推理，避免了外部检索器的盲区。</p>
+  </div>
+
+  <!-- 3.2 创新点2 -->
+  <div class="module-card">
+    <h3>3.2 创新点二：提示词排列顺序对性能的显著影响</h3>
+    <p>
+      本文系统研究了提示词中各组成部分的排列顺序对长上下文推理性能的影响，这是一个之前被忽视但极为重要的因素。
+    </p>
+    <p style="margin-top:10px;">
+      <strong>三种排列顺序</strong>：
+    </p>
+    <ul style="margin-left:24px;margin-top:8px;color:#8b949e;font-size:15px;line-height:2;">
+      <li><strong>标准顺序</strong>（Standard）：[指令] → [长文本] → [问题] — 最直觉的排列</li>
+      <li><strong>问题优先</strong>（Question First）：[问题] → [指令] → [长文本] — 让模型先"知道要找什么"</li>
+      <li><strong>相关优先</strong>（Relevant First）：[指令] → [长文本] → [问题] → [示例标签] — 用示例引导标记格式</li>
+    </ul>
+    <p style="margin-top:10px;">
+      <strong>关键发现</strong>：
+    </p>
+    <div class="highlight-box">
+      在 QA2 任务（双事实定位）的 64k 上下文长度下，"问题优先"排列使 gpt-4o-mini 达到 0.44 准确率（标准顺序仅 0.28）。这是因为当模型先看到问题后，会在阅读长文本时有明确的"搜索目标"，从而更准确地标记相关片段。
+    </div>
+    <p style="margin-top:10px;">
+      不同的任务和上下文长度下，最佳排列顺序不同——没有"万能顺序"。这一发现对实践有重要指导意义：<strong>在实际应用中，应该针对具体任务类型优化提示词排列</strong>。
+    </p>
+  </div>
+
+  <!-- 3.3 创新点3 -->
+  <div class="module-card">
+    <h3>3.3 创新点三："模拟 RAG"范式的提出</h3>
+    <p>
+      "模拟 RAG"不仅是一个具体方法，更是一种新范式的提出——<strong>通过提示工程让 LLM 内化外部工具的功能</strong>，从而减少系统复杂度和外部依赖。
+    </p>
+    <p style="margin-top:10px;">
+      <strong>范式意义</strong>：传统做法是"工具不够就加工具"——检索不够就加检索器，推理不够就加推理模块。本文的思路是"工具不够就提示模型自己做"——通过提示词让模型自己完成检索和推理。这种思路可以推广到其他外部工具的模拟，如模拟代码执行、模拟数据库查询等。
+    </p>
+    <p style="margin-top:10px;">
+      <strong>边界与局限</strong>：模拟 RAG 并非万能——当需要真正访问外部知识库（模型上下文中不存在的信息）时，模拟方法无法替代真实检索。但当所需信息已经在上下文中时，模拟 RAG 是一种更轻量、更灵活的替代方案。
+    </p>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- ====== 第4节 ====== -->
+<section class="section" id="sec4">
+  <h2 class="section-title"><span class="num">4</span> 数据流解析：推理全过程</h2>
+
+  <p class="section-desc">
+    本节用 SVG 数据流图配合文字说明，详细解析 Emulated RAG + CoT 方法在推理阶段的完整数据流——从输入到输出的每一步变化。
+  </p>
+
+  <!-- 推理数据流 SVG -->
+  <div class="svg-wrap">
+    <svg viewBox="0 0 1200 520" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <filter id="sh4"><feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#000" flood-opacity=".3"/></filter>
+        <marker id="arr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 1 L 9 5 L 0 9 z" fill="#20e3b2"/>
+        </marker>
+      </defs>
+
+      <!-- 输入区 -->
+      <rect x="30" y="20" width="1140" height="80" rx="12" fill="#1a1520" stroke="#f0883e" stroke-width="1.5" filter="url(#sh4)"/>
+      <text x="600" y="50" text-anchor="middle" fill="#f0883e" font-size="14" font-weight="700">📥 输入构造（Prompt Construction）</text>
+      <text x="200" y="78" text-anchor="middle" fill="#8b949e" font-size="12">[INSTRUCTIONS]</text>
+      <text x="200" y="94" text-anchor="middle" fill="#8b949e" font-size="11">标记→提取→推理→回答</text>
+      <text x="600" y="78" text-anchor="middle" fill="#8b949e" font-size="12">[LONG CONTENT]</text>
+      <text x="600" y="94" text-anchor="middle" fill="#8b949e" font-size="11">16k/32k/64k tokens</text>
+      <text x="1000" y="78" text-anchor="middle" fill="#8b949e" font-size="12">[QUESTION]</text>
+      <text x="1000" y="94" text-anchor="middle" fill="#8b949e" font-size="11">Where is the apple?</text>
+
+      <!-- 箭头 -->
+      <line x1="600" y1="100" x2="600" y2="130" stroke="#20e3b2" stroke-width="2" marker-end="url(#arr2)"/>
+
+      <!-- Step 1 -->
+      <rect x="30" y="135" width="1140" height="80" rx="12" fill="#0d1520" stroke="#0cebeb" stroke-width="1.5" filter="url(#sh4)"/>
+      <text x="80" y="165" fill="#0cebeb" font-size="14" font-weight="700">Step 1</text>
+      <text x="180" y="165" fill="#c9d1d9" font-size="13">模型扫描长文本，标记相关片段</text>
+      <text x="180" y="185" fill="#8b949e" font-size="12">输出：&lt;relevant_section position="12.3%"&gt; Daniel grabbed the apple in the garden &lt;/relevant_section&gt;</text>
+      <text x="180" y="203" fill="#8b949e" font-size="12">      &lt;relevant_section position="58.9%"&gt; Daniel moved to the kitchen &lt;/relevant_section&gt;</text>
+
+      <line x1="600" y1="215" x2="600" y2="245" stroke="#20e3b2" stroke-width="2" marker-end="url(#arr2)"/>
+
+      <!-- Step 2 -->
+      <rect x="30" y="250" width="1140" height="70" rx="12" fill="#0d1520" stroke="#20e3b2" stroke-width="1.5" filter="url(#sh4)"/>
+      <text x="80" y="280" fill="#20e3b2" font-size="14" font-weight="700">Step 2</text>
+      <text x="180" y="280" fill="#c9d1d9" font-size="13">对每个标记片段生成局部摘要</text>
+      <text x="180" y="300" fill="#8b949e" font-size="12">输出：片段1 → {entity: Daniel, apple; action: grabbed; location: garden}  |  片段2 → {entity: Daniel; action: moved; location: kitchen}</text>
+
+      <line x1="600" y1="320" x2="600" y2="350" stroke="#20e3b2" stroke-width="2" marker-end="url(#arr2)"/>
+
+      <!-- Step 3 -->
+      <rect x="30" y="355" width="1140" height="70" rx="12" fill="#0d1520" stroke="#29ffc6" stroke-width="1.5" filter="url(#sh4)"/>
+      <text x="80" y="385" fill="#29ffc6" font-size="14" font-weight="700">Step 3</text>
+      <text x="180" y="385" fill="#c9d1d9" font-size="13">CoT 多跳推理：按顺序整合局部摘要</text>
+      <text x="180" y="405" fill="#8b949e" font-size="12">输出：Step1: apple 在 garden 被 Daniel 拿起 → Step2: Daniel 移动到 kitchen → Step3: 因此 apple 在 kitchen</text>
+
+      <line x1="600" y1="425" x2="600" y2="455" stroke="#20e3b2" stroke-width="2" marker-end="url(#arr2)"/>
+
+      <!-- Step 4 -->
+      <rect x="350" y="460" width="500" height="50" rx="12" fill="rgba(12,235,235,.1)" stroke="#0cebeb" stroke-width="2" filter="url(#sh4)"/>
+      <text x="600" y="490" text-anchor="middle" fill="#0cebeb" font-size="15" font-weight="700">📤 最终答案：Answer: The apple is in the kitchen.</text>
+    </svg>
+  </div>
+  <p class="fc">图 5：Emulated RAG + CoT 的完整推理数据流。从提示词构造到最终答案，四步在单次 LLM 生成中完成。每一步的输入都是前一步的输出。</p>
+
+  <div class="info-box">
+    <strong>关键洞察</strong>：整个数据流是一个<strong>自回归的生成过程</strong>——Step 1 的标记输出成为 Step 2 的输入（因为模型在生成时可以看到自己之前的输出），Step 2 的摘要成为 Step 3 的输入，以此类推。这种"生成即推理"的方式，让模型在单次前向传播中完成了传统 RAG 需要多轮交互才能实现的功能。
+  </div>
+
+  <p class="section-desc" style="margin-top:16px;">
+    <strong>训练数据流说明</strong>：本文方法<strong>无需训练</strong>——它是一种纯提示工程方法，不涉及模型参数更新。方法的核心是提示词的设计，而非模型训练。因此不存在传统意义上的"训练数据流"。评估时直接使用预训练好的 LLM（gpt-4o-mini、llama-3.1-8b-instruct），通过 API 调用进行推理。
+  </p>
+</section>
+
+<hr class="divider">
+
+<!-- ====== 第5节 ====== -->
+<section class="section" id="sec5">
+  <h2 class="section-title"><span class="num">5</span> 提示词工程与设计选择</h2>
+
+  <p class="section-desc">
+    本文方法的成败高度依赖于提示词的设计。本节深入分析提示词的构造方式、排列顺序的影响，以及不同设计选择背后的原理。
+  </p>
+
+  <!-- 5.1 提示词结构 -->
+  <div class="module-card">
+    <h3>5.1 提示词的整体结构</h3>
+    <p>
+      提示词由四个核心部分组成，每部分承担不同的功能：
+    </p>
+
+    <div class="prompt-box" style="margin-top:12px;">
+<span class="prompt-label">[INSTRUCTIONS]</span>
+1. Identify relevant sections by tagging.
+2. For each tagged section, summarize key details.
+3. Combine these summaries in a chain-of-thought to answer the question.
+4. Provide your final concise answer.
+
+<span class="prompt-label">[LONG CONTENT]</span>
+(thousands of tokens, in which relevant lines are scattered)
+
+<span class="prompt-label">[QUESTION]</span>
+Where is the apple located at the end?
+
+<span class="prompt-label">[EXAMPLE TAGS, optional]</span>
+(Potential demonstration snippet)
+    </div>
+
+    <p style="margin-top:12px;">
+      <strong>[INSTRUCTIONS]</strong> 部分定义了模型需要执行的四步操作，是方法的"程序逻辑"。<strong>[LONG CONTENT]</strong> 是待处理的长文本。<strong>[QUESTION]</strong> 是用户的问题，引导模型标记和推理的方向。<strong>[EXAMPLE TAGS]</strong> 是可选的示例，帮助模型理解标记格式。
+    </p>
+    <p style="margin-top:10px;">
+      <strong>关键设计原则</strong>：指令必须明确、有序、无歧义。模糊的指令（如"找出重要信息"）远不如具体的指令（如"用 &lt;relevant_section&gt; 标签包围与问题相关的句子，并标注位置百分比"）有效。这要求提示词工程师对模型的能力和限制有深入理解。
+    </p>
+  </div>
+
+  <!-- 5.2 排列顺序 -->
+  <div class="module-card">
+    <h3>5.2 三种提示词排列顺序的对比</h3>
+    <p>
+      本文测试了三种排列顺序，每种在不同任务和上下文长度下表现不同：
+    </p>
+
+    <table class="data-table" style="margin-top:14px;">
+      <thead>
+        <tr>
+          <th>排列顺序</th>
+          <th>结构</th>
+          <th>最佳场景</th>
+          <th>直觉解释</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style="color:#0cebeb;font-weight:600;">标准顺序</td>
+          <td>指令→文本→问题</td>
+          <td>短上下文、简单任务</td>
+          <td>最直觉的排列，模型先知道"怎么做"再"做"</td>
+        </tr>
+        <tr>
+          <td style="color:#20e3b2;font-weight:600;">问题优先</td>
+          <td>问题→指令→文本</td>
+          <td>长上下文（64k）、多跳任务</td>
+          <td>模型先知道"找什么"，阅读时带有明确目标</td>
+        </tr>
+        <tr>
+          <td style="color:#29ffc6;font-weight:600;">相关优先</td>
+          <td>指令→文本→问题→示例</td>
+          <td>需要格式引导的任务</td>
+          <td>示例标签帮助模型理解输出格式</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="highlight-box" style="margin-top:14px;">
+      <strong>核心发现</strong>：在 64k 上下文的 QA2 任务中，"问题优先"排列使 gpt-4o-mini 准确率从 0.28（标准顺序）提升到 0.44，提升幅度达 57%。这说明<strong>在长上下文中，先让模型知道问题是什么，可以显著改善其信息定位能力</strong>——类似于人类先看题目再读文章的阅读策略。
+    </div>
+  </div>
+
+  <!-- 5.3 标记格式 -->
+  <div class="module-card">
+    <h3>5.3 标记格式的设计选择</h3>
+    <p>
+      <code>&lt;relevant_section&gt;</code> 标签的设计有多重考量：
+    </p>
+    <ul style="margin-left:24px;margin-top:8px;color:#8b949e;font-size:15px;line-height:2;">
+      <li><strong>位置标注</strong>（position="12.3%"）：帮助模型和用户了解片段在原文中的位置，便于追踪和验证。在多跳推理中，时间顺序很重要——位置百分比可以辅助模型判断事件的先后。</li>
+      <li><strong>原因标注</strong>（reason_why_tagged）：可选字段，让模型解释为什么标记该片段。这不仅增加了可解释性，还能帮助模型自我审查标记的正确性。</li>
+      <li><strong>JSON 格式变体</strong>：对于需要结构化输出的场景，可以要求模型以 JSON 数组格式输出标记结果，便于下游解析。</li>
+    </ul>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- ====== 第6节 ====== -->
+<section class="section" id="sec6">
+  <h2 class="section-title"><span class="num">6</span> 实验结果与消融分析</h2>
+
+  <p class="section-desc">
+    本节详细分析三个 BABILong 任务的实验结果，包括不同方法、模型和上下文长度下的性能对比，以及提示词排列顺序的消融分析。
+  </p>
+
+  <!-- 6.1 实验设置 -->
+  <div class="module-card">
+    <h3>6.1 实验设置总览</h3>
+    <table class="data-table">
+      <thead>
+        <tr><th>项目</th><th>设置</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>评估基准</td><td>BABILong（bAbI QA + PG19 干扰文本）</td></tr>
+        <tr><td>任务类型</td><td>QA2（双事实定位）、QA7（计数）、QA10（不确定知识）</td></tr>
+        <tr><td>上下文长度</td><td>16k、32k、64k tokens</td></tr>
+        <tr><td>对比方法</td><td>Baseline（无检索）、Single-Step RAG（DRAGON）、Proposed（Emulated RAG + CoT）</td></tr>
+        <tr><td>测试模型</td><td>gpt-4o-mini（128k 窗口）、llama-3.1-8b-instruct（32k+ 窗口）</td></tr>
+        <tr><td>样本数量</td><td>每个设置 25 个样本</td></tr>
+        <tr><td>生成参数</td><td>temperature=0.0, max_tokens=20</td></tr>
+        <tr><td>评估指标</td><td>准确率（精确匹配）</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 6.2 QA2 -->
+  <div class="module-card">
+    <h3>6.2 QA2：双支撑事实任务</h3>
+    <p>
+      QA2 要求模型整合两个分散的事实来确定物品的最终位置。这是最典型的多跳推理任务——需要同时找到"拿起事件"和"移动事件"并组合推理。
+    </p>
+
+    <table class="data-table" style="margin-top:14px;">
+      <thead>
+        <tr><th>方法 / 模型</th><th>16k</th><th>32k</th><th>64k</th></tr>
+      </thead>
+      <tbody>
+        <tr><td colspan="4" style="color:#0cebeb;font-weight:600;">gpt-4o-mini</td></tr>
+        <tr><td style="padding-left:24px;">Baseline</td><td>0.44</td><td>0.36</td><td>0.28</td></tr>
+        <tr><td style="padding-left:24px;">RAG</td><td style="color:#f0883e;">0.04</td><td style="color:#f0883e;">0.04</td><td style="color:#f0883e;">0.04</td></tr>
+        <tr><td style="padding-left:24px;">Proposed</td><td style="color:#0cebeb;font-weight:600;">0.44</td><td style="color:#0cebeb;">0.16–0.20</td><td style="color:#0cebeb;font-weight:600;">0.28–0.44</td></tr>
+        <tr><td colspan="4" style="color:#20e3b2;font-weight:600;">llama-3.1-8b-instruct</td></tr>
+        <tr><td style="padding-left:24px;">Baseline</td><td>0.24</td><td>0.44</td><td>0.40</td></tr>
+        <tr><td style="padding-left:24px;">RAG</td><td style="color:#f0883e;">0.04</td><td style="color:#f0883e;">0.00</td><td style="color:#f0883e;">0.08</td></tr>
+        <tr><td style="padding-left:24px;">Proposed</td><td style="color:#20e3b2;">0.16–0.24</td><td style="color:#20e3b2;font-weight:600;">0.28–0.32</td><td style="color:#20e3b2;">0.24–0.28</td></tr>
+      </tbody>
+    </table>
+
+    <div class="highlight-box" style="margin-top:14px;">
+      <strong>关键发现</strong>：RAG 在 QA2 上表现极差（0.00–0.08），因为单次 Top-k 检索几乎不可能同时检索到"拿起"和"移动"两个事实。本文方法在 gpt-4o-mini 64k 下达到 0.44（问题优先排列），远超 RAG 的 0.04，证明了"先标记再推理"策略对多跳任务的有效性。
+    </div>
+  </div>
+
+  <!-- 6.3 QA7 -->
+  <div class="module-card">
+    <h3>6.3 QA7：计数任务</h3>
+    <p>
+      QA7 要求跟踪某人持有的物品数量，需要逐一记录每次"拿起"和"给予"事件。这测试了模型对多个分散事件的追踪能力。
+    </p>
+
+    <table class="data-table" style="margin-top:14px;">
+      <thead>
+        <tr><th>方法 / 模型</th><th>16k</th><th>32k</th><th>64k</th></tr>
+      </thead>
+      <tbody>
+        <tr><td colspan="4" style="color:#0cebeb;font-weight:600;">gpt-4o-mini</td></tr>
+        <tr><td style="padding-left:24px;">Baseline</td><td>0.44</td><td>0.52</td><td>0.36</td></tr>
+        <tr><td style="padding-left:24px;">RAG</td><td>0.40</td><td>0.36</td><td>0.36</td></tr>
+        <tr><td style="padding-left:24px;">Proposed</td><td style="color:#0cebeb;font-weight:600;">0.56–0.64</td><td style="color:#0cebeb;">0.44–0.52</td><td style="color:#0cebeb;font-weight:600;">0.48–0.52</td></tr>
+        <tr><td colspan="4" style="color:#20e3b2;font-weight:600;">llama-3.1-8b-instruct</td></tr>
+        <tr><td style="padding-left:24px;">Baseline</td><td>0.40</td><td>0.44</td><td>0.40</td></tr>
+        <tr><td style="padding-left:24px;">RAG</td><td>0.32</td><td>0.24</td><td>0.24</td></tr>
+        <tr><td style="padding-left:24px;">Proposed</td><td style="color:#20e3b2;font-weight:600;">0.44–0.52</td><td style="color:#20e3b2;">0.44</td><td style="color:#20e3b2;">0.44</td></tr>
+      </tbody>
+    </table>
+
+    <p style="margin-top:12px;color:#8b949e;font-size:15px;line-height:1.8;">
+      <strong>分析</strong>：本文方法在计数任务上整体领先，得益于 CoT 推理可以逐步罗列每次"拿起"和"给予"事件，避免了遗漏。而 RAG 的 Top-k 检索常常遗漏不在前 k 个结果中的事件。错误案例分析显示：Baseline 和 RAG 常将物品的首次或末次提及当作最终状态，而本文方法通过内联标记揭示了每次转移。
+    </p>
+  </div>
+
+  <!-- 6.4 QA10 -->
+  <div class="module-card">
+    <h3>6.4 QA10：不确定知识任务</h3>
+    <p>
+      QA10 测试模型处理不确定或部分信息的能力，答案为 yes/no/maybe。这类任务有时只需一个片段即可判断，因此 RAG 在此任务上相对有竞争力。
+    </p>
+
+    <table class="data-table" style="margin-top:14px;">
+      <thead>
+        <tr><th>方法 / 模型</th><th>16k</th><th>32k</th><th>64k</th></tr>
+      </thead>
+      <tbody>
+        <tr><td colspan="4" style="color:#0cebeb;font-weight:600;">gpt-4o-mini</td></tr>
+        <tr><td style="padding-left:24px;">Baseline</td><td>0.52</td><td>0.48</td><td>0.52</td></tr>
+        <tr><td style="padding-left:24px;">RAG</td><td>0.56</td><td>0.56</td><td>0.56</td></tr>
+        <tr><td style="padding-left:24px;">Proposed</td><td style="color:#0cebeb;font-weight:600;">0.60–0.68</td><td>0.44–0.68</td><td>0.40–0.56</td></tr>
+        <tr><td colspan="4" style="color:#20e3b2;font-weight:600;">llama-3.1-8b-instruct</td></tr>
+        <tr><td style="padding-left:24px;">Baseline</td><td>0.52</td><td>0.52</td><td>0.52</td></tr>
+        <tr><td style="padding-left:24px;">RAG</td><td style="color:#20e3b2;font-weight:600;">0.72</td><td>0.60</td><td>0.64</td></tr>
+        <tr><td style="padding-left:24px;">Proposed</td><td style="color:#20e3b2;font-weight:600;">0.56–0.76</td><td>0.56–0.64</td><td>0.52–0.56</td></tr>
+      </tbody>
+    </table>
+
+    <div class="warn-box" style="margin-top:14px;">
+      <strong>重要发现</strong>：RAG 在 QA10 上表现相对较好，尤其在 llama-3.1-8b 的 16k 设置下达到 0.72。这是因为不确定知识任务有时只需一个片段即可判断，单次检索就能满足需求。这揭示了本文方法的一个边界：<strong>当单次检索已足够时，模拟 RAG 的额外开销（更长的提示词和生成）可能并不划算</strong>。
+    </div>
+  </div>
+
+  <!-- 6.5 提示词排列的消融 -->
+  <div class="module-card">
+    <h3>6.5 提示词排列顺序的消融分析</h3>
+    <p>
+      "Proposed"行的准确率范围（如 0.28–0.44）反映了三种提示词排列顺序之间的差异。以下是关键规律：
+    </p>
+
+    <table class="data-table" style="margin-top:14px;">
+      <thead>
+        <tr><th>任务</th><th>上下文长度</th><th>最佳排列</th><th>最差排列</th><th>差距</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>QA2 (gpt-4o-mini)</td><td>64k</td><td style="color:#0cebeb;">问题优先 (0.44)</td><td>标准顺序 (0.28)</td><td style="color:#f0883e;">+57%</td></tr>
+        <tr><td>QA7 (gpt-4o-mini)</td><td>16k</td><td style="color:#0cebeb;">相关/问题优先 (0.64)</td><td>标准顺序 (0.56)</td><td>+14%</td></tr>
+        <tr><td>QA10 (llama)</td><td>16k</td><td style="color:#20e3b2;">问题优先 (0.76)</td><td>标准顺序 (0.56)</td><td style="color:#f0883e;">+36%</td></tr>
+      </tbody>
+    </table>
+
+    <p style="margin-top:12px;color:#8b949e;font-size:15px;line-height:1.8;">
+      <strong>总体趋势</strong>：在长上下文（64k）和多跳任务（QA2）中，"问题优先"排列的优势最明显。在计数任务（QA7）中，排列的影响较小但不忽略。不确定知识任务（QA10）对排列最敏感——不同排列之间差距最大。
+    </p>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- ====== 第7节 ====== -->
+<section class="section" id="sec7">
+  <h2 class="section-title"><span class="num">7</span> 设计精妙之处</h2>
+
+  <p class="section-desc">
+    回顾整个方法，有几个设计决策体现了作者的深刻洞察。这些精妙之处不仅让方法本身更有效，也为未来的提示工程研究提供了启发。
+  </p>
+
+  <div class="insight-box">
+    <h4>💡 精妙一：自回归生成中的"免费"多步推理</h4>
+    <p>
+      利用 LLM 自回归生成的特性，让模型在同一次生成中依次产出标记、摘要、推理和答案——每一步都可以"看到"前一步的输出，天然形成了信息流动。这不需要额外的模型调用或外部编排，是一种"零成本"的多步推理方案。相比传统多轮 RAG 需要多次 API 调用和中间结果解析，这种设计极大地简化了系统架构。
+    </p>
+  </div>
+
+  <div class="insight-box" style="margin-top:14px;">
+    <h4>💡 精妙二：标记作为"注意力锚点"</h4>
+    <p>
+      <code>&lt;relevant_section&gt;</code> 标签不仅是一种输出格式，更是一种<strong>注意力引导机制</strong>。当模型在生成标记时，它必须回溯输入文本中的相关部分，这个回溯过程实际上让模型的注意力聚焦到了关键信息上。随后的推理步骤基于这些标记内容，而非原始长文本，有效避免了注意力稀释。这是一种"用输出结构引导注意力"的巧妙策略。
+    </p>
+  </div>
+
+  <div class="insight-box" style="margin-top:14px;">
+    <h4>💡 精妙三：问题优先 = 先看题再做</h4>
+    <p>
+      "问题优先"排列的成功，揭示了一个深刻的认知原理：<strong>目标导向的阅读比无目标阅读更有效</strong>。这与人类的阅读策略一致——先看题目再读文章，比先读文章再看题目更容易找到答案。当模型先看到问题时，它会在后续阅读长文本时带有明确的"搜索目标"，从而更准确地定位相关信息。
+    </p>
+  </div>
+
+  <div class="insight-box" style="margin-top:14px;">
+    <h4>💡 精妙四：局部摘要防止信息丢失</h4>
+    <p>
+      Step 2 的局部摘要看似简单，实则解决了多片段推理中的一个关键问题：<strong>信息遗忘</strong>。当模型需要在三个以上的分散片段之间进行推理时，直接整合容易遗漏某些片段的细节。局部摘要将每个片段压缩为核心要点，确保在后续推理中不丢失关键信息。这类似于人类做笔记——先记录每个来源的要点，再综合分析。
+    </p>
+  </div>
+
+  <div class="insight-box" style="margin-top:14px;">
+    <h4>💡 精妙五：无需训练的即插即用</h4>
+    <p>
+      整个方法<strong>无需任何模型训练或微调</strong>，只需要设计提示词即可使用。这意味着它可以应用于任何具备足够指令遵循能力的 LLM，包括通过 API 调用的闭源模型。这种"零训练"特性极大地降低了方法的部署门槛，使其成为一种极具实用价值的轻量级方案。
+    </p>
+  </div>
+
+  <div class="limit-box" style="margin-top:20px;">
+    <h4>⚠️ 局限性</h4>
+    <p>
+      <strong>1. 极度依赖模型的指令遵循能力</strong>：如果模型不能可靠地执行标记指令（如遗漏片段或错误标记），方法效果会大幅下降。较小的模型（如 7B 以下）可能无法稳定执行四步指令。</p>
+    <p style="margin-top:8px;">
+      <strong>2. 超长文本的 Prompt 窗口限制</strong>：当输入文本超过模型上下文窗口时（如百万级 token），整个文本无法放入单次 Prompt，方法失效。</p>
+    <p style="margin-top:8px;">
+      <strong>3. 单次传播无法迭代纠正</strong>：如果模型在标记阶段遗漏了关键片段，后续推理无法"回头"补充。真实的迭代检索-推理循环（如 IRCoT）可以弥补这一缺陷，但需要多次模型调用。</p>
+    <p style="margin-top:8px;">
+      <strong>4. 无法引入外部知识</strong>：模拟 RAG 只能处理上下文中已有的信息，无法像真实 RAG 那样从外部知识库获取新信息。</p>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- ====== 第8节 ====== -->
+<section class="section" id="sec8">
+  <h2 class="section-title"><span class="num">8</span> Q&amp;A 深度解析</h2>
+
+  <div class="qa-card">
+    <div class="qa-q">Q1: "模拟 RAG"和真正的 RAG 有什么本质区别？</div>
+    <div class="qa-a">
+      <p>真正的 RAG 依赖<strong>外部检索器</strong>（如 DRAGON、BM25、向量数据库）从一个独立的语料库中检索文档片段，然后将片段交给 LLM 生成答案。检索和生成是两个独立步骤，由不同的系统完成。</p>
+      <p style="margin-top:8px;">模拟 RAG 则<strong>让 LLM 自己充当检索器</strong>——通过提示词引导模型在已有的长上下文中标记相关片段，而不是调用外部检索系统。关键区别有三点：（1）模拟 RAG 不需要外部索引或检索 API；（2）模拟 RAG 只能处理已在上下文中的信息，无法获取新知识；（3）模拟 RAG 的"检索"是模型自主判断的结果，而非向量相似度匹配。</p>
+      <p style="margin-top:8px;">简言之：真正 RAG = 外部检索 + LLM 生成；模拟 RAG = LLM 自检索 + LLM 生成（单次完成）。</p>
+    </div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-q">Q2: 为什么 RAG 在 QA2 任务上表现如此之差（仅 0.04）？</div>
+    <div class="qa-a">
+      <p>QA2 是"双支撑事实"任务——需要同时找到两个事实（如"苹果在花园被拿起"和"Daniel 移动到厨房"）并组合推理。传统 RAG 使用 Top-k 检索，即从长文本中检索与问题最相似的 k 个句子。</p>
+      <p style="margin-top:8px;">问题在于：这两个关键事实在语义上可能并不都与"苹果在哪里"直接相似。例如，"Daniel 移动到厨房"这句话中根本没有提到"苹果"，检索器很可能不会把它选入 Top-k 结果。即使检索器找到了"拿起"事件，也可能遗漏"移动"事件，导致推理链断裂。</p>
+      <p style="margin-top:8px;">而本文方法通过让模型自主标记相关片段，模型可以根据问题推理出"我需要同时找到拿起和移动事件"，从而更全面地覆盖多跳所需的事实。</p>
+    </div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-q">Q3: 为什么"问题优先"排列在长上下文中效果最好？</div>
+    <div class="qa-a">
+      <p>这与 LLM 的注意力机制有关。在标准排列（指令→文本→问题）中，模型在阅读长文本时还不知道问题是什么，因此无法有针对性地关注相关内容——相当于"无目标阅读"。</p>
+      <p style="margin-top:8px;">而"问题优先"排列让模型先看到问题，在后续阅读长文本时，注意力机制会被问题的语义引导，更倾向于关注与问题相关的内容。这类似于人类的"带着问题阅读"策略——先看题目，再带着目的去文章中找答案。</p>
+      <p style="margin-top:8px;">在短上下文（16k）中，模型可以在注意力覆盖范围内处理大部分内容，因此排列影响不大。但在长上下文（64k）中，注意力资源更为稀缺，"问题优先"的引导作用就显得尤为关键。</p>
+    </div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-q">Q4: 这个方法能替代所有 RAG 场景吗？</div>
+    <div class="qa-a">
+      <p><strong>不能。</strong>模拟 RAG 有明确的能力边界：</p>
+      <p style="margin-top:8px;"><strong>适用场景</strong>：当所有相关信息都已经在 LLM 的上下文中时（如处理一份长文档、分析一篇论文），模拟 RAG 可以有效替代外部检索。</p>
+      <p style="margin-top:8px;"><strong>不适用场景</strong>：（1）需要从外部知识库获取信息时（如查询数据库、搜索互联网）；（2）上下文超出模型窗口时（如百万级 token 的文档）；（3）模型指令遵循能力不足时（如较小的模型可能无法稳定执行标记指令）。</p>
+      <p style="margin-top:8px;">论文作者也指出了未来方向——"混合工具集成"（Hybrid Tool Integration），即先尝试模拟 RAG，如果失败再调用外部知识库，取两者之长。</p>
+    </div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-q">Q5: 四个步骤必须在同一次生成中完成吗？能不能拆成多次调用？</div>
+    <div class="qa-a">
+      <p>从技术上说，完全可以拆成多次调用——先调用一次让模型标记相关片段，再调用一次让模型基于标记结果推理，以此类推。多轮调用的好处是可以对中间结果进行验证和修正。</p>
+      <p style="margin-top:8px;">但本文刻意选择"单次传播"设计，原因有二：（1）<strong>减少 API 开销</strong>——每次调用都消耗 token 和时间，单次调用更经济；（2）<strong>简化系统架构</strong>——不需要中间结果解析、错误处理和多轮编排逻辑。</p>
+      <p style="margin-top:8px;">不过，单次传播的代价是失去了迭代纠正的能力。如果模型在标记阶段出错，后续推理无法修正。这恰恰是论文局限性的一个方面。</p>
+    </div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-q">Q6: max_tokens=20 的设置是否过于限制？模型怎么在 20 个 token 内完成四步？</div>
+    <div class="qa-a">
+      <p>这是一个常见的疑惑。实际上，<code>max_tokens=20</code> 是<strong>最终答案</strong>的 token 限制，而非整个生成的 token 限制。在论文的实验实现中，模型首先生成标记、摘要和推理步骤（这部分可以很长），最后在"Answer:"之后只取 20 个 token 作为最终答案。</p>
+      <p style="margin-top:8px;">具体来说，论文的代码使用了 <code>max_tokens</code> 参数控制的是 API 返回的总 token 数。但由于 CoT 输出通常较长，实际实现中可能使用了更大的 <code>max_tokens</code> 来允许中间步骤的生成，而评估时只检查最终答案是否包含正确标签。20 token 的限制是为了确保最终答案简洁，便于精确匹配评估。</p>
+    </div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-q">Q7: 为什么选择 BABILong 而非其他长上下文基准？</div>
+    <div class="qa-a">
+      <p>BABILong 的独特之处在于它<strong>专门测试多跳推理</strong>（而非单纯的检索能力）。其他基准如 NeedleBench 主要测试"大海捞针"式的单点检索——在长文本中找到一个特定的事实。而 BABILong 的 QA2 和 QA7 任务要求模型找到并组合多个分散的事实，更贴合本文方法要解决的"多跳推理"问题。</p>
+      <p style="margin-top:8px;">此外，BABILong 基于 bAbI 任务设计，任务定义清晰、答案确定性强（精确匹配），便于量化评估和错误分析。而一些开放域 QA 基准的答案可能存在歧义，不利于严格的对比实验。</p>
+      <p style="margin-top:8px;">不过，论文也承认局限——仅在 BABILong 上验证，未来应在 InfinityBench、NeedleBench、LongHealth 等更多基准上测试泛化性。</p>
+    </div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-q">Q8: llama-3.1-8b 在某些设置下 Baseline 比 Proposed 还好，怎么解释？</div>
+    <div class="qa-a">
+      <p>在 QA2 的 16k 和 64k 设置下，llama-3.1-8b 的 Baseline（0.24、0.40）确实高于 Proposed 的最低值（0.16、0.24）。这可能有几个原因：</p>
+      <p style="margin-top:8px;">（1）<strong>小模型的指令遵循能力不足</strong>：8B 参数的模型在执行复杂的多步指令（标记+摘要+推理+回答）时可能出错，导致标记遗漏或推理混乱，反而不如直接回答来得简单有效。</p>
+      <p style="margin-top:8px;">（2）<strong>提示词开销</strong>：复杂指令本身占用了上下文空间，留给实际内容的 token 减少，可能影响模型对长文本的利用。</p>
+      <p style="margin-top:8px;">（3）<strong>排列顺序的敏感性</strong>：Proposed 的范围是三种排列的最小-最大值，最差的排列可能确实不如 Baseline，但最好的排列通常优于 Baseline。</p>
+    </div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-q">Q9: 这个方法对实际应用有什么启示？</div>
+    <div class="qa-a">
+      <p>（1）<strong>文档问答</strong>：当用户上传一份长文档（法律合同、技术报告）并提问时，可以在提示词中加入标记指令，让模型先定位相关段落再回答，而非直接回答。这通常比单纯增加上下文长度更有效。</p>
+      <p style="margin-top:8px;">（2）<strong>减少系统复杂度</strong>：在许多 RAG 应用中，检索器和 LLM 的集成为系统增加了显著复杂度（索引构建、检索策略、结果排序）。如果所需信息已在上下文中，模拟 RAG 是一种更简单的替代。</p>
+      <p style="margin-top:8px;">（3）<strong>提示词排列优化</strong>：在实际部署中，应该针对具体任务测试不同的提示词排列顺序，而非使用固定模板。这一步"小优化"可能带来显著的性能提升。</p>
+      <p style="margin-top:8px;">（4）<strong>混合策略</strong>：最佳实践可能是"模拟 RAG 优先，外部 RAG 兜底"——先用提示工程让模型自检索，如果置信度不足再调用外部检索器。</p>
+    </div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-q">Q10: 与 IRCoT、Self-RAG 等相关方法相比，本文方法有何优势和不足？</div>
+    <div class="qa-a">
+      <p><strong>IRCoT</strong>（Interleaving Retrieval with Chain-of-Thought）交替执行检索和推理步骤，可以在推理过程中动态调整检索查询。优势是更灵活、可迭代纠正；不足是需要多次检索调用和 LLM 调用，系统更复杂。本文方法牺牲了迭代能力换取单次传播的简洁性。</p>
+      <p style="margin-top:8px;"><strong>Self-RAG</strong> 让模型自主决定是否需要检索，并通过反思标记（如[Retrieve]、[IsRel]、[IsSup]）控制生成过程。优势是更精细的检索控制；不足是需要专门训练模型来产出反思标记。本文方法不需要训练，但控制粒度更粗。</p>
+      <p style="margin-top:8px;">总体而言，本文方法的定位是<strong>最轻量级的 RAG 替代</strong>——无需训练、无需外部系统、单次调用完成。适合作为"快速原型"或"轻量级方案"使用，在需要更高精度时再考虑更复杂的方法。</p>
+    </div>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- ====== 第9节 ====== -->
+<section class="section" id="sec9">
+  <h2 class="section-title"><span class="num">9</span> 代码使用与实战</h2>
+
+  <p class="section-desc">
+    本节提供基于论文方法的实战代码示例。由于论文未开源完整代码，以下实现基于论文描述和伪代码片段进行了还原。
+  </p>
+
+  <div class="module-card">
+    <h3>9.1 源码信息</h3>
+    <table class="data-table">
+      <thead><tr><th>项目</th><th>信息</th></tr></thead>
+      <tbody>
+        <tr><td>GitHub 仓库</td><td>未开源（截至 2025 年 2 月）</td></tr>
+        <tr><td>评估基准</td><td><code>RMT-team/babilong</code>（HuggingFace）</td></tr>
+        <tr><td>依赖库</td><td>datasets, openai, tqdm, pandas</td></tr>
+        <tr><td>测试模型</td><td>gpt-4o-mini, llama-3.1-8b-instruct</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="module-card">
+    <h3>9.2 安装依赖</h3>
+    <div class="code-block">
+      <pre><span class="cg"># 安装所需 Python 库</span>
+pip install datasets openai tqdm pandas
+
+<span class="cg"># 设置 OpenAI API Key（如果使用 gpt-4o-mini）</span>
+<span class="ck">export</span> OPENAI_API_KEY=<span class="cs">"your-api-key"</span></pre>
+    </div>
+  </div>
+
+  <div class="module-card">
+    <h3>9.3 核心：构建 Emulated RAG 提示词</h3>
+    <div class="code-block">
+      <pre><span class="ck">def</span> <span class="cf">build_emulated_rag_prompt</span>(context, question, order=<span class="cs">"question_first"</span>):
+    <span class="cs">"""构建 Emulated RAG + CoT 提示词
+    
+    Args:
+        context: 长文本内容（可能数千 token）
+        question: 用户问题
+        order: 提示词排列顺序
+            - "standard": 指令→文本→问题
+            - "question_first": 问题→指令→文本
+            - "relevant_first": 指令→文本→问题→示例
+    """</span>
+    instructions = <span class="cs">"""You will be given a very long passage and a question.
+
+Step 1 - TAGGING: Identify any sentences or paragraphs that are 
+relevant to the question. Surround each relevant snippet in a 
+&lt;relevant_section position="..."&gt; tag, where position is the 
+approximate location in the text (e.g., "12.3%").
+
+Step 2 - SUMMARIZATION: For each relevant section you tagged, 
+summarize key details (entities, actions, numeric values) in a 
+short bullet list.
+
+Step 3 - REASONING: Combine these summaries in a step-by-step 
+chain-of-thought to answer the question. Number each step.
+
+Step 4 - ANSWER: Provide your final concise answer in one sentence 
+after "Answer:"."""</span>
+
+    content_block = <span class="cs">f"[LONG CONTENT]:\n{context}"</span>
+    question_block = <span class="cs">f"[QUESTION]:\n{question}"</span>
+    example_block = <span class="cs">"""[EXAMPLE TAGS]:
+&lt;relevant_section position="5.2%"&gt;
+Daniel grabbed the apple in the garden
+&lt;/relevant_section&gt;"""</span>
+
+    <span class="ck">if</span> order == <span class="cs">"standard"</span>:
+        <span class="ck">return</span> <span class="cs">f</span><span class="cs">"{instructions}\n\n{content_block}\n\n{question_block}"</span>
+    <span class="ck">elif</span> order == <span class="cs">"question_first"</span>:
+        <span class="ck">return</span> <span class="cs">f</span><span class="cs">"{question_block}\n\n{instructions}\n\n{content_block}"</span>
+    <span class="ck">elif</span> order == <span class="cs">"relevant_first"</span>:
+        <span class="ck">return</span> <span class="cs">f</span><span class="cs">"{instructions}\n\n{content_block}\n\n{question_block}\n\n{example_block}"</span></pre>
+    </div>
+  </div>
+
+  <div class="module-card">
+    <h3>9.4 评估脚本示例</h3>
+    <div class="code-block">
+      <pre><span class="ck">import</span> datasets, openai, pandas <span class="ck">as</span> pd
+<span class="ck">from</span> tqdm <span class="ck">import</span> tqdm
+
+model_name = <span class="cs">"gpt-4o-mini"</span>
+generate_kwargs = {<span class="cs">"max_tokens"</span>: <span class="cv">512</span>, <span class="cs">"temperature"</span>: <span class="cv">0.0</span>}
+
+<span class="ck">for</span> context_size <span class="ck">in</span> [<span class="cs">"16k"</span>, <span class="cs">"32k"</span>, <span class="cs">"64k"</span>]:
+    data = datasets.load_dataset(<span class="cs">"RMT-team/babilong"</span>, context_size)
+    subset = data[<span class="cs">"qa2"</span>].select(<span class="cf">range</span>(<span class="cv">25</span>))
+    results = []
+    
+    <span class="ck">for</span> sample <span class="ck">in</span> tqdm(subset, desc=<span class="cs">f"QA2-{context_size}"</span>):
+        context = sample[<span class="cs">"input"</span>]
+        question = sample[<span class="cs">"question"</span>]
+        target = sample[<span class="cs">"target"</span>]
+        
+        <span class="cg"># 构建 Emulated RAG 提示词</span>
+        prompt = build_emulated_rag_prompt(context, question, 
+                                          order=<span class="cs">"question_first"</span>)
+        
+        <span class="cg"># 调用 LLM</span>
+        response = openai.ChatCompletion.create(
+            model=model_name,
+            messages=[{<span class="cs">"role"</span>: <span class="cs">"user"</span>, <span class="cs">"content"</span>: prompt}],
+            **generate_kwargs
+        )
+        output = response.choices[<span class="cv">0</span>].message[<span class="cs">"content"</span>]
+        
+        <span class="cg"># 检查答案是否正确</span>
+        correct = target.<span class="cf">lower</span>() <span class="ck">in</span> output.<span class="cf">lower</span>()
+        results.append({
+            <span class="cs">"question"</span>: question,
+            <span class="cs">"target"</span>: target,
+            <span class="cs">"output"</span>: output,
+            <span class="cs">"correct"</span>: correct
+        })
+    
+    <span class="cg"># 计算准确率</span>
+    df = pd.DataFrame(results)
+    accuracy = df[<span class="cs">"correct"</span>].mean()
+    <span class="cf">print</span>(<span class="cs">f"QA2, {context_size}, accuracy={accuracy:.2f}"</span>)</pre>
+    </div>
+  </div>
+
+  <div class="module-card">
+    <h3>9.5 快速上手：单样本测试</h3>
+    <div class="code-block">
+      <pre><span class="cg"># 用一段示例文本快速测试方法效果</span>
+context = <span class="cs">"""
+Mary went to the garden. Daniel grabbed the apple in the garden. 
+The sun was shining brightly that day. Birds were singing in the 
+trees. Daniel moved to the kitchen. The kitchen was clean and tidy.
+Mary picked some flowers. The flowers were beautiful.
+"""</span>
+
+question = <span class="cs">"Where is the apple located at the end?"</span>
+
+prompt = build_emulated_rag_prompt(context, question, order=<span class="cs">"question_first"</span>)
+
+<span class="cg"># 预期输出：</span>
+<span class="cg"># &lt;relevant_section position="10%"&gt;</span>
+<span class="cg"># Daniel grabbed the apple in the garden</span>
+<span class="cg"># &lt;/relevant_section&gt;</span>
+<span class="cg"># &lt;relevant_section position="50%"&gt;</span>
+<span class="cg"># Daniel moved to the kitchen</span>
+<span class="cg"># &lt;/relevant_section&gt;</span>
+<span class="cg"># </span>
+<span class="cg"># Summary 1: Daniel grabbed apple, location: garden</span>
+<span class="cg"># Summary 2: Daniel moved, destination: kitchen</span>
+<span class="cg"># </span>
+<span class="cg"># Step 1: Apple was in the garden</span>
+<span class="cg"># Step 2: Daniel (carrying apple) moved to kitchen</span>
+<span class="cg"># Step 3: Therefore apple is in the kitchen</span>
+<span class="cg"># </span>
+<span class="cg"># Answer: The apple is in the kitchen.</span></pre>
+    </div>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- ====== 页尾 ====== -->
+<footer class="footer">
+  <p>深度解读 · Emulating RAG via Prompt Engineering · 生成于 2026 年 5 月</p>
+  <p style="margin-top:6px;">基于论文 arXiv:2502.12462 | 京都大学 Joon Park, Kyohei Atarashi, Koh Takeuchi, Hisashi Kashima</p>
+</footer>
+
+</div>
+<script src="theme.js"></script>
+</body>
+</html>
