@@ -1,0 +1,938 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>深度解读 — Agentic Reasoning for Large Language Models</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{
+  font-family:'Noto Sans SC',system-ui,-apple-system,sans-serif;
+  background:#0d1117;color:#c9d1d9;
+  line-height:1.8;font-size:16px;min-height:100vh;
+}
+.container{max-width:1400px;margin:0 auto;padding:0 24px;background:#0d1117;position:relative;}
+.back-btn{
+  position:fixed;top:16px;left:16px;z-index:9999;
+  background:rgba(20,20,35,.75);color:#c9d1d9;
+  border:1px solid rgba(255,255,255,.15);border-radius:10px;
+  padding:8px 16px;font-size:14px;cursor:pointer;
+  backdrop-filter:blur(6px);transition:all .3s;
+  text-decoration:none;display:flex;align-items:center;gap:6px;
+}
+.back-btn:hover{background:rgba(30,30,55,.9);border-color:rgba(255,255,255,.3);}
+.hero{padding:80px 0 40px;text-align:center;}
+.hero-title{
+  font-size:2.2rem;font-weight:700;
+  background:linear-gradient(135deg,#f7971e,#ffd200);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  background-clip:text;margin-bottom:12px;line-height:1.3;
+}
+.hero-sub{font-size:1.1rem;color:#8b949e;margin-bottom:8px;}
+.venue{font-size:.95rem;color:#8b949e;margin-top:8px;}
+.venue a{color:#f7971e;text-decoration:none;}
+.venue a:hover{text-decoration:underline;}
+.tag-row{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:16px;}
+.tag{
+  display:inline-block;padding:4px 14px;border-radius:20px;font-size:.85rem;
+  border:1px solid rgba(247,151,30,.3);color:#f7971e;
+  background:rgba(247,151,30,.06);
+}
+.divider{border:none;border-top:1px solid rgba(255,255,255,.08);margin:48px 0;}
+.section{margin:40px 0;}
+.section-title{
+  font-size:1.75rem;font-weight:700;margin-bottom:20px;
+  color:#e6edf3;display:flex;align-items:center;gap:10px;
+}
+.section-title .num{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:36px;height:36px;border-radius:50%;
+  background:linear-gradient(135deg,#f7971e,#ffd200);
+  color:#0d1117;font-size:1rem;font-weight:700;flex-shrink:0;
+}
+.section-desc{font-size:16px;line-height:1.9;color:#c9d1d9;margin-bottom:16px;}
+.toc{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:16px;padding:28px 36px;margin:30px 0;
+}
+.toc h3{font-size:1.2rem;color:#e6edf3;margin-bottom:14px;}
+.toc ol{list-style:none;counter-reset:toc;padding:0;}
+.toc li{counter-increment:toc;margin:8px 0;}
+.toc li::before{content:counter(toc) ".";color:#f7971e;font-weight:600;margin-right:8px;}
+.toc a{color:#8b949e;text-decoration:none;transition:color .2s;}
+.toc a:hover{color:#f7971e;}
+.module-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:24px;margin:18px 0;transition:all .3s;
+}
+.module-card:hover{border-color:rgba(247,151,30,.3);transform:translateY(-2px);}
+.module-card h3{font-size:1.15rem;font-weight:600;margin-bottom:10px;color:#f7971e;}
+.module-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.arch-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:22px;margin:14px 0;transition:all .3s;
+}
+.arch-card:hover{border-color:rgba(247,151,30,.25);}
+.arch-card h4{font-size:1.05rem;font-weight:600;color:#ffd200;margin-bottom:8px;}
+.arch-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.step-flow{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:22px;margin:14px 0;
+}
+.step-flow h4{font-size:1.05rem;font-weight:600;color:#ffd200;margin-bottom:8px;}
+.step-flow p{font-size:15px;line-height:1.8;color:#8b949e;}
+.data-table{
+  width:100%;border-collapse:collapse;margin:18px 0;
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;overflow:hidden;font-size:14px;
+}
+.data-table th{
+  background:rgba(247,151,30,.08);color:#f7971e;padding:12px 14px;
+  text-align:left;font-weight:600;border-bottom:1px solid rgba(255,255,255,.1);
+}
+.data-table td{
+  padding:10px 14px;border-bottom:1px solid rgba(255,255,255,.06);color:#c9d1d9;
+}
+.data-table tr:hover td{background:rgba(247,151,30,.03);}
+.formula-box{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:20px 24px;margin:16px 0;
+  font-size:18px;color:#e6edf3;text-align:center;
+  font-family:'JetBrains Mono',monospace;
+}
+.code-block{
+  background:rgba(20,20,35,.8);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:20px 24px;margin:16px 0;overflow-x:auto;
+}
+.code-block pre{font-family:'JetBrains Mono',monospace;font-size:14px;color:#c9d1d9;line-height:1.7;}
+.ck{color:#f7971e;}.cs{color:#a5d6a7;}.cf{color:#ffd200;}.cg{color:#8b949e;}.cv{color:#ef9a9a;}.cn{color:#ce93d8;}
+.qa-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:24px;margin:16px 0;transition:all .3s;
+}
+.qa-card:hover{border-color:rgba(247,151,30,.3);}
+.qa-q{font-size:1.05rem;font-weight:600;color:#f7971e;margin-bottom:10px;}
+.qa-a{font-size:15px;line-height:1.9;color:#c9d1d9;}
+.fc{font-size:14px;color:#8b949e;margin-top:8px;line-height:1.6;}
+.paper-figure{
+  background:rgba(20,20,35,.4);border:1px solid rgba(255,255,255,.06);
+  border-radius:14px;padding:16px;margin:16px 0;text-align:center;
+}
+.paper-figure img{max-width:100%;border-radius:12px;margin:8px 0;}
+.highlight-box{
+  background:rgba(247,151,30,.06);border:1px solid rgba(247,151,30,.2);
+  border-radius:14px;padding:20px 24px;margin:16px 0;
+}
+.highlight-box h4{color:#f7971e;margin-bottom:8px;font-size:1.05rem;}
+.highlight-box p{color:#c9d1d9;line-height:1.8;font-size:15px;}
+.warn-box{
+  background:rgba(255,193,7,.06);border:1px solid rgba(255,193,7,.2);
+  border-radius:14px;padding:20px 24px;margin:16px 0;
+}
+.warn-box h4{color:#ffc107;margin-bottom:8px;font-size:1.05rem;}
+.warn-box p{color:#c9d1d9;line-height:1.8;font-size:15px;}
+.info-box{
+  background:rgba(247,151,30,.04);border:1px solid rgba(247,151,30,.15);
+  border-radius:14px;padding:20px 24px;margin:16px 0;
+}
+.info-box h4{color:#ffd200;margin-bottom:8px;font-size:1.05rem;}
+.info-box p{color:#c9d1d9;line-height:1.8;font-size:15px;}
+.insight-box{
+  background:rgba(247,151,30,.06);border:1px solid rgba(247,151,30,.2);
+  border-radius:14px;padding:20px 24px;margin:16px 0;
+}
+.insight-box h4{color:#f7971e;margin-bottom:8px;font-size:1.05rem;}
+.insight-box p{color:#c9d1d9;line-height:1.8;font-size:15px;}
+.limit-box{
+  background:rgba(255,193,7,.06);border:1px solid rgba(255,193,7,.2);
+  border-radius:14px;padding:20px 24px;margin:16px 0;
+}
+.limit-box h4{color:#ffc107;margin-bottom:8px;font-size:1.05rem;}
+.limit-box p{color:#c9d1d9;line-height:1.8;font-size:15px;}
+.comp-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:22px;margin:14px 0;transition:all .3s;
+}
+.comp-card:hover{border-color:rgba(247,151,30,.25);}
+.comp-card h4{font-size:1.05rem;font-weight:600;color:#ffd200;margin-bottom:8px;}
+.comp-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.kv-row{display:flex;border-bottom:1px solid rgba(255,255,255,.06);padding:8px 0;}
+.kv-key{width:180px;color:#8b949e;font-size:14px;flex-shrink:0;}
+.kv-val{color:#e6edf3;font-size:14px;flex:1;}
+.footer{text-align:center;padding:40px 0 30px;color:#8b949e;font-size:.9rem;}
+.prompt-box{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:20px;margin:16px 0;position:relative;
+}
+.prompt-label{
+  position:absolute;top:-10px;left:16px;background:#1a2340;
+  padding:2px 12px;border-radius:8px;font-size:.8rem;color:#f7971e;
+  border:1px solid rgba(247,151,30,.3);
+}
+.prompt-box pre{
+  font-family:'JetBrains Mono',monospace;font-size:14px;
+  color:#c9d1d9;line-height:1.7;white-space:pre-wrap;
+}
+@media(max-width:768px){
+  .container{padding:0 12px;}
+  .hero-title{font-size:1.5rem;}
+  .section-title{font-size:1.3rem;}
+  .data-table{font-size:12px;}
+  .kv-row{flex-direction:column;}
+  .kv-key{width:100%;}
+}
+</style>
+</head>
+<body>
+<a class="back-btn" href="index.html">← 返回主页</a>
+<div class="container">
+
+<!-- ====== HERO ====== -->
+<div class="hero">
+  <h1 class="hero-title">Agentic Reasoning for Large Language Models</h1>
+  <p class="hero-sub">♢ Foundations · Evolution · Collaboration ♢ — 从推理到行动：智能体推理的统一路线图</p>
+  <p class="venue">
+    <span>📄 arXiv Survey 2026</span> &nbsp;|&nbsp;
+    <a href="https://arxiv.org/abs/2601.12538" target="_blank">arXiv: 2601.12538</a> &nbsp;|&nbsp;
+    <a href="https://github.com/weitianxin/Awesome-Agentic-Reasoning" target="_blank">GitHub: Awesome-Agentic-Reasoning</a>
+  </p>
+  <div class="tag-row">
+    <span class="tag">Survey</span>
+    <span class="tag">Agentic Reasoning</span>
+    <span class="tag">Multi-Agent</span>
+    <span class="tag">Self-Evolution</span>
+    <span class="tag">Planning</span>
+  </div>
+</div>
+
+<!-- ====== ARCHITECTURE OVERVIEW ====== -->
+<div class="section">
+  <h2 class="section-title"><span class="num">★</span> 整体架构总览</h2>
+  <p class="section-desc">
+    本综述将"智能体推理"（Agentic Reasoning）定义为从纯推理到推理-行动融合的范式转换。论文沿三个互补维度组织智能体推理：环境动态性（Foundation→Self-Evolving→Collective）、优化设置（In-Context vs. Post-Training）和智能体交互（单智能体→多智能体）。下图展示了这一三维分类体系的核心结构。
+  </p>
+
+  <!-- SVG Architecture Diagram -->
+  <div class="svg-wrap" style="background:rgba(20,20,35,.4);border-radius:16px;padding:20px;margin:16px 0;">
+  <svg viewBox="0 0 1200 520" xmlns="http://www.w3.org/2000/svg" style="width:100%;font-family:'Noto Sans SC',system-ui,sans-serif;">
+    <defs>
+      <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#f7971e"/><stop offset="100%" stop-color="#ffd200"/>
+      </linearGradient>
+      <linearGradient id="goldGrad2" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%" stop-color="#f7971e" stop-opacity=".15"/><stop offset="100%" stop-color="#ffd200" stop-opacity=".15"/>
+      </linearGradient>
+      <filter id="sh"><feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#f7971e" flood-opacity=".15"/></filter>
+    </defs>
+    <!-- Title -->
+    <text x="600" y="30" text-anchor="middle" fill="#f7971e" font-size="16" font-weight="700">Agentic Reasoning 三维分类体系</text>
+
+    <!-- Dimension 1: Environmental Dynamics (vertical stack) -->
+    <rect x="30" y="50" width="340" height="450" rx="16" fill="#1a2340" stroke="#f7971e" stroke-opacity=".3" stroke-width="1.5"/>
+    <text x="200" y="78" text-anchor="middle" fill="#f7971e" font-size="14" font-weight="700">维度一：环境动态性</text>
+
+    <!-- Layer 1: Foundation -->
+    <rect x="50" y="95" width="300" height="110" rx="12" fill="#252a3a" stroke="#ffd200" stroke-opacity=".2" filter="url(#sh)"/>
+    <text x="200" y="118" text-anchor="middle" fill="#ffd200" font-size="13" font-weight="600">🧱 基础层 (Foundational)</text>
+    <text x="200" y="140" text-anchor="middle" fill="#8b949e" font-size="11">稳定环境中的核心单智能体能力</text>
+    <text x="70" y="162" fill="#f7971e" font-size="11">• Planning（规划）</text>
+    <text x="70" y="180" fill="#f7971e" font-size="11">• Tool Use（工具使用）</text>
+    <text x="200" y="162" fill="#f7971e" font-size="11">• Search（搜索）</text>
+    <text x="200" y="180" fill="#f7971e" font-size="11">• Reasoning（推理）</text>
+
+    <!-- Layer 2: Self-Evolving -->
+    <rect x="50" y="220" width="300" height="110" rx="12" fill="#252a3a" stroke="#ffd200" stroke-opacity=".2" filter="url(#sh)"/>
+    <text x="200" y="243" text-anchor="middle" fill="#ffd200" font-size="13" font-weight="600">🔄 进化层 (Self-Evolving)</text>
+    <text x="200" y="265" text-anchor="middle" fill="#8b949e" font-size="11">动态环境中的自我完善能力</text>
+    <text x="70" y="287" fill="#f7971e" font-size="11">• Feedback（反馈学习）</text>
+    <text x="70" y="305" fill="#f7971e" font-size="11">• Memory（记忆管理）</text>
+    <text x="220" y="287" fill="#f7971e" font-size="11">• Adaptation（适应）</text>
+    <text x="220" y="305" fill="#f7971e" font-size="11">• Self-Reflection（自省）</text>
+
+    <!-- Layer 3: Collective -->
+    <rect x="50" y="345" width="300" height="110" rx="12" fill="#252a3a" stroke="#ffd200" stroke-opacity=".2" filter="url(#sh)"/>
+    <text x="200" y="368" text-anchor="middle" fill="#ffd200" font-size="13" font-weight="600">🤝 集体层 (Collective)</text>
+    <text x="200" y="390" text-anchor="middle" fill="#8b949e" font-size="11">多智能体协作场景</text>
+    <text x="70" y="412" fill="#f7971e" font-size="11">• Role Coordination（角色协调）</text>
+    <text x="70" y="430" fill="#f7971e" font-size="11">• Knowledge Sharing（知识共享）</text>
+    <text x="70" y="448" fill="#f7971e" font-size="11">• Shared Goals（共享目标）</text>
+
+    <!-- Arrows between layers -->
+    <line x1="200" y1="205" x2="200" y2="220" stroke="#ffd200" stroke-width="2" marker-end="url(#arrowG)"/>
+    <line x1="200" y1="330" x2="200" y2="345" stroke="#ffd200" stroke-width="2" marker-end="url(#arrowG)"/>
+    <defs><marker id="arrowG" markerWidth="8" markerHeight="8" refX="8" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="#ffd200"/></marker></defs>
+
+    <!-- Dimension 2: Optimization Settings -->
+    <rect x="420" y="50" width="340" height="450" rx="16" fill="#1a2340" stroke="#f7971e" stroke-opacity=".3" stroke-width="1.5"/>
+    <text x="590" y="78" text-anchor="middle" fill="#f7971e" font-size="14" font-weight="700">维度二：优化设置</text>
+
+    <!-- In-Context -->
+    <rect x="440" y="95" width="300" height="180" rx="12" fill="#252a3a" stroke="#ffd200" stroke-opacity=".2" filter="url(#sh)"/>
+    <text x="590" y="118" text-anchor="middle" fill="#ffd200" font-size="13" font-weight="600">⚡ 上下文内推理 (In-Context)</text>
+    <text x="590" y="140" text-anchor="middle" fill="#8b949e" font-size="11">扩展测试时交互，无需训练</text>
+    <text x="460" y="165" fill="#f7971e" font-size="11">• Structured Orchestration（结构化编排）</text>
+    <text x="460" y="185" fill="#f7971e" font-size="11">• Adaptive Workflow Design（自适应工作流）</text>
+    <text x="460" y="205" fill="#f7971e" font-size="11">• Prompt Engineering（提示工程）</text>
+    <text x="460" y="225" fill="#f7971e" font-size="11">• In-Context Learning（上下文学习）</text>
+    <text x="460" y="245" fill="#f7971e" font-size="11">• Tool Augmentation（工具增强）</text>
+
+    <!-- Post-Training -->
+    <rect x="440" y="295" width="300" height="180" rx="12" fill="#252a3a" stroke="#ffd200" stroke-opacity=".2" filter="url(#sh)"/>
+    <text x="590" y="318" text-anchor="middle" fill="#ffd200" font-size="13" font-weight="600">🏋️ 训练后推理 (Post-Training)</text>
+    <text x="590" y="340" text-anchor="middle" fill="#8b949e" font-size="11">通过训练优化智能体行为</text>
+    <text x="460" y="365" fill="#f7971e" font-size="11">• Reinforcement Learning（强化学习）</text>
+    <text x="460" y="385" fill="#f7971e" font-size="11">• Supervised Fine-Tuning（监督微调）</text>
+    <text x="460" y="405" fill="#f7971e" font-size="11">• Reward Modeling（奖励建模）</text>
+    <text x="460" y="425" fill="#f7971e" font-size="11">• Direct Preference Optimization</text>
+    <text x="460" y="445" fill="#f7971e" font-size="11">• Constitutional AI（宪法AI）</text>
+
+    <!-- Dimension 3: Application Domains -->
+    <rect x="810" y="50" width="360" height="450" rx="16" fill="#1a2340" stroke="#f7971e" stroke-opacity=".3" stroke-width="1.5"/>
+    <text x="990" y="78" text-anchor="middle" fill="#f7971e" font-size="14" font-weight="700">维度三：应用与评估</text>
+
+    <rect x="830" y="95" width="155" height="70" rx="10" fill="#252a3a" stroke="#ffd200" stroke-opacity=".2"/>
+    <text x="907" y="120" text-anchor="middle" fill="#ffd200" font-size="12" font-weight="600">🔬 Science</text>
+    <text x="907" y="140" text-anchor="middle" fill="#8b949e" font-size="10">科学发现</text>
+
+    <rect x="1000" y="95" width="155" height="70" rx="10" fill="#252a3a" stroke="#ffd200" stroke-opacity=".2"/>
+    <text x="1077" y="120" text-anchor="middle" fill="#ffd200" font-size="12" font-weight="600">🤖 Robotics</text>
+    <text x="1077" y="140" text-anchor="middle" fill="#8b949e" font-size="10">机器人控制</text>
+
+    <rect x="830" y="180" width="155" height="70" rx="10" fill="#252a3a" stroke="#ffd200" stroke-opacity=".2"/>
+    <text x="907" y="205" text-anchor="middle" fill="#ffd200" font-size="12" font-weight="600">🏥 Healthcare</text>
+    <text x="907" y="225" text-anchor="middle" fill="#8b949e" font-size="10">医疗决策</text>
+
+    <rect x="1000" y="180" width="155" height="70" rx="10" fill="#252a3a" stroke="#ffd200" stroke-opacity=".2"/>
+    <text x="1077" y="205" text-anchor="middle" fill="#ffd200" font-size="12" font-weight="600">🧪 Auto Research</text>
+    <text x="1077" y="225" text-anchor="middle" fill="#8b949e" font-size="10">自主研究</text>
+
+    <rect x="830" y="265" width="155" height="70" rx="10" fill="#252a3a" stroke="#ffd200" stroke-opacity=".2"/>
+    <text x="907" y="290" text-anchor="middle" fill="#ffd200" font-size="12" font-weight="600">📐 Math</text>
+    <text x="907" y="310" text-anchor="middle" fill="#8b949e" font-size="10">数学推理</text>
+
+    <rect x="1000" y="265" width="155" height="70" rx="10" fill="#252a3a" stroke="#ffd200" stroke-opacity=".2"/>
+    <text x="1077" y="290" text-anchor="middle" fill="#ffd200" font-size="12" font-weight="600">💻 Coding</text>
+    <text x="1077" y="310" text-anchor="middle" fill="#8b949e" font-size="10">代码生成</text>
+
+    <!-- Benchmarks box -->
+    <rect x="830" y="360" width="325" height="120" rx="12" fill="#252a3a" stroke="#f7971e" stroke-opacity=".3" filter="url(#sh)"/>
+    <text x="992" y="385" text-anchor="middle" fill="#f7971e" font-size="12" font-weight="600">📊 评估基准</text>
+    <text x="850" y="410" fill="#8b949e" font-size="11">• SWE-Bench / WebArena / ALFWorld</text>
+    <text x="850" y="430" fill="#8b949e" font-size="11">• HotpotQA / GAIA / AIME</text>
+    <text x="850" y="450" fill="#8b949e" font-size="11">• ScienceWorld / GAIA / Mind2Web</text>
+    <text x="850" y="470" fill="#8b949e" font-size="11">• OSWorld / MiniWoB++ / WebShop</text>
+  </svg>
+  </div>
+  <p class="fc">▲ Agentic Reasoning 三维分类体系总览：环境动态性（左）、优化设置（中）、应用与评估（右）</p>
+
+  <!-- Module Cards -->
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(380px,1fr));gap:18px;margin-top:24px;">
+    <div class="arch-card">
+      <h4>🧱 基础层 — Foundational Agentic Reasoning</h4>
+      <p>建立智能体在稳定环境中的核心能力：规划（Plan→Act, Tree of Thoughts）、工具使用（API调用、代码执行）、搜索（DFS/BFS/MCTS在推理空间中的搜索）。这是智能体推理的"地基"，所有高级能力都建立在基础能力之上。</p>
+    </div>
+    <div class="arch-card">
+      <h4>🔄 进化层 — Self-Evolving Agentic Reasoning</h4>
+      <p>智能体在动态变化的环境中通过反馈循环（外部评估信号）、记忆系统（情景记忆+语义记忆）和自省机制（Reflexion, Self-Refine）持续自我完善。关键在于从经验中学习并泛化到新场景。</p>
+    </div>
+    <div class="arch-card">
+      <h4>🤝 集体层 — Collective Multi-Agent Reasoning</h4>
+      <p>多智能体系统通过角色分工（如 CAMEL 的角色扮演）、知识共享（共享记忆池或消息传递）和共识机制（辩论、投票）实现集体智能。MetaGPT、AutoGen 等框架使多智能体协作成为可能。</p>
+    </div>
+  </div>
+</div>
+
+<!-- ====== TABLE OF CONTENTS ====== -->
+<div class="section">
+  <div class="toc">
+    <h3>📑 文档目录</h3>
+    <ol>
+      <li><a href="#s0">核心问题与研究动机</a></li>
+      <li><a href="#s1">背景知识与前置概念</a></li>
+      <li><a href="#s2">方法论：三大维度详解</a></li>
+      <li><a href="#s3">核心创新点深度解析</a></li>
+      <li><a href="#s4">数据流解析：从推理到行动</a></li>
+      <li><a href="#s5">关键技术细节</a></li>
+      <li><a href="#s6">应用场景与评估基准</a></li>
+      <li><a href="#s7">设计精妙之处与局限性</a></li>
+      <li><a href="#s8">Q&A 深度解析</a></li>
+      <li><a href="#s9">代码使用与实战</a></li>
+    </ol>
+  </div>
+</div>
+
+<!-- ====== Section 0: Motivation ====== -->
+<div class="section" id="s0">
+  <h2 class="section-title"><span class="num">0</span> 核心问题与研究动机</h2>
+  <p class="section-desc">
+    大语言模型（LLM）在封闭世界的数学和代码推理基准上展现了惊人的能力，但当这些模型被置于开放、动态的真实环境中时，它们的表现往往令人失望。原因在于：<strong>推理（Reasoning）和行动（Action）之间存在鸿沟</strong>。传统的 LLM 推理是一种"闭门造车"——模型在内部生成思维链，但无法与外部世界交互、获取反馈或修正错误。
+  </p>
+  <p class="section-desc">
+    <strong>智能体推理（Agentic Reasoning）</strong>的核心洞察是：真正的智能不仅需要"想"（Think），更需要"做"（Act）和"学"（Learn）。当一个 LLM 被赋予感知环境、调用工具、获取反馈的能力时，它就从一个静态的推理器变成了一个动态的智能体。这种范式转换带来的不仅是能力的扩展，更是问题解决方式的根本性变革——从单次推理到交互式探索，从静态知识到动态适应，从孤立决策到协作规划。
+  </p>
+
+  <div class="highlight-box">
+    <h4>🔑 核心问题</h4>
+    <p>如何在 LLM 已有的推理能力基础上，系统性地构建规划、行动、学习的能力，使 LLM 成为能在开放环境中自主解决问题的智能体？更进一步，如何让多个智能体协同工作，实现集体智能？</p>
+  </div>
+
+  <p class="section-desc">
+    本综述的价值在于：在智能体推理领域爆发式增长的当下（2024-2026年间相关论文数量呈指数级增长），缺乏一个统一的分类框架来理解各种方法之间的关系和差异。本论文提供了这样的框架——三个互补维度，覆盖了从单智能体到多智能体、从无训练到训练优化、从理论到实践的完整图谱。
+  </p>
+</div>
+
+<!-- ====== Section 1: Background ====== -->
+<div class="section" id="s1">
+  <h2 class="section-title"><span class="num">1</span> 背景知识与前置概念</h2>
+  <p class="section-desc">
+    在深入智能体推理之前，我们需要理解几个关键的前置概念——这些概念构成了本综述讨论的基础，但并非本文首创，而是整个领域的共同知识基础。
+  </p>
+
+  <div class="module-card">
+    <h3>LLM Reasoning → Agentic Reasoning 的范式转换</h3>
+    <p>传统 LLM 推理（如 Chain-of-Thought、Tree of Thoughts）在封闭世界中运行：给定问题，模型生成推理链并给出答案。<strong>Agentic Reasoning 的关键区别</strong>在于引入了三个核心要素：(1) <strong>环境交互</strong>——智能体可以观察环境状态、执行动作、获取反馈；(2) <strong>工具使用</strong>——智能体可以调用外部工具（搜索引擎、代码解释器、数据库等）来扩展自身能力边界；(3) <strong>迭代改进</strong>——智能体不是一次性给出答案，而是通过多轮交互持续优化策略。简言之，从"想一次"到"边做边想边改"。</p>
+  </div>
+
+  <div class="module-card">
+    <h3>ReAct：推理-行动融合的开创性工作</h3>
+    <p>ReAct（Yao et al., 2023）是智能体推理的奠基性工作之一，它首次系统性地将推理（Reasoning）和行动（Acting）交织在同一个 LLM 生成过程中。在 ReAct 框架下，LLM 交替生成"思考"（Thought）和"行动"（Action）步骤：思考步骤负责推理和规划，行动步骤负责与环境交互。这种交织方式使得智能体能够基于观察结果动态调整推理方向，而非盲目执行预设计划。本综述中的大量方法都可以视为 ReAct 思想的扩展和深化。</p>
+  </div>
+
+  <div class="module-card">
+    <h3>In-Context Reasoning vs. Post-Training Reasoning</h3>
+    <p>这是本综述区分的两种优化路径。<strong>In-Context Reasoning</strong>指在推理时通过精心设计的提示词、工作流编排和工具增强来提升智能体表现，无需修改模型参数——典型方法包括 CoT、ToT、ReAct 等。<strong>Post-Training Reasoning</strong>则通过强化学习（RL）、监督微调（SFT）或直接偏好优化（DPO）来训练模型学习更优的智能体行为——例如 Toolformer 训练模型学习何时调用工具，AgentTune 通过轨迹微调提升智能体规划能力。两条路径可以互补：先训练提升基础能力，再通过上下文编排进一步优化。</p>
+  </div>
+
+  <div class="module-card">
+    <h3>规划、搜索与决策的关系</h3>
+    <p>在智能体推理中，<strong>规划</strong>（Planning）是将目标分解为可执行步骤的过程；<strong>搜索</strong>（Search）是在可能的行动空间中系统性地探索以找到最优路径；<strong>决策</strong>（Decision Making）是在特定状态下选择最佳行动。三者形成层次关系：规划提供全局蓝图，搜索验证和优化蓝图，决策在每一步执行最优选择。MCTS（蒙特卡洛树搜索）是连接三者的经典算法——它通过模拟来评估行动价值（搜索），构建最优行动序列（规划），并在每个节点选择最 promising 的分支（决策）。</p>
+  </div>
+</div>
+
+<!-- ====== Section 2: Methodology ====== -->
+<div class="section" id="s2">
+  <h2 class="section-title"><span class="num">2</span> 方法论：三大维度详解</h2>
+  <p class="section-desc">
+    本综述的核心贡献在于提出了一个三维分类框架，将纷繁复杂的智能体推理方法纳入统一体系。下面逐一深入解析这三个维度。
+  </p>
+
+  <!-- 2.1 Foundational -->
+  <div class="module-card">
+    <h3>2.1 基础层：Foundational Agentic Reasoning</h3>
+    <p>基础层关注智能体在<strong>稳定环境</strong>中的核心单智能体能力。这是智能体推理的"地基"，包含三大支柱：</p>
+  </div>
+
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(380px,1fr));gap:16px;margin-top:12px;">
+    <div class="step-flow">
+      <h4>🗺️ 规划 (Planning)</h4>
+      <p>规划是将复杂目标分解为可执行步骤的核心能力。关键方法包括：</p>
+      <p>• <strong>Plan-and-Solve</strong>：先生成完整计划再逐步执行，适合任务结构清晰的场景</p>
+      <p>• <strong>Adaptive Planning</strong>：根据环境反馈动态调整计划，适合不确定性高的场景</p>
+      <p>• <strong>Tree of Thoughts (ToT)</strong>：将推理过程建模为搜索树，在思维空间中系统性地探索多种可能</p>
+      <p>• <strong>Decomposition</strong>：将大任务分解为小任务（Task Decomposition），如 HuggingGPT 将用户指令分解为多模型协作的子任务</p>
+    </div>
+    <div class="step-flow">
+      <h4>🔧 工具使用 (Tool Use)</h4>
+      <p>工具使用是扩展 LLM 能力边界的关键手段。论文将工具使用分为三类：</p>
+      <p>• <strong>工具选择</strong>：从工具集中选择最合适的工具（如 Toolformer, Gorilla）</p>
+      <p>• <strong>工具创建</strong>：智能体自主创建新工具以解决新问题（如 CRAFT, ToolMaker）</p>
+      <p>• <strong>工具推理</strong>：理解工具之间的依赖关系和组合方式（如 ToolChain*, ART）</p>
+      <p>核心挑战：巨大的动作空间中高效导航、工具组合爆炸、错误工具调用的恢复</p>
+    </div>
+    <div class="step-flow">
+      <h4>🔍 搜索 (Search)</h4>
+      <p>搜索是在推理空间中系统性地探索以找到最优解的方法：</p>
+      <p>• <strong>DFS/BFS</strong>：在思维树上进行深度/广度优先搜索</p>
+      <p>• <strong>MCTS</strong>：蒙特卡洛树搜索，通过模拟评估节点价值，平衡探索与利用</p>
+      <p>• <strong>Beam Search</strong>：在每步保留 top-k 候选，在效率和效果间取得平衡</p>
+      <p>• <strong>A* Search</strong>：启发式搜索，通过代价函数引导搜索方向（如 ToolChain*）</p>
+    </div>
+  </div>
+
+  <!-- SVG: Foundational Layer Pipeline -->
+  <div class="svg-wrap" style="background:rgba(20,20,35,.4);border-radius:16px;padding:20px;margin:20px 0;">
+  <svg viewBox="0 0 1100 280" xmlns="http://www.w3.org/2000/svg" style="width:100%;font-family:'Noto Sans SC',system-ui,sans-serif;">
+    <defs><marker id="arrG2" markerWidth="8" markerHeight="8" refX="8" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="#ffd200"/></marker></defs>
+    <!-- Background -->
+    <rect x="0" y="0" width="1100" height="280" rx="16" fill="#1a2340"/>
+    <text x="550" y="28" text-anchor="middle" fill="#f7971e" font-size="14" font-weight="700">基础层智能体推理流程</text>
+    <!-- Step 1: Goal -->
+    <rect x="30" y="55" width="150" height="70" rx="12" fill="#252a3a" stroke="#ffd200" stroke-opacity=".4"/>
+    <text x="105" y="85" text-anchor="middle" fill="#ffd200" font-size="12" font-weight="600">🎯 目标输入</text>
+    <text x="105" y="105" text-anchor="middle" fill="#8b949e" font-size="10">用户任务/查询</text>
+    <!-- Step 2: Planning -->
+    <rect x="230" y="55" width="180" height="70" rx="12" fill="#252a3a" stroke="#f7971e" stroke-opacity=".5" stroke-width="2"/>
+    <text x="320" y="85" text-anchor="middle" fill="#f7971e" font-size="12" font-weight="600">🗺️ 规划模块</text>
+    <text x="320" y="105" text-anchor="middle" fill="#8b949e" font-size="10">Plan/ToT/Decompose</text>
+    <!-- Step 3: Tool Use -->
+    <rect x="460" y="55" width="180" height="70" rx="12" fill="#252a3a" stroke="#f7971e" stroke-opacity=".5" stroke-width="2"/>
+    <text x="550" y="85" text-anchor="middle" fill="#f7971e" font-size="12" font-weight="600">🔧 工具使用</text>
+    <text x="550" y="105" text-anchor="middle" fill="#8b949e" font-size="10">API/Code/Retrieval</text>
+    <!-- Step 4: Search -->
+    <rect x="690" y="55" width="180" height="70" rx="12" fill="#252a3a" stroke="#f7971e" stroke-opacity=".5" stroke-width="2"/>
+    <text x="780" y="85" text-anchor="middle" fill="#f7971e" font-size="12" font-weight="600">🔍 搜索验证</text>
+    <text x="780" y="105" text-anchor="middle" fill="#8b949e" font-size="10">MCTS/A*/Beam</text>
+    <!-- Step 5: Output -->
+    <rect x="920" y="55" width="150" height="70" rx="12" fill="#252a3a" stroke="#ffd200" stroke-opacity=".4"/>
+    <text x="995" y="85" text-anchor="middle" fill="#ffd200" font-size="12" font-weight="600">✅ 结果输出</text>
+    <text x="995" y="105" text-anchor="middle" fill="#8b949e" font-size="10">答案/行动序列</text>
+    <!-- Arrows -->
+    <line x1="180" y1="90" x2="230" y2="90" stroke="#ffd200" stroke-width="2" marker-end="url(#arrG2)"/>
+    <line x1="410" y1="90" x2="460" y2="90" stroke="#ffd200" stroke-width="2" marker-end="url(#arrG2)"/>
+    <line x1="640" y1="90" x2="690" y2="90" stroke="#ffd200" stroke-width="2" marker-end="url(#arrG2)"/>
+    <line x1="870" y1="90" x2="920" y2="90" stroke="#ffd200" stroke-width="2" marker-end="url(#arrG2)"/>
+    <!-- Feedback loop -->
+    <path d="M780,125 L780,170 L320,170 L320,125" fill="none" stroke="#f7971e" stroke-width="1.5" stroke-dasharray="6,3" marker-end="url(#arrG2)"/>
+    <text x="550" y="190" text-anchor="middle" fill="#f7971e" font-size="11">🔄 反馈循环：搜索结果→修正规划→重新执行</text>
+    <!-- Key frameworks -->
+    <rect x="30" y="210" width="1040" height="55" rx="10" fill="#252a3a" stroke="rgba(255,255,255,.08)"/>
+    <text x="50" y="234" fill="#8b949e" font-size="11">代表性框架：</text>
+    <text x="140" y="234" fill="#ffd200" font-size="11">ReAct</text>
+    <text x="195" y="234" fill="#8b949e" font-size="11">|</text>
+    <text x="210" y="234" fill="#ffd200" font-size="11">Plan-and-Solve</text>
+    <text x="330" y="234" fill="#8b949e" font-size="11">|</text>
+    <text x="345" y="234" fill="#ffd200" font-size="11">Tree of Thoughts</text>
+    <text x="475" y="234" fill="#8b949e" font-size="11">|</text>
+    <text x="490" y="234" fill="#ffd200" font-size="11">HuggingGPT</text>
+    <text x="595" y="234" fill="#8b949e" font-size="11">|</text>
+    <text x="610" y="234" fill="#ffd200" font-size="11">Toolformer</text>
+    <text x="705" y="234" fill="#8b949e" font-size="11">|</text>
+    <text x="720" y="234" fill="#ffd200" font-size="11">Gorilla</text>
+    <text x="790" y="234" fill="#8b949e" font-size="11">|</text>
+    <text x="805" y="234" fill="#ffd200" font-size="11">RAP</text>
+    <text x="840" y="234" fill="#8b949e" font-size="11">|</text>
+    <text x="855" y="234" fill="#ffd200" font-size="11">LATS</text>
+  </svg>
+  </div>
+  <p class="fc">▲ 基础层智能体推理流程：目标→规划→工具使用→搜索验证→输出，含反馈循环</p>
+
+  <!-- 2.2 Self-Evolving -->
+  <div class="module-card">
+    <h3>2.2 进化层：Self-Evolving Agentic Reasoning</h3>
+    <p>进化层关注智能体如何通过<strong>反馈、记忆和自省</strong>来持续改进自身能力。与基础层的"稳定环境"假设不同，进化层承认环境是动态变化的，智能体必须从经验中学习并适应新情况。</p>
+  </div>
+
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(380px,1fr));gap:16px;">
+    <div class="step-flow">
+      <h4>📢 反馈学习 (Feedback Learning)</h4>
+      <p>智能体从外部信号中学习改进策略：</p>
+      <p>• <strong>环境反馈</strong>：执行动作后观察环境变化（如代码执行结果、网页响应）</p>
+      <p>• <strong>奖励信号</strong>：来自奖励模型或人类评估的标量/偏好信号</p>
+      <p>• <strong>自我评估</strong>：LLM 自身对输出质量的评判（如 Self-Refine 中的批评步骤）</p>
+      <p>关键挑战：稀疏奖励（长时间无反馈）、延迟奖励（最终结果才知好坏）、虚假反馈（误导性信号）</p>
+    </div>
+    <div class="step-flow">
+      <h4>🧠 记忆系统 (Memory Systems)</h4>
+      <p>记忆是智能体积累和复用经验的基础：</p>
+      <p>• <strong>工作记忆</strong>（Working Memory）：当前对话上下文，短期、易丢失</p>
+      <p>• <strong>情景记忆</strong>（Episodic Memory）：历史交互案例，可检索复用（如 Reflexion 中的经验库）</p>
+      <p>• <strong>语义记忆</strong>（Semantic Memory）：抽象化的知识和规则，跨场景泛化</p>
+      <p>典型机制：MemoryBank 的记忆检索、Generative Agents 的反思链、Voyager 的技能库</p>
+    </div>
+    <div class="step-flow">
+      <h4>🔄 自省与适应 (Self-Reflection & Adaptation)</h4>
+      <p>智能体通过审视自身行为来识别错误和改进方向：</p>
+      <p>• <strong>Reflexion</strong>：将失败经验转化为语言反馈，存入记忆供未来参考</p>
+      <p>• <strong>Self-Refine</strong>：生成→批评→修改的迭代优化循环</p>
+      <p>• <strong>CRITIC</strong>：利用外部工具验证输出并修正错误</p>
+      <p>• <strong>Adaptation</strong>：根据环境变化调整策略，如 OPRO 的自动提示优化</p>
+    </div>
+  </div>
+
+  <!-- 2.3 Collective -->
+  <div class="module-card">
+    <h3>2.3 集体层：Collective Multi-Agent Reasoning</h3>
+    <p>集体层研究多个智能体如何通过<strong>协作、竞争或博弈</strong>实现超越单智能体的集体智能。本综述将多智能体推理分为三类架构：
+    <strong>集中式</strong>（Centralized，一个主控智能体分配任务）、<strong>去中心化</strong>（Decentralized，智能体平等协商）和<strong>层级式</strong>（Hierarchical，多层分工结构）。</p>
+  </div>
+
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(350px,1fr));gap:16px;">
+    <div class="arch-card">
+      <h4>🏗️ 集中式架构</h4>
+      <p>一个中央控制器分配任务和协调执行。代表：MetaGPT（SOP驱动的角色分配）、AutoGen（可定制的智能体对话）。优点：协调高效；缺点：单点瓶颈。</p>
+    </div>
+    <div class="arch-card">
+      <h4>🌐 去中心化架构</h4>
+      <p>智能体之间平等交互，通过辩论、投票等机制达成共识。代表：CAMEL（角色扮演对话）、Multi-Agent Debate（多轮辩论）。优点：鲁棒性强；缺点：协调成本高。</p>
+    </div>
+    <div class="arch-card">
+      <h4>🏢 层级式架构</h4>
+      <p>高层智能体负责规划和决策，低层智能体负责执行。代表：ChatDev（CEO→CTO→程序员）、MADT（管理层→执行层）。优点：清晰分工；缺点：层级间信息丢失。</p>
+    </div>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ====== Section 3: Core Innovations ====== -->
+<div class="section" id="s3">
+  <h2 class="section-title"><span class="num">3</span> 核心创新点深度解析</h2>
+  <p class="section-desc">
+    作为一篇综述论文，本论文的创新不在于提出新方法，而在于提出了全新的分类框架和洞见。以下是三个最核心的创新贡献：
+  </p>
+
+  <div class="module-card">
+    <h3>创新1：三维分类框架 — 环境动态性 × 优化设置 × 智能体交互</h3>
+    <p>此前的智能体推理综述通常只从单一维度（如只看规划方法、或只看多智能体系统）来组织文献，导致不同子领域之间的联系被忽视。本综述的<strong>三维分类</strong>使得研究者可以精确定位任何方法在全局中的位置，并发现跨维度的研究空白。例如，"Self-Evolving + Post-Training"这个交叉区域（通过 RL 训练智能体学习从反馈中进化）就存在大量研究机会。</p>
+  </div>
+
+  <div class="module-card">
+    <h3>创新2：In-Context Reasoning 与 Post-Training Reasoning 的系统区分</h3>
+    <p>这个区分看似简单，实则深刻。它揭示了智能体推理优化的两条根本不同的路径：<strong>In-Context 路径</strong>通过更好的提示词、工作流编排和工具选择来"激发"LLM 已有的能力，无需额外训练但受限于模型固有能力上限；<strong>Post-Training 路径</strong>通过 RL/SFT/DPO 来"塑造"模型行为，可以突破能力上限但需要大量训练资源且容易过拟合。论文指出，最有效的系统通常结合两条路径——先通过训练建立基础智能体行为，再通过上下文编排优化具体任务的执行策略。</p>
+  </div>
+
+  <div class="module-card">
+    <h3>创新3：从推理到行动的统一路线图（Thought→Action 桥接）</h3>
+    <p>论文最根本的贡献是提出了一个<strong>从"纯推理"到"推理-行动融合"的连续谱系</strong>。在这个谱系上：纯推理（CoT）→ 带工具的推理（ReAct）→ 自我改进的推理（Reflexion）→ 协作式推理（Multi-Agent Debate）逐步进化。每一步都不是对前一步的否定，而是在其基础上的能力扩展。这个视角帮助研究者理解：改进智能体推理不是寻找一个"终极方法"，而是在不同场景下选择合适的"进化阶段"。</p>
+  </div>
+
+  <!-- SVG: Innovation Spectrum -->
+  <div class="svg-wrap" style="background:rgba(20,20,35,.4);border-radius:16px;padding:20px;margin:16px 0;">
+  <svg viewBox="0 0 1100 200" xmlns="http://www.w3.org/2000/svg" style="width:100%;font-family:'Noto Sans SC',system-ui,sans-serif;">
+    <defs>
+      <linearGradient id="spectrumGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%" stop-color="#f7971e"/><stop offset="50%" stop-color="#ffd200"/><stop offset="100%" stop-color="#fff3b0"/>
+      </linearGradient>
+    </defs>
+    <!-- Spectrum bar -->
+    <rect x="50" y="60" width="1000" height="40" rx="20" fill="url(#spectrumGrad)" opacity=".3"/>
+    <rect x="50" y="60" width="1000" height="40" rx="20" fill="none" stroke="#f7971e" stroke-width="1.5"/>
+    <text x="550" y="25" text-anchor="middle" fill="#f7971e" font-size="14" font-weight="700">从推理到行动的连续谱系</text>
+    <!-- Milestones -->
+    <circle cx="150" cy="80" r="16" fill="#252a3a" stroke="#f7971e" stroke-width="2"/>
+    <text x="150" y="85" text-anchor="middle" fill="#ffd200" font-size="10" font-weight="600">CoT</text>
+    <text x="150" y="118" text-anchor="middle" fill="#8b949e" font-size="10">纯推理</text>
+
+    <circle cx="370" cy="80" r="16" fill="#252a3a" stroke="#f7971e" stroke-width="2"/>
+    <text x="370" y="85" text-anchor="middle" fill="#ffd200" font-size="9" font-weight="600">ReAct</text>
+    <text x="370" y="118" text-anchor="middle" fill="#8b949e" font-size="10">推理+行动</text>
+
+    <circle cx="590" cy="80" r="16" fill="#252a3a" stroke="#f7971e" stroke-width="2"/>
+    <text x="590" y="84" text-anchor="middle" fill="#ffd200" font-size="8" font-weight="600">Reflex.</text>
+    <text x="590" y="118" text-anchor="middle" fill="#8b949e" font-size="10">自我进化</text>
+
+    <circle cx="810" cy="80" r="16" fill="#252a3a" stroke="#f7971e" stroke-width="2"/>
+    <text x="810" y="84" text-anchor="middle" fill="#ffd200" font-size="8" font-weight="600">Debate</text>
+    <text x="810" y="118" text-anchor="middle" fill="#8b949e" font-size="10">多智能体</text>
+
+    <circle cx="970" cy="80" r="16" fill="#252a3a" stroke="#ffd200" stroke-width="2.5"/>
+    <text x="970" y="84" text-anchor="middle" fill="#ffd200" font-size="7" font-weight="600">AGI?</text>
+    <text x="970" y="118" text-anchor="middle" fill="#8b949e" font-size="10">通用智能</text>
+
+    <!-- Arrows -->
+    <line x1="166" y1="80" x2="354" y2="80" stroke="#ffd200" stroke-width="1.5" marker-end="url(#arrG2)"/>
+    <line x1="386" y1="80" x2="574" y2="80" stroke="#ffd200" stroke-width="1.5" marker-end="url(#arrG2)"/>
+    <line x1="606" y1="80" x2="794" y2="80" stroke="#ffd200" stroke-width="1.5" marker-end="url(#arrG2)"/>
+    <line x1="826" y1="80" x2="954" y2="80" stroke="#ffd200" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arrG2)"/>
+
+    <!-- Labels -->
+    <text x="100" y="165" fill="#8b949e" font-size="10">封闭世界</text>
+    <text x="1000" y="165" fill="#8b949e" font-size="10">开放世界</text>
+    <line x1="160" y1="160" x2="940" y2="160" stroke="#555" stroke-width="1" marker-end="url(#arrG2)" stroke-dasharray="3,3"/>
+    <text x="550" y="185" text-anchor="middle" fill="#f7971e" font-size="11">环境动态性递增 →</text>
+  </svg>
+  </div>
+  <p class="fc">▲ 从推理到行动的连续谱系：从纯推理（CoT）逐步进化到通用智能体</p>
+</div>
+
+<!-- ====== Section 4: Data Flow ====== -->
+<div class="section" id="s4">
+  <h2 class="section-title"><span class="num">4</span> 数据流解析：从推理到行动</h2>
+  <p class="section-desc">
+    本节以一个典型的智能体推理任务为例，解析从用户输入到最终输出的完整数据流，覆盖推理和行动两个阶段的数据变化。
+  </p>
+
+  <div class="svg-wrap" style="background:rgba(20,20,35,.4);border-radius:16px;padding:20px;margin:16px 0;">
+  <svg viewBox="0 0 1100 520" xmlns="http://www.w3.org/2000/svg" style="width:100%;font-family:'Noto Sans SC',system-ui,sans-serif;">
+    <defs><marker id="arrG3" markerWidth="8" markerHeight="8" refX="8" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="#ffd200"/></marker></defs>
+    <rect x="0" y="0" width="1100" height="520" rx="16" fill="#1a2340"/>
+    <text x="550" y="28" text-anchor="middle" fill="#f7971e" font-size="14" font-weight="700">智能体推理完整数据流</text>
+    <!-- Phase 1: Input -->
+    <rect x="30" y="50" width="200" height="80" rx="12" fill="#252a3a" stroke="#ffd200" stroke-opacity=".3"/>
+    <text x="130" y="78" text-anchor="middle" fill="#ffd200" font-size="12" font-weight="600">📝 用户输入</text>
+    <text x="130" y="98" text-anchor="middle" fill="#8b949e" font-size="10">任务描述 + 上下文</text>
+    <text x="130" y="115" text-anchor="middle" fill="#8b949e" font-size="10">→ {query, constraints}</text>
+    <!-- Phase 2: Planning -->
+    <rect x="280" y="50" width="200" height="80" rx="12" fill="#252a3a" stroke="#f7971e" stroke-opacity=".4" stroke-width="2"/>
+    <text x="380" y="78" text-anchor="middle" fill="#f7971e" font-size="12" font-weight="600">🗺️ 规划分解</text>
+    <text x="380" y="98" text-anchor="middle" fill="#8b949e" font-size="10">LLM 生成子目标序列</text>
+    <text x="380" y="115" text-anchor="middle" fill="#8b949e" font-size="10">→ [subgoal₁, subgoal₂, ...]</text>
+    <!-- Phase 3: Action -->
+    <rect x="530" y="50" width="200" height="80" rx="12" fill="#252a3a" stroke="#f7971e" stroke-opacity=".4" stroke-width="2"/>
+    <text x="630" y="78" text-anchor="middle" fill="#f7971e" font-size="12" font-weight="600">⚡ 执行行动</text>
+    <text x="630" y="98" text-anchor="middle" fill="#8b949e" font-size="10">工具调用 / 环境交互</text>
+    <text x="630" y="115" text-anchor="middle" fill="#8b949e" font-size="10">→ {action, observation}</text>
+    <!-- Phase 4: Reflection -->
+    <rect x="780" y="50" width="200" height="80" rx="12" fill="#252a3a" stroke="#f7971e" stroke-opacity=".4" stroke-width="2"/>
+    <text x="880" y="78" text-anchor="middle" fill="#f7971e" font-size="12" font-weight="600">🔄 自省修正</text>
+    <text x="880" y="98" text-anchor="middle" fill="#8b949e" font-size="10">评估结果 → 修正计划</text>
+    <text x="880" y="115" text-anchor="middle" fill="#8b949e" font-size="10">→ {feedback, new_plan}</text>
+    <!-- Arrows -->
+    <line x1="230" y1="90" x2="280" y2="90" stroke="#ffd200" stroke-width="2" marker-end="url(#arrG3)"/>
+    <line x1="480" y1="90" x2="530" y2="90" stroke="#ffd200" stroke-width="2" marker-end="url(#arrG3)"/>
+    <line x1="730" y1="90" x2="780" y2="90" stroke="#ffd200" stroke-width="2" marker-end="url(#arrG3)"/>
+    <!-- Feedback Loop -->
+    <path d="M880,130 L880,165 L380,165 L380,130" fill="none" stroke="#f7971e" stroke-width="1.5" stroke-dasharray="6,3" marker-end="url(#arrG3)"/>
+    <text x="630" y="180" text-anchor="middle" fill="#f7971e" font-size="10">🔄 反馈循环</text>
+    <!-- Memory System -->
+    <rect x="50" y="210" width="1000" height="100" rx="14" fill="#252a3a" stroke="rgba(255,255,255,.08)"/>
+    <text x="550" y="235" text-anchor="middle" fill="#ffd200" font-size="13" font-weight="600">🧠 记忆系统</text>
+    <rect x="80" y="250" width="280" height="45" rx="10" fill="#1a2340" stroke="#f7971e" stroke-opacity=".2"/>
+    <text x="220" y="270" text-anchor="middle" fill="#f7971e" font-size="11">工作记忆（当前上下文）</text>
+    <text x="220" y="287" text-anchor="middle" fill="#8b949e" font-size="10">短期 · 对话历史 · 观察结果</text>
+    <rect x="400" y="250" width="280" height="45" rx="10" fill="#1a2340" stroke="#f7971e" stroke-opacity=".2"/>
+    <text x="540" y="270" text-anchor="middle" fill="#f7971e" font-size="11">情景记忆（历史案例）</text>
+    <text x="540" y="287" text-anchor="middle" fill="#8b949e" font-size="10">中期 · 成功/失败轨迹 · 可检索</text>
+    <rect x="720" y="250" width="280" height="45" rx="10" fill="#1a2340" stroke="#f7971e" stroke-opacity=".2"/>
+    <text x="860" y="270" text-anchor="middle" fill="#f7971e" font-size="11">语义记忆（抽象知识）</text>
+    <text x="860" y="287" text-anchor="middle" fill="#8b949e" font-size="10">长期 · 规则/策略 · 跨场景泛化</text>
+    <!-- Optimization Paths -->
+    <rect x="50" y="340" width="490" height="150" rx="14" fill="#252a3a" stroke="rgba(255,255,255,.08)"/>
+    <text x="295" y="365" text-anchor="middle" fill="#ffd200" font-size="13" font-weight="600">⚡ In-Context Reasoning 路径</text>
+    <text x="80" y="390" fill="#f7971e" font-size="11">• 提示工程：CoT / ReAct / ToT 提示模板</text>
+    <text x="80" y="410" fill="#f7971e" font-size="11">• 工作流编排：DAG / Pipeline / Branching</text>
+    <text x="80" y="430" fill="#f7971e" font-size="11">• 工具增强：API / Code / Retrieval 集成</text>
+    <text x="80" y="450" fill="#f7971e" font-size="11">• 少样本示例：In-Context Learning</text>
+    <text x="80" y="475" fill="#8b949e" font-size="10">无需训练 · 即插即用 · 受限于模型固有能力</text>
+    <rect x="560" y="340" width="490" height="150" rx="14" fill="#252a3a" stroke="rgba(255,255,255,.08)"/>
+    <text x="805" y="365" text-anchor="middle" fill="#ffd200" font-size="13" font-weight="600">🏋️ Post-Training Reasoning 路径</text>
+    <text x="590" y="390" fill="#f7971e" font-size="11">• 强化学习：RLHF / RLAIF / PPO</text>
+    <text x="590" y="410" fill="#f7971e" font-size="11">• 监督微调：AgentTune / Tool Learning SFT</text>
+    <text x="590" y="430" fill="#f7971e" font-size="11">• 偏好优化：DPO / Constitutional AI</text>
+    <text x="590" y="450" fill="#f7971e" font-size="11">• 过程奖励：PRM / Step-level Reward</text>
+    <text x="590" y="475" fill="#8b949e" font-size="10">需要训练数据/资源 · 可突破能力上限 · 有过拟合风险</text>
+  </svg>
+  </div>
+  <p class="fc">▲ 智能体推理完整数据流：从用户输入到规划、执行、自省，配合记忆系统和两种优化路径</p>
+</div>
+
+<hr class="divider">
+
+<!-- ====== Section 5: Technical Details ====== -->
+<div class="section" id="s5">
+  <h2 class="section-title"><span class="num">5</span> 关键技术细节</h2>
+
+  <div class="module-card">
+    <h3>MCTS 在智能体推理中的应用</h3>
+    <p>蒙特卡洛树搜索（MCTS）是智能体推理中最重要的搜索算法之一。其核心流程包含四个步骤：<strong>选择</strong>（Selection，用 UCB 公式选择最有价值的节点）→ <strong>扩展</strong>（Expansion，生成新的子节点）→ <strong>模拟</strong>（Simulation，从新节点随机模拟到终态）→ <strong>回传</strong>（Backpropagation，将模拟结果沿路径更新节点价值）。</p>
+    <p>在 LLM 智能体推理中，MCTS 的每个节点代表一个"推理状态"（当前的思考链+环境观察），每条边代表一个"行动"（生成的推理步骤或工具调用）。UCB 公式平衡了对高价值节点的<strong>利用</strong>和对未充分探索节点的<strong>探索</strong>：</p>
+  </div>
+  <div class="formula-box">
+    UCB(s,a) = Q(s,a) + c · √(ln N(s) / N(s,a))
+  </div>
+  <p class="section-desc">
+    其中 Q(s,a) 是状态 s 下行动 a 的平均价值，N(s) 是状态 s 的访问次数，N(s,a) 是行动 a 被选择的次数，c 是探索常数。这个公式确保了智能体不会一直沿着当前最优路径走（利用），也会尝试可能更优的替代路径（探索）。
+  </p>
+
+  <div class="module-card">
+    <h3>多智能体协作的通信机制</h3>
+    <p>多智能体系统的核心挑战之一是<strong>通信效率</strong>。论文总结了三种主要通信范式：</p>
+    <p><strong>1. 共享记忆池</strong>：所有智能体读写同一块记忆区域（如 ChatDev 的共享文档），优点是信息完整，缺点是噪声大、扩展性差。</p>
+    <p><strong>2. 消息传递</strong>：智能体之间点对点或广播消息（如 AutoGen 的对话机制），优点是灵活可扩展，缺点是可能遗漏关键信息。</p>
+    <p><strong>3. 黑板系统</strong>：共享的"黑板"供智能体读写结构化信息，结合了前两者的优点——信息结构化且可扩展，但需要精心设计黑板的数据模式。</p>
+  </div>
+
+  <div class="module-card">
+    <h3>强化学习在智能体训练中的应用</h3>
+    <p>论文详细讨论了 RL 在智能体推理中的应用，从两个角度展开：</p>
+    <p><strong>从奖励信号来源</strong>：环境奖励（任务完成度）vs. 人类反馈（RLHF）vs. AI 反馈（RLAIF/Constitutional AI）。</p>
+    <p><strong>从训练目标</strong>：结果奖励模型（ORM，只评估最终结果）vs. 过程奖励模型（PRM，评估每一步的正确性）。PRM 对于智能体推理尤其重要，因为长链条推理中只有结果奖励会导致信用分配困难。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ====== Section 6: Applications & Benchmarks ====== -->
+<div class="section" id="s6">
+  <h2 class="section-title"><span class="num">6</span> 应用场景与评估基准</h2>
+
+  <table class="data-table">
+    <thead>
+      <tr><th>应用领域</th><th>核心任务</th><th>代表框架</th><th>评估基准</th><th>关键挑战</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>🔬 科学发现</td><td>假设生成、实验设计</td><td>ChemCrow, Coscientist</td><td>ScienceWorld, ChemBench</td><td>安全约束、知识准确性</td></tr>
+      <tr><td>🤖 机器人控制</td><td>导航、操作、多步规划</td><td>Voyager, SayCan</td><td>ALFRED, WAH-NL</td><td>物理约束、长时序规划</td></tr>
+      <tr><td>🏥 医疗决策</td><td>诊断辅助、治疗方案</td><td>MedAgent, DoctorFLAN</td><td>MedQA, ClinicalBench</td><td>安全合规、可解释性</td></tr>
+      <tr><td>🧪 自主研究</td><td>实验自动化、论文审稿</td><td>AI Scientist, AIDE</td><td>MLAgentBench</td><td>长期规划、创新性评估</td></tr>
+      <tr><td>📐 数学推理</td><td>定理证明、竞赛解题</td><td>LeanDojo, AlphaProof</td><td>AIME, MATH, MiniF2F</td><td>严格逻辑、形式化验证</td></tr>
+      <tr><td>💻 软件工程</td><td>代码生成、Bug 修复</td><td>SWE-Agent, OpenDevin</td><td>SWE-Bench, HumanEval</td><td>长上下文、工具链集成</td></tr>
+    </tbody>
+  </table>
+
+  <p class="section-desc">
+    不同领域对智能体推理的需求差异巨大。科学发现和医疗决策对<strong>准确性</strong>和<strong>安全性</strong>要求极高，而机器人控制和软件工程更关注<strong>长时序规划</strong>和<strong>错误恢复</strong>能力。选择合适的智能体推理方法时，必须首先考虑目标领域的特殊约束。
+  </p>
+</div>
+
+<hr class="divider">
+
+<!-- ====== Section 7: Design Insights & Limitations ====== -->
+<div class="section" id="s7">
+  <h2 class="section-title"><span class="num">7</span> 设计精妙之处与局限性</h2>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+    <div>
+      <h3 style="color:#ffd200;margin-bottom:14px;font-size:1.15rem;">✨ 设计精妙之处</h3>
+      <div class="insight-box">
+        <h4>1. 三维正交分类确保完备性</h4>
+        <p>三个维度相互正交但不独立——它们从不同角度刻画同一事物，使得分类既无遗漏又不冗余。任何方法都能在三维空间中找到唯一位置。</p>
+      </div>
+      <div class="insight-box">
+        <h4>2. In-Context vs. Post-Training 的实用指导</h4>
+        <p>这个区分不只是学术分类，更是实践指南：无训练资源时选 In-Context 路径，需要突破能力天花板时走 Post-Training 路径，两者结合效果最好。</p>
+      </div>
+      <div class="insight-box">
+        <h4>3. "层次递进"的环境动态性假设</h4>
+        <p>基础→进化→集体的三层结构，隐含了设计哲学：高级能力建立在低级能力之上，不能跳过基础直接进化。</p>
+      </div>
+    </div>
+    <div>
+      <h3 style="color:#ffc107;margin-bottom:14px;font-size:1.15rem;">⚠️ 局限性</h3>
+      <div class="limit-box">
+        <h4>1. 综述时效性问题</h4>
+        <p>智能体推理领域发展极快，2026年初至今已有大量新工作出现，这些内容无法被一篇2026年1月的综述覆盖。</p>
+      </div>
+      <div class="limit-box">
+        <h4>2. 缺乏定量比较</h4>
+        <p>对方法的比较主要是定性分类和描述，缺乏在统一基准上的定量实验对比。</p>
+      </div>
+      <div class="limit-box">
+        <h4>3. 实际部署的鸿沟</h4>
+        <p>许多方法在学术基准上有效，但在实际生产环境中面临延迟、成本、安全合规等巨大挑战。</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ====== Section 8: Q&A ====== -->
+<div class="section" id="s8">
+  <h2 class="section-title"><span class="num">8</span> Q&A 深度解析</h2>
+
+  <div class="qa-card">
+    <div class="qa-q">Q1: Agentic Reasoning 和传统 LLM Reasoning 的本质区别是什么？</div>
+    <div class="qa-a">传统 LLM 推理（如 CoT、ToT）是"纯思维"活动——模型在内部生成推理链，不与外部环境交互。而 Agentic Reasoning 的本质区别在于三个要素：<strong>环境感知</strong>（能观察环境状态变化）、<strong>行动执行</strong>（能调用工具、执行动作）和<strong>迭代改进</strong>（能根据反馈修正策略）。这好比从"纸上谈兵"到"实战指挥"的转变——不是只想，而是边想边做边学。</div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-q">Q2: In-Context Reasoning 和 Post-Training Reasoning 应该如何选择？</div>
+    <div class="qa-a">选择取决于两个因素：<strong>资源约束</strong>和<strong>性能需求</strong>。如果只有推理资源（无训练GPU），只能选 In-Context 路径——通过更好的提示词和工作流编排来优化。如果需要突破模型固有能力上限（如让模型学会新的工具使用策略），则必须走 Post-Training 路径。实践中最优方案是结合两者：先用 RL/SFT 建立基础智能体行为，再用 In-Context 编排适配具体任务。类比：Post-Training 相当于"练内功"，In-Context 相当于"用招式"——内功扎实才能使出精妙招式。</div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-q">Q3: 为什么规划（Planning）是基础层的核心能力？</div>
+    <div class="qa-a">规划是连接"目标"和"行动"的桥梁。没有规划，智能体只能做出局部最优的反应式决策，无法完成需要多步协调的复杂任务。规划让智能体能够"向前看"——预判未来几步的后果，从而做出全局更优的决策。更重要的是，规划能力是进化层（自我改进）和集体层（多智能体协调）的前提——你必须先能规划自己的行动，才能改进规划或与他人协调规划。</div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-q">Q4: 情景记忆和语义记忆在智能体推理中分别扮演什么角色？</div>
+    <div class="qa-a"><strong>情景记忆</strong>存储具体的交互案例（如"上次执行某API调用时返回了什么错误"），它是具体的、实例级的，检索相似案例来指导当前决策——类似人类从"上次经历"中学习。<strong>语义记忆</strong>存储抽象化的知识和规则（如"当遇到A类问题时，应使用B策略"），它是泛化的、跨场景的，允许智能体将经验抽象为可迁移的知识——类似人类从"多次经历"中总结"规律"。两者互补：情景记忆提供具体参考，语义记忆提供通用指导。</div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-q">Q5: 多智能体系统一定优于单智能体吗？</div>
+    <div class="qa-a">不一定。多智能体系统的优势在于<strong>专业分工</strong>（每个智能体专注一个领域）和<strong>冗余验证</strong>（多个智能体交叉检查减少错误）。但它也引入了额外成本：<strong>通信开销</strong>（智能体间信息传递需要 token）、<strong>协调难度</strong>（需要共识机制避免冲突）、<strong>错误传播</strong>（一个智能体的错误可能影响其他智能体）。对于简单任务，单智能体 + 好的提示词往往更高效。多智能体的价值在任务复杂度超过单智能体处理能力时才真正显现。</div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-q">Q6: MCTS 在 LLM 推理中的优势和局限分别是什么？</div>
+    <div class="qa-a"><strong>优势</strong>：MCTS 平衡了探索与利用，可以在巨大的推理空间中高效搜索；通过模拟评估节点价值，不需要显式的价值函数；天然支持多分支探索，不会陷入局部最优。<strong>局限</strong>：MCTS 的搜索效率严重依赖模拟质量——如果 LLM 的模拟（rollout）质量差，搜索就会被误导；此外 MCTS 的计算开销大（需要多次 LLM 调用），在严格延迟约束下不适用；最后，MCTS 需要精心设计奖励函数，而许多任务的奖励信号稀疏且难以定义。</div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-q">Q7: 过程奖励模型（PRM）为什么对智能体推理特别重要？</div>
+    <div class="qa-a">智能体推理通常是长链条的——从目标分解到工具调用到结果验证可能包含数十个步骤。如果只有结果奖励（ORM），模型只知道最终对不对，无法判断哪一步出了问题。这就像考试只看总分，不看每道题的对错——你不知道该复习哪部分。<strong>PRM 为每一步提供细粒度反馈</strong>，使得模型能够精确定位错误步骤并针对性改进，大大提高了学习效率和最终性能。</div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-q">Q8: 本综述指出的最重要的未来方向是什么？</div>
+    <div class="qa-a">论文列出了五个关键未来方向：(1) <strong>个性化</strong>——让智能体适应用户偏好和习惯；(2) <strong>长视野交互</strong>——支持智能体在数天甚至数周的持续任务中保持连贯性；(3) <strong>世界建模</strong>——让智能体构建内部世界模型以预测行动后果，而非纯试错；(4) <strong>可扩展的多智能体训练</strong>——如何高效训练大量智能体协同工作；(5) <strong>现实世界部署的治理</strong>——安全、伦理、可控性等社会技术问题。其中，世界建模可能是最根本的——拥有准确世界模型的智能体可以在"脑海中"模拟行动后果，大幅减少实际试错成本。</div>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ====== Section 9: Code & Practice ====== -->
+<div class="section" id="s9">
+  <h2 class="section-title"><span class="num">9</span> 代码使用与实战</h2>
+  <p class="section-desc">
+    本综述维护了配套的 Awesome-Agentic-Reasoning 仓库，收录了按主题分类的相关论文和资源。此外，多个代表性框架已开源，可以直接使用。
+  </p>
+
+  <div class="module-card">
+    <h3>📦 Awesome-Agentic-Reasoning 仓库</h3>
+    <p>本综述的配套 GitHub 仓库，按主题领域整理了 200+ 篇相关论文，覆盖规划、工具使用、搜索、反馈学习、记忆系统、多智能体协作等方向。</p>
+  </div>
+
+  <div class="code-block">
+    <pre><span class="cg"># 克隆论文集仓库</span>
+<span class="ck">git</span> clone https://github.com/weitianxin/Awesome-Agentic-Reasoning.git
+<span class="ck">cd</span> Awesome-Agentic-Reasoning
+
+<span class="cg"># 仓库目录结构</span>
+<span class="cv">Awesome-Agentic-Reasoning/</span>
+├── <span class="cf">README.md</span>          <span class="cg"># 论文分类索引</span>
+├── <span class="cf">papers/</span>             <span class="cg"># 按主题分类的论文列表</span>
+│   ├── <span class="cf">planning.md</span>       <span class="cg"># 规划相关论文</span>
+│   ├── <span class="cf">tool_use.md</span>       <span class="cg"># 工具使用相关论文</span>
+│   ├── <span class="cf">search.md</span>         <span class="cg"># 搜索相关论文</span>
+│   ├── <span class="cf">feedback.md</span>       <span class="cg"># 反馈学习相关论文</span>
+│   ├── <span class="cf">memory.md</span>         <span class="cg"># 记忆系统相关论文</span>
+│   └── <span class="cf">multi_agent.md</span>    <span class="cg"># 多智能体相关论文</span>
+└── <span class="cf">resources/</span>          <span class="cg"># 相关代码和数据集链接</span></pre>
+  </div>
+
+  <div class="module-card">
+    <h3>🔧 代表性框架快速上手</h3>
+    <p>以下列出综述中讨论的若干关键开源框架及其安装方式：</p>
+  </div>
+
+  <div class="code-block">
+    <pre><span class="cg"># ReAct 实现（基于 LangChain）</span>
+<span class="ck">pip</span> install langchain langchain-openai
+
+<span class="cg"># AutoGen 多智能体框架</span>
+<span class="ck">pip</span> install autogen-agentchat
+
+<span class="cg"># MetaGPT 多智能体协作框架</span>
+<span class="ck">pip</span> install metagpt
+
+<span class="cg"># SWE-Agent 代码智能体</span>
+<span class="ck">git</span> clone https://github.com/princeton-nlp/SWE-agent.git
+<span class="ck">cd</span> SWE-agent && pip install -e .
+
+<span class="cg"># Reflexion 自省推理框架</span>
+<span class="ck">pip</span> install reflexion</pre>
+  </div>
+
+  <table class="data-table">
+    <thead>
+      <tr><th>框架</th><th>定位</th><th>所属层级</th><th>优化路径</th><th>GitHub</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>ReAct</td><td>推理-行动融合</td><td>基础层</td><td>In-Context</td><td>langchain-ai/langchain</td></tr>
+      <tr><td>Reflexion</td><td>自省推理</td><td>进化层</td><td>In-Context</td><td>noahshinn/reflexion</td></tr>
+      <tr><td>Voyager</td><td>开放世界学习</td><td>进化层</td><td>In-Context</td><td>MineDojo/Voyager</td></tr>
+      <tr><td>AutoGen</td><td>多智能体对话</td><td>集体层</td><td>In-Context</td><td>microsoft/autogen</td></tr>
+      <tr><td>MetaGPT</td><td>角色扮演协作</td><td>集体层</td><td>In-Context</td><td>geekan/MetaGPT</td></tr>
+      <tr><td>AgentTune</td><td>智能体微调</td><td>进化层</td><td>Post-Training</td><td>THUNLP/AgentTuning</td></tr>
+      <tr><td>SWE-Agent</td><td>软件工程</td><td>基础层</td><td>In-Context</td><td>princeton-nlp/SWE-agent</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ====== Footer ====== -->
+<div class="footer">
+  <p>📖 Agentic Reasoning for Large Language Models — 深度解读 | 生成于 2026-05-21</p>
+  <p>论文来源: <a href="https://arxiv.org/abs/2601.12538" style="color:#f7971e;">arXiv:2601.12538</a> | 代码: <a href="https://github.com/weitianxin/Awesome-Agentic-Reasoning" style="color:#f7971e;">GitHub</a></p>
+</div>
+
+</div>
+<script src="theme.js"></script>
+</body>
+</html>
+

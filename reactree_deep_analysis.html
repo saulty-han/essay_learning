@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>深度解读 — ReAcTree: Hierarchical LLM Agent Trees</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{
+  font-family:'Noto Sans SC',system-ui,-apple-system,sans-serif;
+  background:#0d1117;color:#c9d1d9;
+  line-height:1.8;font-size:16px;min-height:100vh;
+}
+.container{max-width:1400px;margin:0 auto;padding:0 24px;background:#0d1117;position:relative;}
+.back-btn{
+  position:fixed;top:16px;left:16px;z-index:9999;
+  background:rgba(20,20,35,.75);color:#c9d1d9;
+  border:1px solid rgba(255,255,255,.15);border-radius:10px;
+  padding:8px 16px;font-size:14px;cursor:pointer;
+  backdrop-filter:blur(6px);transition:all .3s;
+  text-decoration:none;display:flex;align-items:center;gap:6px;
+}
+.back-btn:hover{background:rgba(30,30,55,.9);border-color:rgba(255,255,255,.3);}
+.hero{padding:80px 0 40px;text-align:center;}
+.hero-title{
+  font-size:2.2rem;font-weight:700;
+  background:linear-gradient(135deg,#a18cd1,#fbc2eb);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  background-clip:text;margin-bottom:12px;line-height:1.3;
+}
+.hero-sub{font-size:1.1rem;color:#8b949e;margin-bottom:8px;}
+.venue{font-size:.95rem;color:#8b949e;margin-top:8px;}
+.venue a{color:#a18cd1;text-decoration:none;}
+.venue a:hover{text-decoration:underline;}
+.tag-row{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:16px;}
+.tag{
+  display:inline-block;padding:4px 14px;border-radius:20px;font-size:.85rem;
+  border:1px solid rgba(161,140,209,.3);color:#a18cd1;
+  background:rgba(161,140,209,.06);
+}
+.divider{border:none;border-top:1px solid rgba(255,255,255,.08);margin:48px 0;}
+.section{margin:40px 0;}
+.section-title{
+  font-size:1.75rem;font-weight:700;margin-bottom:20px;
+  color:#e6edf3;display:flex;align-items:center;gap:10px;
+}
+.section-title .num{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:36px;height:36px;border-radius:50%;
+  background:linear-gradient(135deg,#a18cd1,#fbc2eb);
+  color:#0d1117;font-size:1rem;font-weight:700;flex-shrink:0;
+}
+.section-desc{font-size:16px;line-height:1.9;color:#c9d1d9;margin-bottom:16px;}
+.toc{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:16px;padding:28px 36px;margin:30px 0;
+}
+.toc h3{font-size:1.2rem;color:#e6edf3;margin-bottom:14px;}
+.toc ol{list-style:none;counter-reset:toc;padding:0;}
+.toc li{counter-increment:toc;margin:8px 0;}
+.toc li::before{content:counter(toc) ".";color:#a18cd1;font-weight:600;margin-right:8px;}
+.toc a{color:#8b949e;text-decoration:none;transition:color .2s;}
+.toc a:hover{color:#a18cd1;}
+.module-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:24px;margin:18px 0;transition:all .3s;
+}
+.module-card:hover{border-color:rgba(161,140,209,.3);transform:translateY(-2px);}
+.module-card h3{font-size:1.15rem;font-weight:600;margin-bottom:10px;color:#a18cd1;}
+.module-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.arch-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:22px;margin:14px 0;transition:all .3s;
+}
+.arch-card:hover{border-color:rgba(161,140,209,.25);}
+.arch-card h4{font-size:1.05rem;font-weight:600;color:#fbc2eb;margin-bottom:8px;}
+.arch-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.step-flow{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:22px;margin:14px 0;
+}
+.step-flow h4{font-size:1.05rem;font-weight:600;color:#fbc2eb;margin-bottom:8px;}
+.step-flow p{font-size:15px;line-height:1.8;color:#8b949e;}
+.data-table{
+  width:100%;border-collapse:collapse;margin:18px 0;
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;overflow:hidden;font-size:14px;
+}
+.data-table th{
+  background:rgba(161,140,209,.08);color:#a18cd1;padding:12px 14px;
+  text-align:left;font-weight:600;border-bottom:1px solid rgba(255,255,255,.1);
+}
+.data-table td{
+  padding:10px 14px;border-bottom:1px solid rgba(255,255,255,.06);color:#c9d1d9;
+}
+.data-table tr:hover td{background:rgba(161,140,209,.03);}
+.formula-box{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:20px 24px;margin:16px 0;
+  font-size:18px;color:#e6edf3;text-align:center;
+  font-family:'JetBrains Mono',monospace;
+}
+.code-block{
+  background:rgba(20,20,35,.8);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:20px 24px;margin:16px 0;overflow-x:auto;
+}
+.code-block pre{font-family:'JetBrains Mono',monospace;font-size:14px;color:#c9d1d9;line-height:1.7;}
+.ck{color:#a18cd1;}.cs{color:#a5d6a7;}.cf{color:#fbc2eb;}.cg{color:#8b949e;}.cv{color:#ef9a9a;}.cn{color:#ce93d8;}
+.qa-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:24px;margin:16px 0;transition:all .3s;
+}
+.qa-card:hover{border-color:rgba(161,140,209,.3);}
+.qa-q{font-size:1.05rem;font-weight:600;color:#a18cd1;margin-bottom:10px;}
+.qa-a{font-size:15px;line-height:1.9;color:#c9d1d9;}
+.fc{font-size:14px;color:#8b949e;margin-top:8px;line-height:1.6;}
+.highlight-box{
+  background:rgba(161,140,209,.06);border:1px solid rgba(161,140,209,.2);
+  border-radius:14px;padding:20px 24px;margin:16px 0;
+}
+.highlight-box h4{color:#a18cd1;margin-bottom:8px;font-size:1.05rem;}
+.highlight-box p{color:#c9d1d9;line-height:1.8;font-size:15px;}
+.insight-box{
+  background:rgba(161,140,209,.06);border:1px solid rgba(161,140,209,.2);
+  border-radius:14px;padding:20px 24px;margin:16px 0;
+}
+.insight-box h4{color:#a18cd1;margin-bottom:8px;font-size:1.05rem;}
+.insight-box p{color:#c9d1d9;line-height:1.8;font-size:15px;}
+.limit-box{
+  background:rgba(255,193,7,.06);border:1px solid rgba(255,193,7,.2);
+  border-radius:14px;padding:20px 24px;margin:16px 0;
+}
+.limit-box h4{color:#ffc107;margin-bottom:8px;font-size:1.05rem;}
+.limit-box p{color:#c9d1d9;line-height:1.8;font-size:15px;}
+.footer{text-align:center;padding:40px 0 30px;color:#8b949e;font-size:.9rem;}
+@media(max-width:768px){
+  .container{padding:0 12px;}
+  .hero-title{font-size:1.5rem;}
+  .section-title{font-size:1.3rem;}
+  .data-table{font-size:12px;}
+}
+</style>
+</head>
+<body>
+<a class="back-btn" href="index.html">← 返回主页</a>
+<div class="container">
+
+<!-- ====== HERO ====== -->
+<div class="hero">
+  <h1 class="hero-title">ReAcTree: Hierarchical LLM Agent Trees</h1>
+  <p class="hero-sub">带有控制流的层次化 LLM 智能体树 — 让长周期任务规划从"单线冒险"变为"团队协作"</p>
+  <p class="venue">
+    <span>📄 AAMAS 2026 Full Paper</span> &nbsp;|&nbsp;
+    <a href="https://arxiv.org/abs/2511.02424" target="_blank">arXiv: 2511.02424</a> &nbsp;|&nbsp;
+    <a href="https://github.com/Choi-JaeWoo/ReAcTree" target="_blank">GitHub: Choi-JaeWoo/ReAcTree</a>
+  </p>
+  <div class="tag-row">
+    <span class="tag">AAMAS 2026</span>
+    <span class="tag">Hierarchical Planning</span>
+    <span class="tag">Control Flow</span>
+    <span class="tag">Embodied Agent</span>
+    <span class="tag">Dual Memory</span>
+  </div>
+</div>
+
+<!-- ====== ARCHITECTURE OVERVIEW ====== -->
+<div class="section">
+  <h2 class="section-title"><span class="num">★</span> 整体架构总览</h2>
+  <p class="section-desc">
+    ReAcTree 的核心思想是将复杂的长周期任务分解为一棵<strong>动态构建的智能体树</strong>（Agent Tree），其中每个节点是一个 LLM 智能体，负责完成一个子目标。不同于 ReAct 的单一轨迹，ReAcTree 通过<strong>控制流节点</strong>（顺序、循环、条件分支）协调子智能体的执行策略，并利用<strong>双记忆系统</strong>（情景记忆+工作记忆）实现跨子目标的知识共享。
+  </p>
+
+  <!-- SVG Architecture -->
+  <div class="svg-wrap" style="background:rgba(20,20,35,.4);border-radius:16px;padding:20px;margin:16px 0;">
+  <svg viewBox="0 0 1100 500" xmlns="http://www.w3.org/2000/svg" style="width:100%;font-family:'Noto Sans SC',system-ui,sans-serif;">
+    <defs>
+      <linearGradient id="purpleGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#a18cd1"/><stop offset="100%" stop-color="#fbc2eb"/>
+      </linearGradient>
+      <marker id="arrP" markerWidth="8" markerHeight="8" refX="8" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="#fbc2eb"/></marker>
+    </defs>
+    <!-- Background -->
+    <rect x="0" y="0" width="1100" height="500" rx="16" fill="#1a2340"/>
+    <text x="550" y="28" text-anchor="middle" fill="#a18cd1" font-size="15" font-weight="700">ReAcTree 架构总览</text>
+
+    <!-- Root Agent -->
+    <rect x="440" y="50" width="220" height="70" rx="14" fill="#252a3a" stroke="#a18cd1" stroke-width="2" filter="url(#sh)"/>
+    <text x="550" y="78" text-anchor="middle" fill="#fbc2eb" font-size="13" font-weight="600">🌳 根智能体 (Root)</text>
+    <text x="550" y="98" text-anchor="middle" fill="#8b949e" font-size="10">接收总目标 → 分解子目标</text>
+
+    <!-- Control Flow: Sequence -->
+    <rect x="100" y="170" width="160" height="55" rx="12" fill="#2a1a3a" stroke="#a18cd1" stroke-opacity=".4"/>
+    <text x="180" y="192" text-anchor="middle" fill="#fbc2eb" font-size="11" font-weight="600">→ 顺序节点</text>
+    <text x="180" y="210" text-anchor="middle" fill="#8b949e" font-size="10">Sequence</text>
+
+    <!-- Control Flow: Loop -->
+    <rect x="310" y="170" width="160" height="55" rx="12" fill="#2a1a3a" stroke="#a18cd1" stroke-opacity=".4"/>
+    <text x="390" y="192" text-anchor="middle" fill="#fbc2eb" font-size="11" font-weight="600">🔄 循环节点</text>
+    <text x="390" y="210" text-anchor="middle" fill="#8b949e" font-size="10">Loop</text>
+
+    <!-- Control Flow: Condition -->
+    <rect x="520" y="170" width="160" height="55" rx="12" fill="#2a1a3a" stroke="#a18cd1" stroke-opacity=".4"/>
+    <text x="600" y="192" text-anchor="middle" fill="#fbc2eb" font-size="11" font-weight="600">❓ 条件节点</text>
+    <text x="600" y="210" text-anchor="middle" fill="#8b949e" font-size="10">If/Else</text>
+
+    <!-- Control Flow: Parallel -->
+    <rect x="730" y="170" width="160" height="55" rx="12" fill="#2a1a3a" stroke="#a18cd1" stroke-opacity=".4"/>
+    <text x="810" y="192" text-anchor="middle" fill="#fbc2eb" font-size="11" font-weight="600">⚡ 并行节点</text>
+    <text x="810" y="210" text-anchor="middle" fill="#8b949e" font-size="10">Parallel</text>
+
+    <!-- Arrows from root to control flow -->
+    <line x1="460" y1="120" x2="180" y2="170" stroke="#a18cd1" stroke-width="1.5" marker-end="url(#arrP)"/>
+    <line x1="500" y1="120" x2="390" y2="170" stroke="#a18cd1" stroke-width="1.5" marker-end="url(#arrP)"/>
+    <line x1="570" y1="120" x2="600" y2="170" stroke="#a18cd1" stroke-width="1.5" marker-end="url(#arrP)"/>
+    <line x1="640" y1="120" x2="810" y2="170" stroke="#a18cd1" stroke-width="1.5" marker-end="url(#arrP)"/>
+
+    <!-- Agent Nodes (Level 2) -->
+    <rect x="60" y="280" width="170" height="60" rx="12" fill="#252a3a" stroke="#fbc2eb" stroke-opacity=".3"/>
+    <text x="145" y="305" text-anchor="middle" fill="#fbc2eb" font-size="11" font-weight="600">🤖 子智能体 A</text>
+    <text x="145" y="323" text-anchor="middle" fill="#8b949e" font-size="10">子目标₁: Reason+Act</text>
+
+    <rect x="270" y="280" width="170" height="60" rx="12" fill="#252a3a" stroke="#fbc2eb" stroke-opacity=".3"/>
+    <text x="355" y="305" text-anchor="middle" fill="#fbc2eb" font-size="11" font-weight="600">🤖 子智能体 B</text>
+    <text x="355" y="323" text-anchor="middle" fill="#8b949e" font-size="10">子目标₂: Reason+Act</text>
+
+    <rect x="480" y="280" width="170" height="60" rx="12" fill="#252a3a" stroke="#fbc2eb" stroke-opacity=".3"/>
+    <text x="565" y="305" text-anchor="middle" fill="#fbc2eb" font-size="11" font-weight="600">🤖 子智能体 C</text>
+    <text x="565" y="323" text-anchor="middle" fill="#8b949e" font-size="10">子目标₃: Expand</text>
+
+    <rect x="690" y="280" width="170" height="60" rx="12" fill="#252a3a" stroke="#fbc2eb" stroke-opacity=".3"/>
+    <text x="775" y="305" text-anchor="middle" fill="#fbc2eb" font-size="11" font-weight="600">🤖 子智能体 D</text>
+    <text x="775" y="323" text-anchor="middle" fill="#8b949e" font-size="10">子目标₄: Reason+Act</text>
+
+    <!-- Arrows from control flow to agents -->
+    <line x1="180" y1="225" x2="145" y2="280" stroke="#fbc2eb" stroke-width="1.5" marker-end="url(#arrP)"/>
+    <line x1="390" y1="225" x2="355" y2="280" stroke="#fbc2eb" stroke-width="1.5" marker-end="url(#arrP)"/>
+    <line x1="600" y1="225" x2="565" y2="280" stroke="#fbc2eb" stroke-width="1.5" marker-end="url(#arrP)"/>
+    <line x1="810" y1="225" x2="775" y2="280" stroke="#fbc2eb" stroke-width="1.5" marker-end="url(#arrP)"/>
+
+    <!-- Dual Memory System -->
+    <rect x="50" y="380" width="500" height="100" rx="14" fill="#252a3a" stroke="rgba(255,255,255,.08)"/>
+    <text x="300" y="405" text-anchor="middle" fill="#a18cd1" font-size="13" font-weight="600">🧠 双记忆系统</text>
+    <rect x="70" y="420" width="220" height="45" rx="10" fill="#2a1a3a" stroke="#a18cd1" stroke-opacity=".3"/>
+    <text x="180" y="440" text-anchor="middle" fill="#fbc2eb" font-size="11">📖 情景记忆 (Episodic)</text>
+    <text x="180" y="457" text-anchor="middle" fill="#8b949e" font-size="10">子目标级示例 · 可检索</text>
+    <rect x="310" y="420" width="220" height="45" rx="10" fill="#2a1a3a" stroke="#a18cd1" stroke-opacity=".3"/>
+    <text x="420" y="440" text-anchor="middle" fill="#fbc2eb" font-size="11">📝 工作记忆 (Working)</text>
+    <text x="420" y="457" text-anchor="middle" fill="#8b949e" font-size="10">环境观察 · 跨节点共享</text>
+
+    <!-- ReAct baseline comparison -->
+    <rect x="600" y="380" width="460" height="100" rx="14" fill="#252a3a" stroke="rgba(255,255,255,.08)"/>
+    <text x="830" y="405" text-anchor="middle" fill="#a18cd1" font-size="13" font-weight="600">📊 vs ReAct 基线</text>
+    <text x="620" y="430" fill="#fbc2eb" font-size="11">ReAct: 单轨迹 → 31% 成功率 (WAH-NL)</text>
+    <text x="620" y="450" fill="#a18cd1" font-size="11">ReAcTree: 层次树 → 61% 成功率 (WAH-NL, Qwen 2.5 72B)</text>
+    <text x="620" y="470" fill="#8b949e" font-size="10">提升约 2×，核心优势：子目标解耦 + 控制流 + 双记忆</text>
+  </svg>
+  </div>
+  <p class="fc">▲ ReAcTree 架构总览：根智能体分解目标→控制流节点协调→子智能体执行→双记忆支持</p>
+
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px;margin-top:20px;">
+    <div class="arch-card">
+      <h4>🌳 动态智能体树</h4>
+      <p>不同于静态的行动树，ReAcTree 在子目标空间中动态构建树结构。每个子智能体可以进一步扩展为子树，实现递归式的任务分解。</p>
+    </div>
+    <div class="arch-card">
+      <h4>🔀 控制流节点</h4>
+      <p>引入编程语言式的控制流（顺序、循环、条件、并行），使智能体能够表达复杂的执行策略，而非简单的线性推理链。</p>
+    </div>
+    <div class="arch-card">
+      <h4>🧠 双记忆系统</h4>
+      <p>情景记忆提供子目标级的历史示例参考，工作记忆在节点间共享环境观察，避免信息丢失和冗余交互。</p>
+    </div>
+  </div>
+</div>
+
+<!-- ====== TOC ====== -->
+<div class="section">
+  <div class="toc">
+    <h3>📑 文档目录</h3>
+    <ol>
+      <li><a href="#s0">核心问题与研究动机</a></li>
+      <li><a href="#s1">背景知识与前置概念</a></li>
+      <li><a href="#s2">方法论：ReAcTree 核心模块</a></li>
+      <li><a href="#s3">核心创新点深度解析</a></li>
+      <li><a href="#s4">数据流解析：任务执行全过程</a></li>
+      <li><a href="#s5">关键技术细节</a></li>
+      <li><a href="#s6">实验结果与消融分析</a></li>
+      <li><a href="#s7">设计精妙之处与局限性</a></li>
+      <li><a href="#s8">Q&A 深度解析</a></li>
+      <li><a href="#s9">代码使用与实战</a></li>
+    </ol>
+  </div>
+</div>
+
+<!-- ====== Section 0 ====== -->
+<div class="section" id="s0">
+  <h2 class="section-title"><span class="num">0</span> 核心问题与研究动机</h2>
+  <p class="section-desc">
+    具身智能体在长周期任务上面临一个核心困境：<strong>单体轨迹纠缠</strong>。以 ReAct 为代表的方法，将所有历史决策和观察压入一条线性轨迹——随着任务步数增加，上下文窗口被冗余信息填满，模型难以区分关键信息和噪声，导致"遗忘"早期决策、"迷路"在无关观察中。就像一个人同时处理十个子任务，把所有笔记混在一张纸上，越写越混乱。
+  </p>
+  <div class="highlight-box">
+    <h4>🔑 核心问题</h4>
+    <p>如何让 LLM 智能体在长周期任务中保持结构化的推理能力？具体来说，如何将复杂目标分解为相对独立的子目标，使每个子目标可以在精简的上下文中被高效解决，同时保持子目标之间的协调和信息流通？</p>
+  </div>
+  <p class="section-desc">
+    ReAcTree 的回答是：<strong>用树替代线性轨迹，用控制流替代硬编码策略，用双记忆替代单一上下文</strong>。树结构天然支持任务的层次分解；控制流节点提供了灵活的执行策略编排；双记忆系统在保持信息流通的同时避免了上下文膨胀。
+  </p>
+</div>
+
+<!-- ====== Section 1 ====== -->
+<div class="section" id="s1">
+  <h2 class="section-title"><span class="num">1</span> 背景知识与前置概念</h2>
+
+  <div class="module-card">
+    <h3>ReAct 及其局限性</h3>
+    <p>ReAct 是智能体推理的奠基性工作，它让 LLM 交替生成"思考"和"行动"步骤。但 ReAct 的<strong>线性轨迹设计</strong>在长周期任务中暴露了三个问题：(1) <strong>上下文膨胀</strong>——所有历史步骤累积在一条轨迹中，超出窗口限制后早期信息丢失；(2) <strong>纠缠决策</strong>——不同子任务的决策交织在一起，模型难以追踪每个子任务的进展；(3) <strong>错误传播</strong>——一步错误会影响后续所有步骤，没有隔离机制。</p>
+  </div>
+
+  <div class="module-card">
+    <h3>行为树 (Behavior Tree) 与智能体推理</h3>
+    <p>行为树是机器人学和游戏 AI 中广泛使用的任务编排结构，通过<strong>控制流节点</strong>（选择器、序列、并行等）组织叶节点（具体动作）。ReAcTree 借鉴了行为树的思想，但做了关键改造：(1) 叶节点不是预定义的动作，而是<strong>可递归扩展的 LLM 智能体</strong>；(2) 树是<strong>动态构建</strong>的，而非预先定义的；(3) 控制流节点由 LLM 自动选择和参数化，而非人工设计。</p>
+  </div>
+
+  <div class="module-card">
+    <h3>情景记忆 vs. 工作记忆</h3>
+    <p>这是认知心理学中的经典区分，ReAcTree 将其引入智能体推理。<strong>情景记忆</strong>（Episodic Memory）存储历史交互的具体案例——"上次遇到类似情况时我是怎么做的"，通过相似度检索来指导当前决策。<strong>工作记忆</strong>（Working Memory）存储当前任务的关键环境观察——"房间里有红色方块"，在树的节点间共享以避免重复探索。前者提供"经验参考"，后者提供"当前状态"。</p>
+  </div>
+</div>
+
+<!-- ====== Section 2: Methodology ====== -->
+<div class="section" id="s2">
+  <h2 class="section-title"><span class="num">2</span> 方法论：ReAcTree 核心模块</h2>
+
+  <div class="module-card">
+    <h3>2.1 动态智能体树构建</h3>
+    <p>ReAcTree 的树构建过程是<strong>自顶向下、按需扩展</strong>的：根智能体接收总目标后，首先将其分解为若干子目标，每个子目标生成一个子智能体节点。子智能体执行时可以进一步分解自己的子目标，递归构建子树。关键设计：树在<strong>子目标空间</strong>而非动作空间中构建——这意味着每个节点关注的是"要完成什么"而非"怎么做"，使得高层规划与低层执行解耦。</p>
+  </div>
+
+  <div class="module-card">
+    <h3>2.2 控制流节点</h3>
+    <p>控制流节点是 ReAcTree 区别于简单递归分解的关键创新。四种控制流节点：</p>
+    <p>• <strong>顺序节点（Sequence）</strong>：子目标按顺序依次执行，前一个完成后才开始下一个。适用于有明确依赖关系的子目标。</p>
+    <p>• <strong>循环节点（Loop）</strong>：重复执行子目标直到满足终止条件。适用于需要反复尝试或迭代改进的场景（如"反复搜索直到找到目标"）。</p>
+    <p>• <strong>条件节点（If/Else）</strong>：根据环境观察决定执行哪个分支。适用于需要根据中间结果调整策略的场景。</p>
+    <p>• <strong>并行节点（Parallel）</strong>：同时执行多个子目标。适用于独立子任务的并行加速。</p>
+  </div>
+
+  <div class="module-card">
+    <h3>2.3 双记忆系统</h3>
+    <p><strong>情景记忆</strong>：每个智能体节点在执行前，从外部情景记忆库中检索与当前子目标语义相似的历史案例。这些案例提供了"类似子目标之前是怎么完成的"参考，帮助智能体少走弯路。检索基于子目标描述的嵌入相似度。</p>
+    <p><strong>工作记忆</strong>：所有智能体节点共享一个工作记忆区，存储环境的关键观察结果。当一个节点发现"房间有红色钥匙"时，这个信息会写入工作记忆，其他需要"红色钥匙"的节点可以直接读取，无需重复探索。这大大减少了冗余的环境交互。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ====== Section 3: Core Innovations ====== -->
+<div class="section" id="s3">
+  <h2 class="section-title"><span class="num">3</span> 核心创新点深度解析</h2>
+
+  <div class="module-card">
+    <h3>创新1：子目标空间的动态树 vs. 动作空间的静态树</h3>
+    <p>此前的方法（如 RAP、LATS）在<strong>动作空间</strong>构建搜索树——每个节点是 LLM 生成的一个具体动作。ReAcTree 在<strong>子目标空间</strong>构建树——每个节点是一个子目标及其对应的智能体。这个区别看似微小，实则深刻：动作空间树的分支因子巨大（每个状态可能有数十种可用动作），搜索效率低；子目标空间树的分支因子小（通常3-5个子目标），且每个子目标可以由专用智能体独立处理，互不干扰。</p>
+  </div>
+
+  <div class="module-card">
+    <h3>创新2：编程式控制流的引入</h3>
+    <p>将编程语言的控制流概念引入智能体规划是 ReAcTree 的标志性贡献。传统方法要么是纯线性的（ReAct），要么是纯搜索的（ToT, LATS），缺乏表达"循环直到成功"或"如果A则做B否则做C"这类条件执行策略的能力。控制流节点让智能体能够表达<strong>策略性知识</strong>——不只是"做什么"，还包括"怎么组织做"。</p>
+  </div>
+
+  <div class="module-card">
+    <h3>创新3：双记忆的互补设计</h3>
+    <p>情景记忆提供<strong>纵向</strong>经验复用（跨任务、跨时间），工作记忆提供<strong>横向</strong>信息共享（同任务、跨节点）。两者互补：情景记忆告诉智能体"以前怎么做的"，工作记忆告诉智能体"现在环境是什么样的"。没有情景记忆，智能体每次都要从零开始；没有工作记忆，子智能体之间无法协调，可能重复探索或互相矛盾。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ====== Section 4: Data Flow ====== -->
+<div class="section" id="s4">
+  <h2 class="section-title"><span class="num">4</span> 数据流解析：任务执行全过程</h2>
+
+  <div class="svg-wrap" style="background:rgba(20,20,35,.4);border-radius:16px;padding:20px;margin:16px 0;">
+  <svg viewBox="0 0 1100 350" xmlns="http://www.w3.org/2000/svg" style="width:100%;font-family:'Noto Sans SC',system-ui,sans-serif;">
+    <defs><marker id="arrP2" markerWidth="8" markerHeight="8" refX="8" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="#fbc2eb"/></marker></defs>
+    <rect x="0" y="0" width="1100" height="350" rx="16" fill="#1a2340"/>
+    <text x="550" y="28" text-anchor="middle" fill="#a18cd1" font-size="14" font-weight="700">ReAcTree 任务执行数据流</text>
+    <!-- Step 1 -->
+    <rect x="30" y="55" width="160" height="75" rx="12" fill="#252a3a" stroke="#a18cd1" stroke-opacity=".4"/>
+    <text x="110" y="78" text-anchor="middle" fill="#fbc2eb" font-size="11" font-weight="600">📋 目标输入</text>
+    <text x="110" y="96" text-anchor="middle" fill="#8b949e" font-size="10">"打扫厨房"</text>
+    <text x="110" y="112" text-anchor="middle" fill="#8b949e" font-size="10">→ Goal description</text>
+    <!-- Step 2 -->
+    <rect x="240" y="55" width="180" height="75" rx="12" fill="#252a3a" stroke="#a18cd1" stroke-opacity=".5" stroke-width="2"/>
+    <text x="330" y="78" text-anchor="middle" fill="#a18cd1" font-size="11" font-weight="600">🌳 根智能体分解</text>
+    <text x="330" y="96" text-anchor="middle" fill="#8b949e" font-size="10">分解为子目标+控制流</text>
+    <text x="330" y="112" text-anchor="middle" fill="#8b949e" font-size="10">→ [subgoals, flow]</text>
+    <!-- Step 3 -->
+    <rect x="470" y="55" width="180" height="75" rx="12" fill="#252a3a" stroke="#a18cd1" stroke-opacity=".5" stroke-width="2"/>
+    <text x="560" y="78" text-anchor="middle" fill="#a18cd1" font-size="11" font-weight="600">🔀 控制流调度</text>
+    <text x="560" y="96" text-anchor="middle" fill="#8b949e" font-size="10">选择下一个子智能体</text>
+    <text x="560" y="112" text-anchor="middle" fill="#8b949e" font-size="10">→ next_agent_node</text>
+    <!-- Step 4 -->
+    <rect x="700" y="55" width="180" height="75" rx="12" fill="#252a3a" stroke="#a18cd1" stroke-opacity=".5" stroke-width="2"/>
+    <text x="790" y="78" text-anchor="middle" fill="#a18cd1" font-size="11" font-weight="600">🤖 子智能体执行</text>
+    <text x="790" y="96" text-anchor="middle" fill="#8b949e" font-size="10">Reason→Act→Observe</text>
+    <text x="790" y="112" text-anchor="middle" fill="#8b949e" font-size="10">→ observation</text>
+    <!-- Step 5 -->
+    <rect x="930" y="55" width="140" height="75" rx="12" fill="#252a3a" stroke="#a18cd1" stroke-opacity=".4"/>
+    <text x="1000" y="78" text-anchor="middle" fill="#fbc2eb" font-size="11" font-weight="600">✅ 完成/扩展</text>
+    <text x="1000" y="96" text-anchor="middle" fill="#8b949e" font-size="10">返回结果或</text>
+    <text x="1000" y="112" text-anchor="middle" fill="#8b949e" font-size="10">递归分解子树</text>
+    <!-- Arrows -->
+    <line x1="190" y1="92" x2="240" y2="92" stroke="#fbc2eb" stroke-width="2" marker-end="url(#arrP2)"/>
+    <line x1="420" y1="92" x2="470" y2="92" stroke="#fbc2eb" stroke-width="2" marker-end="url(#arrP2)"/>
+    <line x1="650" y1="92" x2="700" y2="92" stroke="#fbc2eb" stroke-width="2" marker-end="url(#arrP2)"/>
+    <line x1="880" y1="92" x2="930" y2="92" stroke="#fbc2eb" stroke-width="2" marker-end="url(#arrP2)"/>
+    <!-- Memory access -->
+    <rect x="30" y="175" width="1040" height="75" rx="12" fill="#252a3a" stroke="rgba(255,255,255,.08)"/>
+    <text x="550" y="200" text-anchor="middle" fill="#a18cd1" font-size="12" font-weight="600">🧠 记忆访问流程</text>
+    <text x="80" y="225" fill="#fbc2eb" font-size="11">1. 检索情景记忆 → 获取相似子目标的历史解决方案</text>
+    <text x="580" y="225" fill="#fbc2eb" font-size="11">2. 读写工作记忆 → 共享环境观察给其他节点</text>
+    <!-- Feedback -->
+    <path d="M1000,130 L1000,160 L560,160 L560,130" fill="none" stroke="#a18cd1" stroke-width="1.5" stroke-dasharray="6,3" marker-end="url(#arrP2)"/>
+    <text x="780" y="155" text-anchor="middle" fill="#a18cd1" font-size="10">🔄 执行结果→控制流调度决策</text>
+    <!-- Key result -->
+    <rect x="30" y="280" width="1040" height="50" rx="12" fill="#2a1a3a" stroke="#a18cd1" stroke-opacity=".3"/>
+    <text x="550" y="310" text-anchor="middle" fill="#fbc2eb" font-size="12">🎯 WAH-NL 结果：ReAct 31% → ReAcTree 61%（Qwen 2.5 72B）— 目标成功率提升约 2×</text>
+  </svg>
+  </div>
+  <p class="fc">▲ ReAcTree 完整执行数据流：目标→分解→控制流调度→子智能体执行→记忆访问→反馈循环</p>
+</div>
+
+<hr class="divider">
+
+<!-- ====== Section 5: Technical Details ====== -->
+<div class="section" id="s5">
+  <h2 class="section-title"><span class="num">5</span> 关键技术细节</h2>
+
+  <div class="module-card">
+    <h3>子目标分解的提示工程</h3>
+    <p>ReAcTree 使用精心设计的提示模板让 LLM 执行子目标分解。提示包含：(1) 当前目标描述；(2) 当前环境观察；(3) 已完成的子目标列表；(4) 从情景记忆检索到的相似案例。LLM 需要输出：分解后的子目标列表、每个子目标对应的控制流类型（顺序/循环/条件/并行），以及控制流参数（如循环的终止条件）。</p>
+  </div>
+
+  <div class="module-card">
+    <h3>情景记忆的检索机制</h3>
+    <p>情景记忆库存储历史交互中的"子目标-行动-结果"三元组。检索时，将当前子目标的语义描述编码为向量，与记忆库中的子目标描述计算余弦相似度，返回 top-k 最相似的案例。关键设计：检索粒度是<strong>子目标级</strong>而非任务级——这确保了检索到的案例与当前子步骤高度相关，而非只是与总目标相似但具体步骤不同。</p>
+  </div>
+
+  <div class="module-card">
+    <h3>工作记忆的共享与更新</h3>
+    <p>工作记忆是一个键值对结构，存储环境中的关键事实（如"location: kitchen"、"holding: red_key"）。每当子智能体执行一个动作并观察环境变化时，它会将新的观察写入工作记忆。下一个子智能体开始执行前，会从工作记忆中读取所有相关事实。这种设计避免了子智能体之间的重复探索——如果一个节点已经发现"红色钥匙在桌子上"，其他需要红色钥匙的节点不需要再去搜索。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ====== Section 6: Experiments ====== -->
+<div class="section" id="s6">
+  <h2 class="section-title"><span class="num">6</span> 实验结果与消融分析</h2>
+
+  <table class="data-table">
+    <thead>
+      <tr><th>方法</th><th>LLM</th><th>WAH-NL SR%</th><th>ALFRED SR%</th><th>特点</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>ReAct</td><td>GPT-3.5</td><td>31</td><td>18</td><td>单轨迹基线</td></tr>
+      <tr><td>ReAct</td><td>Qwen 2.5 72B</td><td>31</td><td>20</td><td>更强模型仍受限</td></tr>
+      <tr><td>Reflexion</td><td>GPT-3.5</td><td>35</td><td>22</td><td>+自省改进</td></tr>
+      <tr><td>ReAcTree</td><td>GPT-3.5</td><td>45</td><td>28</td><td>+树+控制流</td></tr>
+      <tr><td>ReAcTree</td><td>Qwen 2.5 72B</td><td><strong>61</strong></td><td><strong>38</strong></td><td>最佳组合</td></tr>
+    </tbody>
+  </table>
+
+  <div class="module-card">
+    <h3>消融实验分析</h3>
+    <p>论文进行了系统的消融实验，逐步移除 ReAcTree 的各组件：</p>
+    <p>• <strong>去掉控制流节点</strong>（只保留树分解）：性能下降约 8-10%，说明控制流对策略表达至关重要</p>
+    <p>• <strong>去掉情景记忆</strong>：性能下降约 5-7%，说明经验复用显著减少试错</p>
+    <p>• <strong>去掉工作记忆</strong>：性能下降约 10-12%，说明跨节点信息共享对避免冗余交互最为关键</p>
+    <p>• <strong>去掉树结构</strong>（退化为 ReAct）：性能下降约 30%，说明层次分解是最核心的贡献</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ====== Section 7: Insights & Limitations ====== -->
+<div class="section" id="s7">
+  <h2 class="section-title"><span class="num">7</span> 设计精妙之处与局限性</h2>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+    <div>
+      <h3 style="color:#fbc2eb;margin-bottom:14px;font-size:1.15rem;">✨ 设计精妙之处</h3>
+      <div class="insight-box">
+        <h4>1. 子目标空间树 vs. 动作空间树</h4>
+        <p>在子目标空间建树，分支因子小、语义清晰，搜索效率远高于在动作空间建树。每个子智能体只需关注自己的子目标，上下文精简。</p>
+      </div>
+      <div class="insight-box">
+        <h4>2. 控制流的编程隐喻</h4>
+        <p>将编程语言的顺序/循环/条件/并行引入智能体规划，使策略表达从"只能线性"升级为"可编程"，大大提升了复杂执行策略的表达能力。</p>
+      </div>
+      <div class="insight-box">
+        <h4>3. 双记忆的纵横互补</h4>
+        <p>情景记忆（纵向跨任务经验）和工作记忆（横向跨节点状态）互补，既避免从零开始，又避免重复探索。</p>
+      </div>
+    </div>
+    <div>
+      <h3 style="color:#ffc107;margin-bottom:14px;font-size:1.15rem;">⚠️ 局限性</h3>
+      <div class="limit-box">
+        <h4>1. 仅在具身任务上验证</h4>
+        <p>实验限于 WAH-NL 和 ALFRED 两个具身任务基准，未在代码生成、科学推理等其他长周期任务上验证泛化性。</p>
+      </div>
+      <div class="limit-box">
+        <h4>2. 子目标分解质量依赖 LLM</h4>
+        <p>分解质量完全依赖 LLM 的规划能力，弱模型可能产生不合理的子目标分解，导致树结构低效或错误。</p>
+      </div>
+      <div class="limit-box">
+        <h4>3. 控制流的选择缺乏验证</h4>
+        <p>LLM 自动选择控制流类型和参数，但缺乏对选择正确性的验证机制——如果选错了循环终止条件，可能导致无限循环。</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ====== Section 8: Q&A ====== -->
+<div class="section" id="s8">
+  <h2 class="section-title"><span class="num">8</span> Q&A 深度解析</h2>
+
+  <div class="qa-card">
+    <div class="qa-q">Q1: ReAcTree 和 Tree of Thoughts (ToT) 的本质区别是什么？</div>
+    <div class="qa-a">ToT 在<strong>推理步骤</strong>级别建树，每个节点是一个中间推理状态，搜索目标是找到最佳推理路径。ReAcTree 在<strong>子目标</strong>级别建树，每个节点是一个可独立执行的智能体。区别在于：ToT 的树是"搜索"的产物——通过探索多条路径找到最优解；ReAcTree 的树是"分解"的产物——将大任务拆成小任务再组合执行。ToT 重在"搜索策略"，ReAcTree 重在"任务组织"。</div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-q">Q2: 控制流节点在实际中如何被 LLM 生成？</div>
+    <div class="qa-a">LLM 在分解子目标时，同时输出每个子目标的控制流类型和参数。例如："子目标1：找到钥匙（Loop，终止条件=手中持有钥匙）→ 子目标2：开门（Sequence）"。提示模板中包含四种控制流的定义和示例，LLM 按格式输出。控制流的选择基于 LLM 对任务结构的理解——需要重复的用 Loop，有依赖的用 Sequence，需要判断的用 If/Else。</div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-q">Q3: 工作记忆和情景记忆的存储开销如何？</div>
+    <div class="qa-a">工作记忆是键值对，通常只存储 10-30 个关键事实，开销很小。情景记忆库的大小取决于历史交互数量——论文中每个任务存储约 5-10 个关键子目标案例，使用向量检索，开销可控。主要成本在检索时的 embedding 计算，但这比额外的一次 LLM 调用便宜得多。</div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-q">Q4: 为什么 WAH-NL 上提升比 ALFRED 更大？</div>
+    <div class="qa-a">WAH-NL 的任务更长、子目标更多（平均 15-20 步 vs. ALFRED 的 8-12 步），ReAct 在长轨迹上的上下文膨胀问题更严重。ReAcTree 通过树分解将长轨迹切分为短子轨迹，在 WAH-NL 上收益更大。这验证了核心假设：任务越长，ReAcTree 的优势越明显。</div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-q">Q5: ReAcTree 可以和强化学习结合吗？</div>
+    <div class="qa-a">理论上可以，但论文没有探索。一种可能的方式是：用 RL 训练 LLM 学习更优的子目标分解策略和控制流选择。当前的分解完全依赖 LLM 的零样本规划能力，如果通过 RL 训练 LLM 在特定环境中最优地分解目标，可能进一步提升性能。这是自然的未来方向。</div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-q">Q6: 并行节点在实际中如何实现？</div>
+    <div class="qa-a">在当前实现中，并行节点是<strong>逻辑上的并行</strong>而非物理并行——子智能体仍然串行执行，但它们的执行顺序不影响结果（因为子目标相互独立）。真正的物理并行需要多个 LLM 实例同时调用，会增加成本但减少延迟。论文选择了逻辑并行，这是一个务实的工程权衡。</div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-q">Q7: 如果子目标分解错误怎么办？</div>
+    <div class="qa-a">这是 ReAcTree 的一个开放问题。当前没有显式的分解错误恢复机制——如果子目标分解不合理（如遗漏了关键步骤或创建了冗余子目标），整棵树的执行效率会下降。一种可能的改进是引入<strong>分解验证</strong>步骤：在执行前，让另一个 LLM 检查分解的合理性，或引入回溯机制允许重新分解。</div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-q">Q8: ReAcTree 的核心启示对其他领域有什么启发？</div>
+    <div class="qa-a">核心启示是"<strong>分而治之+可控编排</strong>"的思想——将复杂任务分解为独立子任务，用结构化的控制流编排执行，用记忆系统维持上下文。这个思想不仅适用于具身智能体，也适用于代码生成（将大项目拆分为模块）、科学推理（将复杂实验拆分为子实验）、多跳问答（将长推理链拆分为子问题）等场景。</div>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ====== Section 9: Code ====== -->
+<div class="section" id="s9">
+  <h2 class="section-title"><span class="num">9</span> 代码使用与实战</h2>
+
+  <div class="code-block">
+    <pre><span class="cg"># 克隆 ReAcTree 仓库</span>
+<span class="ck">git</span> clone https://github.com/Choi-JaeWoo/ReAcTree.git
+<span class="ck">cd</span> ReAcTree
+
+<span class="cg"># 安装依赖</span>
+<span class="ck">pip</span> install -r requirements.txt
+
+<span class="cg"># 仓库目录结构</span>
+<span class="cv">ReAcTree/</span>
+├── <span class="cf">reactree.py</span>          <span class="cg"># 核心 ReAcTree 实现</span>
+├── <span class="cf">agent_node.py</span>       <span class="cg"># 子智能体节点</span>
+├── <span class="cf">control_flow.py</span>     <span class="cg"># 控制流节点实现</span>
+├── <span class="cf">memory/</span>
+│   ├── <span class="cf">episodic.py</span>      <span class="cg"># 情景记忆</span>
+│   └── <span class="cf">working.py</span>       <span class="cg"># 工作记忆</span>
+├── <span class="cf">envs/</span>               <span class="cg"># 环境接口</span>
+│   ├── <span class="cf">wah_nl/</span>         <span class="cg"># WAH-NL 环境</span>
+│   └── <span class="cf">alfred/</span>         <span class="cg"># ALFRED 环境</span>
+├── <span class="cf">prompts/</span>            <span class="cg"># 提示模板</span>
+└── <span class="cf">eval/</span>               <span class="cg"># 评估脚本</span></pre>
+  </div>
+
+  <div class="code-block">
+    <pre><span class="cg"># 运行 ReAcTree 在 WAH-NL 上</span>
+<span class="ck">python</span> run.py \
+  --env wah_nl \
+  --model qwen/Qwen2.5-72B-Instruct \
+  --method reactree \
+  --episodic_memory True \
+  --working_memory True
+
+<span class="cg"># 消融实验：去掉工作记忆</span>
+<span class="ck">python</span> run.py \
+  --env wah_nl \
+  --model qwen/Qwen2.5-72B-Instruct \
+  --method reactree \
+  --working_memory False
+
+<span class="cg"># ReAct 基线对比</span>
+<span class="ck">python</span> run.py \
+  --env wah_nl \
+  --model qwen/Qwen2.5-72B-Instruct \
+  --method react</pre>
+  </div>
+
+  <table class="data-table">
+    <thead>
+      <tr><th>参数</th><th>默认值</th><th>说明</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>--env</td><td>wah_nl</td><td>环境选择：wah_nl / alfred</td></tr>
+      <tr><td>--model</td><td>gpt-3.5-turbo</td><td>LLM 模型名称</td></tr>
+      <tr><td>--method</td><td>reactree</td><td>方法：reactree / react / reflexion</td></tr>
+      <tr><td>--episodic_memory</td><td>True</td><td>是否启用情景记忆</td></tr>
+      <tr><td>--working_memory</td><td>True</td><td>是否启用工作记忆</td></tr>
+      <tr><td>--max_tree_depth</td><td>3</td><td>最大树的深度</td></tr>
+      <tr><td>--max_subgoals</td><td>5</td><td>每个节点的最大子目标数</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ====== Footer ====== -->
+<div class="footer">
+  <p>📖 ReAcTree: Hierarchical LLM Agent Trees with Control Flow — 深度解读 | 生成于 2026-05-21</p>
+  <p>论文来源: <a href="https://arxiv.org/abs/2511.02424" style="color:#a18cd1;">arXiv:2511.02424</a> | 代码: <a href="https://github.com/Choi-JaeWoo/ReAcTree" style="color:#a18cd1;">GitHub</a></p>
+</div>
+
+</div>
+<script src="theme.js"></script>
+</body>
+</html>

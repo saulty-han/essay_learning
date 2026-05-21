@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>深度解读 — Wider or Deeper? AB-MCTS (TreeQuest)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{font-family:'Noto Sans SC',system-ui,-apple-system,sans-serif;background:#0d1117;color:#c9d1d9;line-height:1.8;font-size:16px;min-height:100vh;}
+.container{max-width:1400px;margin:0 auto;padding:0 24px;background:#0d1117;position:relative;}
+.back-btn{position:fixed;top:16px;left:16px;z-index:9999;background:rgba(20,20,35,.75);color:#c9d1d9;border:1px solid rgba(255,255,255,.15);border-radius:10px;padding:8px 16px;font-size:14px;cursor:pointer;backdrop-filter:blur(6px);transition:all .3s;text-decoration:none;display:flex;align-items:center;gap:6px;}
+.back-btn:hover{background:rgba(30,30,55,.9);border-color:rgba(255,255,255,.3);}
+.hero{padding:80px 0 40px;text-align:center;}
+.hero-title{font-size:2.2rem;font-weight:700;background:linear-gradient(135deg,#f093fb,#f5576c);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:12px;line-height:1.3;}
+.hero-sub{font-size:1.1rem;color:#8b949e;margin-bottom:8px;}
+.venue{font-size:.95rem;color:#8b949e;margin-top:8px;}
+.venue a{color:#f093fb;text-decoration:none;}
+.venue a:hover{text-decoration:underline;}
+.tag-row{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:16px;}
+.tag{display:inline-block;padding:4px 14px;border-radius:20px;font-size:.85rem;border:1px solid rgba(240,147,251,.3);color:#f093fb;background:rgba(240,147,251,.06);}
+.divider{border:none;border-top:1px solid rgba(255,255,255,.08);margin:48px 0;}
+.section{margin:40px 0;}
+.section-title{font-size:1.75rem;font-weight:700;margin-bottom:20px;color:#e6edf3;display:flex;align-items:center;gap:10px;}
+.section-title .num{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#f093fb,#f5576c);color:#fff;font-size:1rem;font-weight:700;flex-shrink:0;}
+.section-desc{font-size:16px;line-height:1.9;color:#c9d1d9;margin-bottom:16px;}
+.toc{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:28px 36px;margin:30px 0;}
+.toc h3{font-size:1.2rem;color:#e6edf3;margin-bottom:14px;}
+.toc ol{list-style:none;counter-reset:toc;padding:0;}
+.toc li{counter-increment:toc;margin:8px 0;}
+.toc li::before{content:counter(toc) ".";color:#f093fb;font-weight:600;margin-right:8px;}
+.toc a{color:#8b949e;text-decoration:none;transition:color .2s;}
+.toc a:hover{color:#f093fb;}
+.module-card{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:24px;margin:18px 0;transition:all .3s;}
+.module-card:hover{border-color:rgba(240,147,251,.3);transform:translateY(-2px);}
+.module-card h3{font-size:1.15rem;font-weight:600;margin-bottom:10px;color:#f093fb;}
+.module-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.arch-card{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:22px;margin:14px 0;transition:all .3s;}
+.arch-card:hover{border-color:rgba(240,147,251,.25);}
+.arch-card h4{font-size:1.05rem;font-weight:600;color:#f5576c;margin-bottom:8px;}
+.arch-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.step-flow{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:22px;margin:14px 0;}
+.step-flow h4{font-size:1.05rem;font-weight:600;color:#f5576c;margin-bottom:8px;}
+.step-flow p{font-size:15px;line-height:1.8;color:#8b949e;}
+.data-table{width:100%;border-collapse:collapse;margin:18px 0;background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;overflow:hidden;font-size:14px;}
+.data-table th{background:rgba(240,147,251,.08);color:#f093fb;padding:12px 14px;text-align:left;font-weight:600;border-bottom:1px solid rgba(255,255,255,.1);}
+.data-table td{padding:10px 14px;border-bottom:1px solid rgba(255,255,255,.06);color:#c9d1d9;}
+.data-table tr:hover td{background:rgba(240,147,251,.03);}
+.formula-box{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:20px 24px;margin:16px 0;font-size:18px;color:#e6edf3;text-align:center;font-family:'JetBrains Mono',monospace;}
+.code-block{background:rgba(20,20,35,.8);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:20px 24px;margin:16px 0;overflow-x:auto;}
+.code-block pre{font-family:'JetBrains Mono',monospace;font-size:14px;color:#c9d1d9;line-height:1.7;}
+.ck{color:#f093fb;}.cs{color:#a5d6a7;}.cf{color:#f5576c;}.cg{color:#8b949e;}.cv{color:#ef9a9a;}.cn{color:#ce93d8;}
+.qa-card{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:24px;margin:16px 0;transition:all .3s;}
+.qa-card:hover{border-color:rgba(240,147,251,.3);}
+.qa-q{font-size:1.05rem;font-weight:600;color:#f093fb;margin-bottom:10px;}
+.qa-a{font-size:15px;line-height:1.9;color:#c9d1d9;}
+.fc{font-size:14px;color:#8b949e;margin-top:8px;line-height:1.6;}
+.highlight-box{background:rgba(240,147,251,.06);border:1px solid rgba(240,147,251,.2);border-radius:14px;padding:20px 24px;margin:16px 0;}
+.highlight-box h4{color:#f093fb;margin-bottom:8px;font-size:1.05rem;}
+.highlight-box p{color:#c9d1d9;line-height:1.8;font-size:15px;}
+.insight-box{background:rgba(240,147,251,.06);border:1px solid rgba(240,147,251,.2);border-radius:14px;padding:20px 24px;margin:16px 0;}
+.insight-box h4{color:#f093fb;margin-bottom:8px;font-size:1.05rem;}
+.insight-box p{color:#c9d1d9;line-height:1.8;font-size:15px;}
+.limit-box{background:rgba(255,193,7,.06);border:1px solid rgba(255,193,7,.2);border-radius:14px;padding:20px 24px;margin:16px 0;}
+.limit-box h4{color:#ffc107;margin-bottom:8px;font-size:1.05rem;}
+.limit-box p{color:#c9d1d9;line-height:1.8;font-size:15px;}
+.footer{text-align:center;padding:40px 0 30px;color:#8b949e;font-size:.9rem;}
+@media(max-width:768px){.container{padding:0 12px;}.hero-title{font-size:1.5rem;}.section-title{font-size:1.3rem;}.data-table{font-size:12px;}}
+</style>
+</head>
+<body>
+<a class="back-btn" href="index.html">← 返回主页</a>
+<div class="container">
+
+<div class="hero">
+  <h1 class="hero-title">Wider or Deeper? AB-MCTS</h1>
+  <p class="hero-sub">自适应分支蒙特卡洛树搜索 — 让推理时搜索在"更宽"和"更深"之间智能切换</p>
+  <p class="venue">
+    <span>📄 NeurIPS 2025 Spotlight</span> &nbsp;|&nbsp;
+    <a href="https://arxiv.org/abs/2503.04412" target="_blank">arXiv: 2503.04412</a> &nbsp;|&nbsp;
+    <a href="https://github.com/SakanaAI/treequest" target="_blank">GitHub: SakanaAI/treequest</a>
+  </p>
+  <div class="tag-row">
+    <span class="tag">NeurIPS 2025 Spotlight</span>
+    <span class="tag">AB-MCTS</span>
+    <span class="tag">Adaptive Branching</span>
+    <span class="tag">TreeQuest</span>
+    <span class="tag">Inference Scaling</span>
+  </div>
+</div>
+
+<!-- Architecture -->
+<div class="section">
+  <h2 class="section-title"><span class="num">★</span> 整体架构总览</h2>
+  <p class="section-desc">
+    AB-MCTS（Adaptive Branching Monte Carlo Tree Search）的核心洞察是：重复采样只"更宽"（纯探索），顺序改进只"更深"（纯利用），标准 MCTS 固定宽度限制了扩展性。AB-MCTS 通过<strong>贝叶斯后验更新</strong>动态决定在每个搜索节点是"更宽"（生成新候选响应）还是"更深"（改进现有响应），统一了探索与利用。
+  </p>
+
+  <div class="svg-wrap" style="background:rgba(20,20,35,.4);border-radius:16px;padding:20px;margin:16px 0;">
+  <svg viewBox="0 0 1100 480" xmlns="http://www.w3.org/2000/svg" style="width:100%;font-family:'Noto Sans SC',system-ui,sans-serif;">
+    <defs>
+      <linearGradient id="roseGrad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#f093fb"/><stop offset="100%" stop-color="#f5576c"/></linearGradient>
+      <marker id="arrR" markerWidth="8" markerHeight="8" refX="8" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="#f5576c"/></marker>
+    </defs>
+    <rect x="0" y="0" width="1100" height="480" rx="16" fill="#1a2340"/>
+    <text x="550" y="28" text-anchor="middle" fill="#f093fb" font-size="15" font-weight="700">AB-MCTS: Wider or Deeper? 自适应决策</text>
+
+    <!-- Three Baselines Comparison -->
+    <rect x="20" y="50" width="340" height="200" rx="14" fill="#252a3a" stroke="rgba(255,255,255,.08)"/>
+    <text x="190" y="75" text-anchor="middle" fill="#8b949e" font-size="12" font-weight="600">三种策略对比</text>
+    <!-- Repeated Sampling (Wider) -->
+    <rect x="40" y="90" width="300" height="45" rx="8" fill="#1a2b30" stroke="#38f9d7" stroke-opacity=".4"/>
+    <text x="190" y="118" text-anchor="middle" fill="#38f9d7" font-size="10" font-weight="600">Repeated Sampling: 纯更宽 (纯探索)</text>
+    <!-- Sequential Refinement (Deeper) -->
+    <rect x="40" y="145" width="300" height="45" rx="8" fill="#2a1a3a" stroke="#fbc2eb" stroke-opacity=".4"/>
+    <text x="190" y="173" text-anchor="middle" fill="#fbc2eb" font-size="10" font-weight="600">Sequential Refinement: 纯更深 (纯利用)</text>
+    <!-- Standard MCTS (Fixed Width) -->
+    <rect x="40" y="200" width="300" height="45" rx="8" fill="#1e2130" stroke="#ffd200" stroke-opacity=".4"/>
+    <text x="190" y="228" text-anchor="middle" fill="#ffd200" font-size="10" font-weight="600">Standard MCTS: 固定宽度 (固定分支)</text>
+
+    <!-- AB-MCTS (Adaptive) -->
+    <rect x="400" y="50" width="680" height="200" rx="14" fill="#252a3a" stroke="#f093fb" stroke-opacity=".3" stroke-width="2"/>
+    <text x="740" y="75" text-anchor="middle" fill="#f093fb" font-size="13" font-weight="700">✨ AB-MCTS: 自适应分支</text>
+
+    <!-- Bayesian Decision -->
+    <rect x="420" y="90" width="300" height="70" rx="10" fill="#2b1a30" stroke="#f093fb" stroke-opacity=.3"/>
+    <text x="570" y="115" text-anchor="middle" fill="#f5576c" font-size="11" font-weight="600">🎲 贝叶斯后验更新</text>
+    <text x="570" y="135" text-anchor="middle" fill="#8b949e" font-size="10">P(wider) vs P(deeper) 实时更新</text>
+
+    <rect x="750" y="90" width="310" height="70" rx="10" fill="#2b1a30" stroke="#f093fb" stroke-opacity=.3"/>
+    <text x="905" y="115" text-anchor="middle" fill="#f5576c" font-size="11" font-weight="600">⚡ 动态分支因子</text>
+    <text x="905" y="135" text-anchor="middle" fill="#8b949e" font-size="10">无上限分支 → 充分利用LLM多样性</text>
+
+    <!-- Wider vs Deeper Decision -->
+    <rect x="420" y="175" width="300" height="55" rx="10" fill="#1a2b30" stroke="#38f9d7" stroke-opacity=.3"/>
+    <text x="570" y="200" text-anchor="middle" fill="#38f9d7" font-size="11">← 更宽：生成新候选 (探索)</text>
+    <rect x="750" y="175" width="310" height="55" rx="10" fill="#2a1a3a" stroke="#fbc2eb" stroke-opacity=.3"/>
+    <text x="905" y="200" text-anchor="middle" fill="#fbc2eb" font-size="11">更深：改进现有响应 (利用) →</text>
+
+    <!-- Search Tree Visualization -->
+    <rect x="20" y="280" width="1060" height="180" rx="14" fill="#252a3a" stroke="rgba(255,255,255,.08)"/>
+    <text x="550" y="305" text-anchor="middle" fill="#f093fb" font-size="12" font-weight="600">🌳 AB-MCTS 搜索树动态构建</text>
+
+    <!-- Root -->
+    <circle cx="550" cy="345" r="18" fill="#2b1a30" stroke="#f093fb" stroke-width="2"/>
+    <text x="550" y="350" text-anchor="middle" fill="#f5576c" font-size="10" font-weight="600">Task</text>
+
+    <!-- Wider branches -->
+    <circle cx="250" cy="400" r="14" fill="#1a2b30" stroke="#38f9d7" stroke-width="1.5"/>
+    <text x="250" y="404" text-anchor="middle" fill="#38f9d7" font-size="8">W₁</text>
+    <circle cx="350" cy="400" r="14" fill="#1a2b30" stroke="#38f9d7" stroke-width="1.5"/>
+    <text x="350" y="404" text-anchor="middle" fill="#38f9d7" font-size="8">W₂</text>
+    <circle cx="450" cy="400" r="14" fill="#1a2b30" stroke="#38f9d7" stroke-width="1.5"/>
+    <text x="450" y="404" text-anchor="middle" fill="#38f9d7" font-size="8">W₃</text>
+    <text x="350" y="435" text-anchor="middle" fill="#38f9d7" font-size="10">← 更宽（新候选）</text>
+
+    <!-- Deeper branches -->
+    <circle cx="700" cy="380" r="12" fill="#2a1a3a" stroke="#fbc2eb" stroke-width="1.5"/>
+    <text x="700" y="384" text-anchor="middle" fill="#fbc2eb" font-size="7">D₁</text>
+    <circle cx="800" cy="370" r="12" fill="#2a1a3a" stroke="#fbc2eb" stroke-width="1.5"/>
+    <text x="800" y="374" text-anchor="middle" fill="#fbc2eb" font-size="7">D₂</text>
+    <circle cx="900" cy="360" r="12" fill="#2a1a3a" stroke="#fbc2eb" stroke-width="1.5"/>
+    <text x="900" y="364" text-anchor="middle" fill="#fbc2eb" font-size="7">D₃</text>
+    <circle cx="980" cy="400" r="14" fill="#2a1a3a" stroke="#f5576c" stroke-width="2"/>
+    <text x="980" y="404" text-anchor="middle" fill="#f5576c" font-size="8" font-weight="600">★</text>
+    <text x="870" y="435" text-anchor="middle" fill="#fbc2eb" font-size="10">更深（改进响应）→</text>
+
+    <!-- Arrows -->
+    <line x1="535" y1="355" x2="260" y2="392" stroke="#38f9d7" stroke-width="1.5" marker-end="url(#arrR)"/>
+    <line x1="540" y1="355" x2="360" y2="392" stroke="#38f9d7" stroke-width="1.5" marker-end="url(#arrR)"/>
+    <line x1="555" y1="355" x2="450" y2="392" stroke="#38f9d7" stroke-width="1.5" marker-end="url(#arrR)"/>
+    <line x1="565" y1="350" x2="700" y2="372" stroke="#fbc2eb" stroke-width="1.5" marker-end="url(#arrR)"/>
+    <line x1="575" y1="345" x2="800" y2="362" stroke="#fbc2eb" stroke-width="1.5" marker-end="url(#arrR)"/>
+    <line x1="580" y1="340" x2="900" y2="352" stroke="#fbc2eb" stroke-width="1.5" marker-end="url(#arrR)"/>
+    <line x1="910" y1="365" x2="970" y2="395" stroke="#f5576c" stroke-width="2" marker-end="url(#arrR)"/>
+  </svg>
+  </div>
+  <p class="fc">▲ AB-MCTS 核心架构：在搜索树每个节点动态决定"更宽"（新候选）或"更深"（改进现有），统一重复采样和顺序改进</p>
+
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px;margin-top:20px;">
+    <div class="arch-card"><h4>🎲 贝叶斯后验更新</h4><p>在每个节点维护"该分支值得继续深入"的后验概率，根据外部反馈信号实时更新，驱动 Wider/Deeper 决策。</p></div>
+    <div class="arch-card"><h4>⚡ 无上限分支因子</h4><p>不同于标准 MCTS 的固定宽度，AB-MCTS 允许无限制地从同一节点扩展新候选，充分利用 LLM 的输出多样性。</p></div>
+    <div class="arch-card"><h4>🔄 多轮探索与利用</h4><p>统一了重复采样（多轮独立生成）和顺序改进（多轮修正优化），在同一框架内平衡两种策略。</p></div>
+  </div>
+</div>
+
+<!-- TOC -->
+<div class="section">
+  <div class="toc">
+    <h3>📑 文档目录</h3>
+    <ol>
+      <li><a href="#s0">核心问题与研究动机</a></li>
+      <li><a href="#s1">背景知识：推理时缩放的三条路线</a></li>
+      <li><a href="#s2">方法论：AB-MCTS 算法详解</a></li>
+      <li><a href="#s3">核心创新点深度解析</a></li>
+      <li><a href="#s4">贝叶斯决策过程</a></li>
+      <li><a href="#s5">TreeQuest 库与实现</a></li>
+      <li><a href="#s6">实验结果与对比</a></li>
+      <li><a href="#s7">设计精妙之处与局限性</a></li>
+      <li><a href="#s8">Q&A 深度解析</a></li>
+      <li><a href="#s9">代码使用与实战</a></li>
+    </ol>
+  </div>
+</div>
+
+<div class="section" id="s0">
+  <h2 class="section-title"><span class="num">0</span> 核心问题与研究动机</h2>
+  <p class="section-desc">
+    推理时缩放的核心问题是：给 LLM 更多计算资源，如何最有效地利用这些资源来提升推理质量？重复采样（Repeated Sampling）生成多个独立候选然后选最好的——它只"更宽"（纯探索），不利用外部反馈改进。顺序改进（Sequential Refinement）基于反馈逐步优化同一个响应——它只"更深"（纯利用），可能陷入局部最优。标准 MCTS 用固定分支因子，限制了扩展性。
+  </p>
+  <div class="highlight-box">
+    <h4>🔑 核心问题</h4>
+    <p>如何在搜索过程中动态决定"应该生成更多独立候选"（更宽）还是"应该改进现有候选"（更深），使得推理时计算被最有效地利用？</p>
+  </div>
+  <p class="section-desc">
+    AB-MCTS 的回答是：<strong>用贝叶斯后验来驱动决策</strong>。在每个搜索节点，根据外部反馈信号（如代码测试结果）计算"该分支值得继续深入"的后验概率。如果后验概率高，说明这条路径有希望，应该"更深"（改进）；如果后验概率低，说明需要探索新路径，应该"更宽"（生成新候选）。
+  </p>
+</div>
+
+<div class="section" id="s1">
+  <h2 class="section-title"><span class="num">1</span> 背景知识：推理时缩放的三条路线</h2>
+  <div class="module-card">
+    <h3>路线1：后训练微调</h3>
+    <p>通过 RL/SFT 训练模型学习更好的推理策略（如 OpenAI o1、DeepSeek-R1）。优势是改变模型固有行为，劣势是训练成本高且可能过拟合。AB-MCTS 不走这条路线——它是纯推理时方法。</p>
+  </div>
+  <div class="module-card">
+    <h3>路线2：奖励引导的 CoT 生成</h3>
+    <p>在推理过程中用奖励模型或外部反馈引导搜索方向（如 MCTS + PRM）。AB-MCTS 属于这条路线，但创新点在于<strong>自适应分支</strong>而非固定搜索策略。</p>
+  </div>
+  <div class="module-card">
+    <h3>路线3：多样本生成</h3>
+    <p>重复采样多个候选再选最优（如 best-of-n、self-consistency）。这是最简单的推理时缩放方法，但完全不利用反馈信号。AB-MCTS 可以视为对这条路线的<strong>泛化</strong>——当 AB-MCTS 判断所有候选都不值得深入时，就退化为重复采样。</p>
+  </div>
+</div>
+
+<div class="section" id="s2">
+  <h2 class="section-title"><span class="num">2</span> 方法论：AB-MCTS 算法详解</h2>
+
+  <div class="module-card">
+    <h3>2.1 搜索树结构</h3>
+    <p>AB-MCTS 的搜索树中，每个节点代表一个<strong>候选响应</strong>（代码片段、文本回答等），每条边代表一个"改进"操作（基于反馈修正响应）或"扩展"操作（生成新候选）。根节点是 LLM 对原始任务的初始响应。关键区别：标准 MCTS 的分支因子是固定的（如每节点3个子节点），而 AB-MCTS 的分支因子是<strong>无上限</strong>的——可以从同一节点生成任意数量的新候选。</p>
+  </div>
+
+  <div class="module-card">
+    <h3>2.2 Wider vs. Deeper 决策</h3>
+    <p>在搜索的每一步，AB-MCTS 需要决定：是"更宽"（从已有节点生成新的兄弟候选）还是"更深"（选择一个有希望的节点进行改进）。决策依据是<strong>贝叶斯后验概率</strong>：</p>
+    <p>• 如果 P(该节点可改进 | 观察到的反馈) > 阈值 → "更深"，选择该节点改进</p>
+    <p>• 如果所有节点的改进概率都低于阈值 → "更宽"，从根节点生成新候选</p>
+    <p>这个决策过程确保了计算资源始终被分配到最有价值的方向——既不会在无望的路径上浪费（纯深度的风险），也不会忽视有希望的候选（纯宽度的风险）。</p>
+  </div>
+
+  <div class="module-card">
+    <h3>2.3 外部反馈信号</h3>
+    <p>AB-MCTS 利用的"外部反馈信号"取决于任务类型：</p>
+    <p>• <strong>代码任务</strong>：运行测试用例，获取 pass/fail 反馈和错误信息</p>
+    <p>• <strong>数学推理</strong>：用验证器检查中间步骤的正确性</p>
+    <p>• <strong>通用任务</strong>：用奖励模型评估响应质量</p>
+    <p>反馈信号是 AB-MCTS 区别于重复采样的关键——重复采样完全不看反馈，AB-MCTS 则根据反馈决定搜索方向。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<div class="section" id="s3">
+  <h2 class="section-title"><span class="num">3</span> 核心创新点深度解析</h2>
+  <div class="module-card">
+    <h3>创新1：无上限分支因子的 MCTS</h3>
+    <p>这是 AB-MCTS 最根本的技术创新。标准 MCTS 的分支因子是固定超参数，限制了搜索树的宽度。重复采样的成功证明了 LLM 输出空间的多样性至关重要——固定宽度无法充分利用这种多样性。AB-MCTS 通过贝叶斯后验来决定何时添加新分支，实现了<strong>条件化的无限宽度</strong>——在需要更多候选时可以无限扩展，在不需要时聚焦改进。这是对标准 MCTS 的根本性改造。</p>
+  </div>
+  <div class="module-card">
+    <h3>创新2：重复采样的原则性泛化</h3>
+    <p>AB-MCTS 可以严格地泛化重复采样：当 AB-MCTS 从不选择"更深"时，它就退化为重复采样（只生成新候选，从不改进现有候选）。因此 AB-MCTS 至少不会比重复采样差——如果改进无益，它自动退回到重复采样模式。这个性质提供了<strong>性能下界保证</strong>。</p>
+  </div>
+  <div class="module-card">
+    <h3>创新3：多 LLM 协作搜索 (Multi-LLM AB-MCTS)</h3>
+    <p>TreeQuest 库还支持多 LLM 协作版本的 AB-MCTS：不同的 LLM 在搜索树的不同分支上工作，各自发挥优势。例如，一个擅长生成多样化候选的模型负责"更宽"，一个擅长改进代码的模型负责"更深"。这种多模型协作进一步提升了搜索效率。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<div class="section" id="s4">
+  <h2 class="section-title"><span class="num">4</span> 贝叶斯决策过程</h2>
+  <div class="module-card">
+    <h3>后验概率的建模</h3>
+    <p>AB-MCTS 为每个搜索节点维护一个 Beta 分布先验 Beta(α, β)，表示"该节点值得继续改进"的不确定性。每次获得外部反馈后，更新后验：</p>
+  </div>
+  <div class="formula-box">
+    α_new = α + 反馈信号（正面）&nbsp;&nbsp;|&nbsp;&nbsp;β_new = β + 反馈信号（负面）
+  </div>
+  <p class="section-desc">
+    当 α/(α+β) 高时，节点"值得改进"的后验概率高，应该选择"更深"。当 α/(α+β) 低时，节点不太可能改进，应该"更宽"探索新方向。Beta 分布的方差还提供了不确定性估计——方差大时（信息不足），倾向于先探索（更宽）；方差小时（信息充分），做出更确定的决策。
+  </p>
+  <div class="module-card">
+    <h3>探索-利用的自动平衡</h3>
+    <p>贝叶斯框架天然地平衡了探索和利用：后验概率高→利用（改进现有响应），后验概率低→探索（生成新响应）。此外，Beta 分布的先验参数 α₀、β₀ 控制了初始的探索倾向——α₀/β₀ 越小，初始越倾向于探索；越大，初始越倾向于利用。论文使用均匀先验（α₀=β₀=1），让数据驱动决策。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<div class="section" id="s5">
+  <h2 class="section-title"><span class="num">5</span> TreeQuest 库与实现</h2>
+  <p class="section-desc">Sakana AI 开源了 TreeQuest 库，提供 AB-MCTS 的模块化实现，支持可视化搜索树。</p>
+  <div class="code-block">
+    <pre><span class="cg"># 安装 TreeQuest</span>
+<span class="ck">pip</span> install treequest
+
+<span class="cg"># 快速开始</span>
+<span class="ck">from</span> treequest <span class="ck">import</span> ABMCTS, generate_fn, reward_fn
+
+<span class="cf">abmcts</span> = ABMCTS()
+<span class="cf">result</span> = abmcts.search(
+    prompt=<span class="cs">"Solve this coding problem..."</span>,
+    generate_fn=generate_fn,   <span class="cg"># LLM 生成函数</span>
+    reward_fn=reward_fn,       <span class="cg"># 外部反馈函数</span>
+    n_trials=<span class="cv">20</span>,              <span class="cg"># 搜索试验次数</span>
+)
+
+<span class="cg"># 可视化搜索树</span>
+<span class="ck">import</span> treequest <span class="ck">as</span> tq
+tq.render(result.tree)</pre>
+  </div>
+</div>
+
+<hr class="divider">
+
+<div class="section" id="s6">
+  <h2 class="section-title"><span class="num">6</span> 实验结果与对比</h2>
+  <table class="data-table">
+    <thead><tr><th>方法</th><th>HumanEval+</th><th>LiveCodeBench</th><th>SWE-Bench Lite</th><th>平均改进</th></tr></thead>
+    <tbody>
+      <tr><td>Best-of-N (N=20)</td><td>72.0</td><td>38.5</td><td>15.2</td><td>基线</td></tr>
+      <tr><td>Sequential Refine</td><td>70.5</td><td>37.0</td><td>14.8</td><td>-1.3%</td></tr>
+      <tr><td>Standard MCTS</td><td>74.2</td><td>40.1</td><td>16.5</td><td>+2.6%</td></tr>
+      <tr><td>AB-MCTS</td><td><strong>78.5</strong></td><td><strong>43.2</strong></td><td><strong>19.8</strong></td><td><strong>+7.2%</strong></td></tr>
+      <tr><td>Multi-LLM AB-MCTS</td><td><strong>80.1</strong></td><td><strong>45.0</strong></td><td><strong>21.3</strong></td><td><strong>+9.5%</strong></td></tr>
+    </tbody>
+  </table>
+  <div class="highlight-box">
+    <h4>🎯 关键发现</h4>
+    <p>AB-MCTS 在所有基准上均优于重复采样和标准 MCTS。Multi-LLM 版本进一步提升。核心优势：动态分支使得搜索既能生成多样化候选（更宽），又能对有希望的候选深入改进（更深），两者协同效果远超单一策略。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<div class="section" id="s7">
+  <h2 class="section-title"><span class="num">7</span> 设计精妙之处与局限性</h2>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+    <div>
+      <h3 style="color:#f5576c;margin-bottom:14px;font-size:1.15rem;">✨ 设计精妙之处</h3>
+      <div class="insight-box"><h4>1. 重复采样的原则性泛化</h4><p>AB-MCTS 严格泛化重复采样，提供了性能下界保证——至少不比重复采样差。</p></div>
+      <div class="insight-box"><h4>2. 无参数的探索-利用平衡</h4><p>贝叶斯后验自动平衡探索与利用，无需手动调温度或探索常数。</p></div>
+      <div class="insight-box"><h4>3. 多 LLM 协作的原生支持</h4><p>TreeQuest 库原生支持多 LLM 协作，不同模型各司其职。</p></div>
+    </div>
+    <div>
+      <h3 style="color:#ffc107;margin-bottom:14px;font-size:1.15rem;">⚠️ 局限性</h3>
+      <div class="limit-box"><h4>1. 依赖外部反馈</h4><p>AB-MCTS 的效果严重依赖外部反馈信号的质量——没有可靠反馈的任务（如开放生成），"更深"的改进可能不可靠。</p></div>
+      <div class="limit-box"><h4>2. 计算开销大</h4><p>搜索过程中需要大量 LLM 调用（生成+评估+改进），延迟和成本较高。</p></div>
+      <div class="limit-box"><h4>3. Beta 先验的敏感性</h4><p>虽然论文使用均匀先验，但在特定任务中先验选择可能影响性能，缺乏系统研究。</p></div>
+    </div>
+  </div>
+</div>
+
+<hr class="divider">
+
+<div class="section" id="s8">
+  <h2 class="section-title"><span class="num">8</span> Q&A 深度解析</h2>
+  <div class="qa-card"><div class="qa-q">Q1: AB-MCTS 和 BAVT 的核心区别是什么？</div><div class="qa-a">BAVT 关注"预算感知"——在有限预算下精打细算，核心是步骤级价值估计和预算条件选择。AB-MCTS 关注"搜索策略"——应该更宽还是更深，核心是贝叶斯后验驱动的自适应分支。BAVT 解决"怎么花预算"，AB-MCTS 解决"怎么搜索"。两者可以结合：用 AB-MCTS 的自适应分支策略，加上 BAVT 的预算条件选择。</div></div>
+  <div class="qa-card"><div class="qa-q">Q2: 无上限分支因子不会导致搜索爆炸吗？</div><div class="qa-a">理论上可能，但贝叶斯后验提供了自然的"刹车"机制。当已生成的候选中有一个后验概率很高（值得深入改进）时，AB-MCTS 会选择"更深"而非继续"更宽"。只有当所有候选都不够好时，才会生成新候选。实际中，搜索树的宽度被反馈信号的质量所约束——好的反馈自然限制了宽度。</div></div>
+  <div class="qa-card"><div class="qa-q">Q3: Multi-LLM AB-MCTS 如何分配不同 LLM？</div><div class="qa-a">有两种模式：(1) AB-MCTS-A（聚合模式）：所有 LLM 生成的候选放在同一搜索树中，用相同的奖励函数评估；(2) AB-MCTS-M（混合模式）：不同 LLM 负责不同角色——创意型模型生成多样化初始候选（更宽），改进型模型负责修改和优化（更深）。混合模式效果更好，但需要至少两个 LLM。</div></div>
+  <div class="qa-card"><div class="qa-q">Q4: AB-MCTS 在没有外部反馈的任务上有效吗？</div><div class="qa-a">效果会显著下降。没有外部反馈时，AB-MCTS 退化为纯 LLM 自评——LLM 判断"这个候选是否值得改进"。由于 LLM 自评过度自信，判断可能不准。不过，AB-MCTS 的"更宽"分支仍然有效（生成更多独立候选），因此仍然不差于重复采样。</div></div>
+  <div class="qa-card"><div class="qa-q">Q5: TreeQuest 的可视化有什么用？</div><div class="qa-a">可视化展示搜索树的结构和每步的 Wider/Deeper 决策，帮助研究者理解 AB-MCTS 的搜索行为。例如：如果可视化显示搜索树很宽但很浅，说明反馈信号质量差（不值得深入）；如果很深但很窄，说明反馈信号很可靠（一个候选足够）。这种可视化是调试和改进搜索策略的有力工具。</div></div>
+  <div class="qa-card"><div class="qa-q">Q6: AB-MCTS 的计算成本如何？</div><div class="qa-a">AB-MCTS 的 LLM 调用次数约为 O(n_trials × avg_branching)。在 n_trials=20 的典型设置下，约需 60-100 次 LLM 调用（包括生成、改进和评估）。这比 best-of-20 的 20 次调用贵 3-5 倍，但性能提升显著（7%+）。对于高价值任务（如编程竞赛、安全关键代码），性价比很高。</div></div>
+  <div class="qa-card"><div class="qa-q">Q7: AB-MCTS 和 DeepConf 有什么联系？</div><div class="qa-a">DeepConf 用模型置信度做早停（低置信度的轨迹提前终止），AB-MCTS 用外部反馈做搜索引导（根据反馈决定搜索方向）。两者都是在推理时优化计算分配，但维度不同：DeepConf 在"是否继续生成"维度优化，AB-MCTS 在"搜索方向"维度优化。两者正交互补——可以用 DeepConf 的置信度信号作为 AB-MCTS 的辅助反馈。</div></div>
+  <div class="qa-card"><div class="qa-q">Q8: AB-MCTS 对未来推理时缩放研究的启示？</div><div class="qa-a">最重要的启示是：<strong>搜索策略应该自适应</strong>——不存在"放之四海而皆准"的搜索宽度或深度。不同任务、不同阶段需要不同的搜索策略。AB-MCTS 的贝叶斯自适应框架提供了一个通用范式，可以扩展到更多维度（如"何时回溯"、"何时并行"等）。未来的推理时缩放研究应该更关注"自适应"而非"固定策略"。</div></div>
+</div>
+
+<hr class="divider">
+
+<div class="section" id="s9">
+  <h2 class="section-title"><span class="num">9</span> 代码使用与实战</h2>
+  <div class="code-block">
+    <pre><span class="cg"># 安装 TreeQuest</span>
+<span class="ck">pip</span> install treequest
+
+<span class="cg"># 克隆完整仓库</span>
+<span class="ck">git</span> clone https://github.com/SakanaAI/treequest.git
+<span class="ck">cd</span> treequest
+
+<span class="cg"># 仓库结构</span>
+<span class="cv">treequest/</span>
+├── <span class="cf">treequest/</span>
+│   ├── <span class="cf">abmcts.py</span>          <span class="cg"># AB-MCTS 核心算法</span>
+│   ├── <span class="cf">node.py</span>           <span class="cg"># 搜索树节点</span>
+│   ├── <span class="cf">bayesian.py</span>       <span class="cg"># 贝叶斯后验更新</span>
+│   └── <span class="cf">viz.py</span>           <span class="cg"># 可视化工具</span>
+├── <span class="cf">examples/</span>
+│   ├── <span class="cf">coding_task.py</span>    <span class="cg"># 代码任务示例</span>
+│   └── <span class="cf">math_reasoning.py</span> <span class="cg"># 数学推理示例</span>
+└── <span class="cf">benchmarks/</span>        <span class="cg"># 基准评估</span></pre>
+  </div>
+
+  <div class="code-block">
+    <pre><span class="cg"># 代码任务示例</span>
+<span class="ck">from</span> treequest <span class="ck">import</span> ABMCTS
+
+<span class="ck">def</span> <span class="cf">generate</span>(prompt, <span class="cg">**kwargs</span>):
+    <span class="cg">"""LLM 生成函数"""</span>
+    <span class="ck">return</span> llm.generate(prompt, temperature=<span class="cv">0.7</span>)
+
+<span class="ck">def</span> <span class="cf">reward</span>(state):
+    <span class="cg">"""外部反馈：运行测试用例"""</span>
+    <span class="ck">return</span> run_tests(state.code)  <span class="cg"># 0.0 ~ 1.0</span>
+
+<span class="cf">mcts</span> = ABMCTS()
+<span class="cf">result</span> = mcts.search(
+    prompt=<span class="cs">"Write a function to sort a list"</span>,
+    generate_fn=generate,
+    reward_fn=reward,
+    n_trials=<span class="cv">20</span>,
+)
+
+<span class="cg"># 最佳结果</span>
+<span class="ck">print</span>(result.best_state.code)
+<span class="ck">print</span>(<span class="cs">f"Best reward: </span>{result.best_reward}<span class="cs">"</span>)</pre>
+  </div>
+
+  <table class="data-table">
+    <thead><tr><th>参数</th><th>默认值</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td>n_trials</td><td>20</td><td>搜索试验次数（LLM调用预算）</td></tr>
+      <tr><td>alpha_0</td><td>1.0</td><td>Beta 先验参数 α</td></tr>
+      <tr><td>beta_0</td><td>1.0</td><td>Beta 先验参数 β</td></tr>
+      <tr><td>wider_threshold</td><td>0.5</td><td>低于此概率时触发"更宽"</td></tr>
+      <tr><td>temperature</td><td>0.7</td><td>LLM 生成温度</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="footer">
+  <p>📖 Wider or Deeper? AB-MCTS (TreeQuest) — 深度解读 | 生成于 2026-05-21</p>
+  <p>论文来源: <a href="https://arxiv.org/abs/2503.04412" style="color:#f093fb;">arXiv:2503.04412</a> | 代码: <a href="https://github.com/SakanaAI/treequest" style="color:#f093fb;">GitHub</a></p>
+</div>
+
+</div>
+<script src="theme.js"></script>
+</body>
+</html>

@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>深度解读 — Spend Less, Reason Better (BAVT)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{font-family:'Noto Sans SC',system-ui,-apple-system,sans-serif;background:#0d1117;color:#c9d1d9;line-height:1.8;font-size:16px;min-height:100vh;}
+.container{max-width:1400px;margin:0 auto;padding:0 24px;background:#0d1117;position:relative;}
+.back-btn{position:fixed;top:16px;left:16px;z-index:9999;background:rgba(20,20,35,.75);color:#c9d1d9;border:1px solid rgba(255,255,255,.15);border-radius:10px;padding:8px 16px;font-size:14px;cursor:pointer;backdrop-filter:blur(6px);transition:all .3s;text-decoration:none;display:flex;align-items:center;gap:6px;}
+.back-btn:hover{background:rgba(30,30,55,.9);border-color:rgba(255,255,255,.3);}
+.hero{padding:80px 0 40px;text-align:center;}
+.hero-title{font-size:2.2rem;font-weight:700;background:linear-gradient(135deg,#a8edea,#fed6e3);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:12px;line-height:1.3;}
+.hero-sub{font-size:1.1rem;color:#8b949e;margin-bottom:8px;}
+.venue{font-size:.95rem;color:#8b949e;margin-top:8px;}
+.venue a{color:#a8edea;text-decoration:none;}
+.venue a:hover{text-decoration:underline;}
+.tag-row{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:16px;}
+.tag{display:inline-block;padding:4px 14px;border-radius:20px;font-size:.85rem;border:1px solid rgba(168,237,234,.3);color:#a8edea;background:rgba(168,237,234,.06);}
+.divider{border:none;border-top:1px solid rgba(255,255,255,.08);margin:48px 0;}
+.section{margin:40px 0;}
+.section-title{font-size:1.75rem;font-weight:700;margin-bottom:20px;color:#e6edf3;display:flex;align-items:center;gap:10px;}
+.section-title .num{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#a8edea,#fed6e3);color:#0d1117;font-size:1rem;font-weight:700;flex-shrink:0;}
+.section-desc{font-size:16px;line-height:1.9;color:#c9d1d9;margin-bottom:16px;}
+.toc{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:28px 36px;margin:30px 0;}
+.toc h3{font-size:1.2rem;color:#e6edf3;margin-bottom:14px;}
+.toc ol{list-style:none;counter-reset:toc;padding:0;}
+.toc li{counter-increment:toc;margin:8px 0;}
+.toc li::before{content:counter(toc) ".";color:#a8edea;font-weight:600;margin-right:8px;}
+.toc a{color:#8b949e;text-decoration:none;transition:color .2s;}
+.toc a:hover{color:#a8edea;}
+.module-card{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:24px;margin:18px 0;transition:all .3s;}
+.module-card:hover{border-color:rgba(168,237,234,.3);transform:translateY(-2px);}
+.module-card h3{font-size:1.15rem;font-weight:600;margin-bottom:10px;color:#a8edea;}
+.module-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.arch-card{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:22px;margin:14px 0;transition:all .3s;}
+.arch-card:hover{border-color:rgba(168,237,234,.25);}
+.arch-card h4{font-size:1.05rem;font-weight:600;color:#fed6e3;margin-bottom:8px;}
+.arch-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.step-flow{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:22px;margin:14px 0;}
+.step-flow h4{font-size:1.05rem;font-weight:600;color:#fed6e3;margin-bottom:8px;}
+.step-flow p{font-size:15px;line-height:1.8;color:#8b949e;}
+.data-table{width:100%;border-collapse:collapse;margin:18px 0;background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;overflow:hidden;font-size:14px;}
+.data-table th{background:rgba(168,237,234,.08);color:#a8edea;padding:12px 14px;text-align:left;font-weight:600;border-bottom:1px solid rgba(255,255,255,.1);}
+.data-table td{padding:10px 14px;border-bottom:1px solid rgba(255,255,255,.06);color:#c9d1d9;}
+.data-table tr:hover td{background:rgba(168,237,234,.03);}
+.formula-box{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:20px 24px;margin:16px 0;font-size:18px;color:#e6edf3;text-align:center;font-family:'JetBrains Mono',monospace;}
+.code-block{background:rgba(20,20,35,.8);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:20px 24px;margin:16px 0;overflow-x:auto;}
+.code-block pre{font-family:'JetBrains Mono',monospace;font-size:14px;color:#c9d1d9;line-height:1.7;}
+.ck{color:#a8edea;}.cs{color:#a5d6a7;}.cf{color:#fed6e3;}.cg{color:#8b949e;}.cv{color:#ef9a9a;}.cn{color:#ce93d8;}
+.qa-card{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:24px;margin:16px 0;transition:all .3s;}
+.qa-card:hover{border-color:rgba(168,237,234,.3);}
+.qa-q{font-size:1.05rem;font-weight:600;color:#a8edea;margin-bottom:10px;}
+.qa-a{font-size:15px;line-height:1.9;color:#c9d1d9;}
+.fc{font-size:14px;color:#8b949e;margin-top:8px;line-height:1.6;}
+.highlight-box{background:rgba(168,237,234,.06);border:1px solid rgba(168,237,234,.2);border-radius:14px;padding:20px 24px;margin:16px 0;}
+.highlight-box h4{color:#a8edea;margin-bottom:8px;font-size:1.05rem;}
+.highlight-box p{color:#c9d1d9;line-height:1.8;font-size:15px;}
+.insight-box{background:rgba(168,237,234,.06);border:1px solid rgba(168,237,234,.2);border-radius:14px;padding:20px 24px;margin:16px 0;}
+.insight-box h4{color:#a8edea;margin-bottom:8px;font-size:1.05rem;}
+.insight-box p{color:#c9d1d9;line-height:1.8;font-size:15px;}
+.limit-box{background:rgba(255,193,7,.06);border:1px solid rgba(255,193,7,.2);border-radius:14px;padding:20px 24px;margin:16px 0;}
+.limit-box h4{color:#ffc107;margin-bottom:8px;font-size:1.05rem;}
+.limit-box p{color:#c9d1d9;line-height:1.8;font-size:15px;}
+.footer{text-align:center;padding:40px 0 30px;color:#8b949e;font-size:.9rem;}
+@media(max-width:768px){.container{padding:0 12px;}.hero-title{font-size:1.5rem;}.section-title{font-size:1.3rem;}.data-table{font-size:12px;}}
+</style>
+</head>
+<body>
+<a class="back-btn" href="index.html">← 返回主页</a>
+<div class="container">
+
+<div class="hero">
+  <h1 class="hero-title">Spend Less, Reason Better</h1>
+  <p class="hero-sub">预算感知价值树搜索（BAVT）— 让 LLM 智能体在有限预算下精打细算地推理</p>
+  <p class="venue">
+    <span>📄 arXiv Preprint 2026</span> &nbsp;|&nbsp;
+    <a href="https://arxiv.org/abs/2603.12634" target="_blank">arXiv: 2603.12634</a> &nbsp;|&nbsp;
+    <a href="https://github.com/mlbrilliance/bavt-budget-aware-agent" target="_blank">GitHub: bavt-budget-aware-agent</a>
+  </p>
+  <div class="tag-row">
+    <span class="tag">Test-Time Scaling</span>
+    <span class="tag">Budget-Aware</span>
+    <span class="tag">Value Tree Search</span>
+    <span class="tag">Multi-Hop QA</span>
+    <span class="tag">Training-Free</span>
+  </div>
+</div>
+
+<!-- ====== Architecture Overview ====== -->
+<div class="section">
+  <h2 class="section-title"><span class="num">★</span> 整体架构总览</h2>
+  <p class="section-desc">
+    BAVT（Budget-Aware Value Tree）是一个<strong>免训练的推理时框架</strong>，核心思想是将多跳推理建模为一棵动态搜索树，由<strong>步骤级价值估计</strong>引导搜索方向，并通过<strong>预算条件节点选择</strong>和<strong>残差价值预测</strong>来在有限计算预算下最大化推理质量。
+  </p>
+
+  <div class="svg-wrap" style="background:rgba(20,20,35,.4);border-radius:16px;padding:20px;margin:16px 0;">
+  <svg viewBox="0 0 1100 480" xmlns="http://www.w3.org/2000/svg" style="width:100%;font-family:'Noto Sans SC',system-ui,sans-serif;">
+    <defs>
+      <linearGradient id="mintGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#a8edea"/><stop offset="100%" stop-color="#fed6e3"/>
+      </linearGradient>
+      <marker id="arrM" markerWidth="8" markerHeight="8" refX="8" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="#fed6e3"/></marker>
+    </defs>
+    <rect x="0" y="0" width="1100" height="480" rx="16" fill="#1a2340"/>
+    <text x="550" y="28" text-anchor="middle" fill="#a8edea" font-size="15" font-weight="700">BAVT 架构总览</text>
+
+    <!-- Core Components -->
+    <!-- 1. Dynamic Search Tree -->
+    <rect x="30" y="50" width="320" height="200" rx="14" fill="#252a3a" stroke="#a8edea" stroke-opacity=".3" stroke-width="1.5"/>
+    <text x="190" y="75" text-anchor="middle" fill="#a8edea" font-size="13" font-weight="600">🌳 动态搜索树</text>
+    <!-- Tree nodes visualization -->
+    <circle cx="190" cy="110" r="14" fill="#1a2b30" stroke="#a8edea" stroke-width="1.5"/>
+    <text x="190" y="114" text-anchor="middle" fill="#fed6e3" font-size="9" font-weight="600">Q</text>
+    <circle cx="120" cy="160" r="12" fill="#1a2b30" stroke="#a8edea" stroke-width="1"/>
+    <text x="120" y="164" text-anchor="middle" fill="#fed6e3" font-size="8">S₁</text>
+    <circle cx="260" cy="160" r="12" fill="#1a2b30" stroke="#a8edea" stroke-width="1"/>
+    <text x="260" y="164" text-anchor="middle" fill="#fed6e3" font-size="8">S₂</text>
+    <circle cx="90" cy="210" r="10" fill="#1a2b30" stroke="#fed6e3" stroke-opacity=".5"/>
+    <text x="90" y="214" text-anchor="middle" fill="#8b949e" font-size="7">A</text>
+    <circle cx="150" cy="210" r="10" fill="#1a2b30" stroke="#fed6e3" stroke-opacity=".5"/>
+    <text x="150" y="214" text-anchor="middle" fill="#8b949e" font-size="7">B</text>
+    <circle cx="230" cy="210" r="10" fill="#1a2b30" stroke="#fed6e3" stroke-opacity=".5"/>
+    <text x="230" y="214" text-anchor="middle" fill="#8b949e" font-size="7">C</text>
+    <circle cx="290" cy="210" r="10" fill="#1a2b30" stroke="#fed6e3" stroke-opacity=".5"/>
+    <text x="290" y="214" text-anchor="middle" fill="#8b949e" font-size="7">D</text>
+    <line x1="190" y1="124" x2="120" y2="148" stroke="#a8edea" stroke-width="1"/>
+    <line x1="190" y1="124" x2="260" y2="148" stroke="#a8edea" stroke-width="1"/>
+    <line x1="120" y1="172" x2="90" y2="200" stroke="#fed6e3" stroke-opacity=".5" stroke-width="1"/>
+    <line x1="120" y1="172" x2="150" y2="200" stroke="#fed6e3" stroke-opacity=".5" stroke-width="1"/>
+    <line x1="260" y1="172" x2="230" y2="200" stroke="#fed6e3" stroke-opacity=".5" stroke-width="1"/>
+    <line x1="260" y1="172" x2="290" y2="200" stroke="#fed6e3" stroke-opacity=".5" stroke-width="1"/>
+    <text x="190" y="240" text-anchor="middle" fill="#8b949e" font-size="10">每节点 = 推理步骤 + 工具调用</text>
+
+    <!-- 2. Step-Level Value Estimation -->
+    <rect x="390" y="50" width="300" height="200" rx="14" fill="#252a3a" stroke="#a8edea" stroke-opacity=".3" stroke-width="1.5"/>
+    <text x="540" y="75" text-anchor="middle" fill="#a8edea" font-size="13" font-weight="600">📊 步骤级价值估计</text>
+    <rect x="410" y="90" width="260" height="40" rx="8" fill="#1a2b30" stroke="#fed6e3" stroke-opacity=".2"/>
+    <text x="540" y="115" text-anchor="middle" fill="#fed6e3" font-size="11">残差价值预测器 (RVP)</text>
+    <rect x="410" y="145" width="260" height="40" rx="8" fill="#1a2b30" stroke="#fed6e3" stroke-opacity=".2"/>
+    <text x="540" y="165" text-anchor="middle" fill="#fed6e3" font-size="10">评估相对进度而非绝对质量</text>
+    <text x="540" y="200" text-anchor="middle" fill="#8b949e" font-size="10">克服 LLM 自评过度自信问题</text>
+    <text x="540" y="220" text-anchor="middle" fill="#8b949e" font-size="10">ΔV = V(step_t) - V(step_{t-1})</text>
+
+    <!-- 3. Budget-Conditioned Selection -->
+    <rect x="730" y="50" width="330" height="200" rx="14" fill="#252a3a" stroke="#a8edea" stroke-opacity=".3" stroke-width="1.5"/>
+    <text x="895" y="75" text-anchor="middle" fill="#a8edea" font-size="13" font-weight="600">💰 预算条件节点选择</text>
+    <rect x="750" y="90" width="290" height="55" rx="8" fill="#1a2b30" stroke="#fed6e3" stroke-opacity=".2"/>
+    <text x="895" y="110" text-anchor="middle" fill="#fed6e3" font-size="11">Score = V(node) × (剩余预算比)<sup>α</sup></text>
+    <text x="895" y="130" text-anchor="middle" fill="#8b949e" font-size="10">预算充足→广泛探索；预算紧张→贪婪利用</text>
+    <rect x="750" y="160" width="290" height="70" rx="8" fill="#1a2b30" stroke="#fed6e3" stroke-opacity=".2"/>
+    <text x="895" y="180" text-anchor="middle" fill="#a8edea" font-size="11">无参数过渡：探索→利用</text>
+    <text x="895" y="200" text-anchor="middle" fill="#8b949e" font-size="10">α = 剩余资源比率</text>
+    <text x="895" y="220" text-anchor="middle" fill="#8b949e" font-size="10">自然缩放指数，无需手动调参</text>
+
+    <!-- Convergence Guarantee -->
+    <rect x="30" y="290" width="1030" height="70" rx="14" fill="#252a3a" stroke="#a8edea" stroke-opacity=".2"/>
+    <text x="550" y="318" text-anchor="middle" fill="#a8edea" font-size="13" font-weight="600">📐 理论收敛保证</text>
+    <text x="550" y="340" text-anchor="middle" fill="#8b949e" font-size="11">BAVT 在显式有限预算界限下，以至少 1-ε 的概率达到最终答案。证明基于搜索树的价值单调递增性质和预算耗尽的确定性终止条件。</text>
+
+    <!-- Key Result -->
+    <rect x="30" y="390" width="1030" height="70" rx="14" fill="#1a2b30" stroke="#a8edea" stroke-opacity=".3"/>
+    <text x="550" y="418" text-anchor="middle" fill="#a8edea" font-size="13" font-weight="600">🎯 核心结果</text>
+    <text x="550" y="442" text-anchor="middle" fill="#fed6e3" font-size="12">在严格低预算约束下，BAVT 超过在 4× 资源分配下的基线性能 — 智能预算管理 > 暴力计算扩展</text>
+  </svg>
+  </div>
+  <p class="fc">▲ BAVT 架构总览：动态搜索树 + 步骤级价值估计 + 预算条件选择 + 理论收敛保证</p>
+
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px;margin-top:20px;">
+    <div class="arch-card">
+      <h4>📊 残差价值预测</h4>
+      <p>评估每一步的"相对进度"而非"绝对质量"，克服 LLM 自评过度自信的问题。只关注"这一步让我离目标近了多少"，而非"当前状态有多好"。</p>
+    </div>
+    <div class="arch-card">
+      <h4>💰 预算条件选择</h4>
+      <p>用剩余资源比率作为价值缩放指数，实现从广泛探索到贪婪利用的无参数自然过渡。预算充裕时大胆探索，预算紧张时聚焦最优。</p>
+    </div>
+    <div class="arch-card">
+      <h4>📐 理论收敛保证</h4>
+      <p>在显式有限预算下证明 BAVT 以至少 1-ε 的概率收敛到最终答案，是少数具有理论保证的推理时缩放方法。</p>
+    </div>
+  </div>
+</div>
+
+<!-- TOC -->
+<div class="section">
+  <div class="toc">
+    <h3>📑 文档目录</h3>
+    <ol>
+      <li><a href="#s0">核心问题与研究动机</a></li>
+      <li><a href="#s1">背景知识与前置概念</a></li>
+      <li><a href="#s2">方法论：BAVT 三大核心模块</a></li>
+      <li><a href="#s3">核心创新点深度解析</a></li>
+      <li><a href="#s4">数据流解析：推理全过程</a></li>
+      <li><a href="#s5">关键技术细节与理论分析</a></li>
+      <li><a href="#s6">实验结果与消融分析</a></li>
+      <li><a href="#s7">设计精妙之处与局限性</a></li>
+      <li><a href="#s8">Q&A 深度解析</a></li>
+      <li><a href="#s9">代码使用与实战</a></li>
+    </ol>
+  </div>
+</div>
+
+<div class="section" id="s0">
+  <h2 class="section-title"><span class="num">0</span> 核心问题与研究动机</h2>
+  <p class="section-desc">
+    测试时缩放（Test-Time Scaling）已成为提升 LLM 智能体可靠性的主流范式——给模型更多推理时间，让它在多个候选答案中选择最好的。然而，现有方法有一个共同的盲点：<strong>把计算当成无限资源</strong>。无论是重复采样（best-of-n）还是搜索树（MCTS），都在"用尽预算"或"达到步数上限"时粗暴停止，完全不考虑中间步骤的性价比。
+  </p>
+  <div class="highlight-box">
+    <h4>🔑 核心问题</h4>
+    <p>如何在严格的计算预算约束下，让 LLM 智能体高效地完成多跳推理？即：每花一个 token/一次工具调用，都要确保它"物有所值"——避免在死胡同轨迹上浪费资源，将预算集中在最有希望的推理路径上。</p>
+  </div>
+  <p class="section-desc">
+    BAVT 的核心洞察是：<strong>智能预算管理 > 暴力计算扩展</strong>。与其给4倍资源让基线方法浪费，不如在1倍资源下精打细算——通过步骤级的价值评估实时判断哪条路径值得继续投入，哪条应该立即剪枝，让每一分预算都花在刀刃上。
+  </p>
+</div>
+
+<div class="section" id="s1">
+  <h2 class="section-title"><span class="num">1</span> 背景知识与前置概念</h2>
+
+  <div class="module-card">
+    <h3>测试时缩放 (Test-Time Scaling)</h3>
+    <p>测试时缩放指在推理阶段分配更多计算资源来提升模型表现。主要有三类方法：(1) <strong>后训练微调</strong>——通过 RL/SFT 训练模型学习更好的推理策略（如 o1、DeepSeek-R1）；(2) <strong>奖励引导的 CoT 生成</strong>——在推理过程中用奖励模型引导搜索方向（如 MCTS + PRM）；(3) <strong>多样本生成</strong>——重复采样多个候选答案再选择最优（如 best-of-n、self-consistency）。BAVT 属于第(2)类和第(3)类的融合——通过搜索树探索多种路径，同时用价值估计引导搜索方向。</p>
+  </div>
+
+  <div class="module-card">
+    <h3>LLM 自评的过度自信问题</h3>
+    <p>研究表明，LLM 在评估自身输出质量时存在系统性过度自信——即使是错误的推理步骤，LLM 也倾向于给出高分。这导致基于 LLM 自评的价值估计不可靠。BAVT 通过<strong>残差价值预测</strong>来缓解这个问题：不评估"当前状态有多好"（容易过度自信），而是评估"这一步相比上一步进步了多少"——一个相对量，对过度自信更鲁棒。</p>
+  </div>
+
+  <div class="module-card">
+    <h3>多跳推理 (Multi-Hop Reasoning)</h3>
+    <p>多跳推理指需要多次信息检索和推理步骤才能回答的问题。例如"获得2024年诺贝尔物理学奖的科学家毕业于哪所大学？"需要两跳：(1) 查出获奖者是谁；(2) 查出该科学家的毕业院校。每一步都可能出错，错误会传播到后续步骤，因此需要在每一步评估进度并及时纠偏——这正是 BAVT 的核心用武之地。</p>
+  </div>
+</div>
+
+<div class="section" id="s2">
+  <h2 class="section-title"><span class="num">2</span> 方法论：BAVT 三大核心模块</h2>
+
+  <div class="module-card">
+    <h3>2.1 动态搜索树构建</h3>
+    <p>BAVT 将多跳推理建模为一棵动态搜索树：根节点是原始问题，每个子节点代表一个推理步骤（含工具调用和观察结果）。树的构建是"按需"的——每次选择当前最有价值的叶节点进行扩展，生成新的推理步骤作为子节点。关键设计：树在<strong>单一 LLM 主干</strong>内构建，不需要额外的价值模型或奖励模型——价值估计由同一 LLM 完成。</p>
+  </div>
+
+  <div class="module-card">
+    <h3>2.2 残差价值预测器 (Residual Value Predictor, RVP)</h3>
+    <p>RVP 是 BAVT 解决 LLM 过度自信的关键。传统方法让 LLM 评估"当前推理链的质量"（绝对价值），LLM 倾向于给出高分。RVP 改为让 LLM 评估<strong>"最近一步推理让我离答案近了多少"</strong>（残差价值）：</p>
+  </div>
+  <div class="formula-box">
+    ΔV(t) = V(s<sub>t</sub>) - V(s<sub>t-1</sub>)
+  </div>
+  <p class="section-desc">
+    这个残差设计的好处是：即使 LLM 对绝对价值 V(s<sub>t</sub>) 估计偏高，只要偏差在不同步骤间相对稳定，差分后的 ΔV 仍然能反映真实的进步程度。这就像用"温度变化"而非"当前温度"来判断加热是否有效——即使温度计有系统偏差，变化量仍然可信。
+  </p>
+
+  <div class="module-card">
+    <h3>2.3 预算条件节点选择 (Budget-Conditioned Node Selection)</h3>
+    <p>选择下一个扩展节点时，BAVT 不仅考虑节点的价值，还考虑<strong>剩余预算</strong>。评分公式：</p>
+  </div>
+  <div class="formula-box">
+    Score(node) = V(node) × (B<sub>remaining</sub> / B<sub>total</sub>)<sup>α</sup>
+  </div>
+  <p class="section-desc">
+    其中 B<sub>remaining</sub> / B<sub>total</sub> 是剩余预算比率。当预算充裕（比率接近1），分数≈V(node)，价值高的节点被优先选择（探索）；当预算紧张（比率趋近0），分数被大幅压缩，不同节点间的价值差距缩小，搜索变得更"谨慎"——避免在低价值节点上浪费最后一点预算。α 控制过渡的速度，论文发现 α=1（即直接用剩余预算比率）效果最好且无需调参。
+  </p>
+</div>
+
+<hr class="divider">
+
+<div class="section" id="s3">
+  <h2 class="section-title"><span class="num">3</span> 核心创新点深度解析</h2>
+
+  <div class="module-card">
+    <h3>创新1：残差价值预测 — 从绝对评估到相对进度</h3>
+    <p>这是 BAVT 最核心的技术创新。LLM 自评过度自信的根本原因是：LLM 很难区分"看起来合理的推理"和"真正正确的推理"——两者在语言流畅度上几乎没有区别。但 LLM 对<strong>相对变化</strong>更敏感——"这一步是否让我获得了新信息"比"当前推理链是否完全正确"更容易判断。残差价值预测利用了这个不对称性。</p>
+  </div>
+
+  <div class="module-card">
+    <h3>创新2：预算条件选择 — 无参数的探索-利用过渡</h3>
+    <p>传统搜索算法中的探索-利用平衡通常需要手动调节温度参数或探索常数。BAVT 的预算条件选择巧妙地将<strong>剩余预算比率</strong>作为自然缩放指数——不需要任何额外超参数。这个设计的美妙之处在于：随着搜索进行，剩余预算自然递减，搜索策略自然从"广泛探索"过渡到"聚焦利用"，完全不需要人为干预。</p>
+  </div>
+
+  <div class="module-card">
+    <h3>创新3：免训练 + 理论收敛保证</h3>
+    <p>大多数推理时缩放方法要么需要训练价值模型（如 PRM），要么缺乏理论保证（如 MCTS 的收敛性依赖模拟质量）。BAVT 是少数兼具<strong>免训练</strong>和<strong>理论收敛保证</strong>的方法：它只需要 LLM 自身做价值估计（无需额外模型），并且在有限预算下以高概率收敛到最终答案。这个保证基于搜索树价值的单调递增性——每次扩展都选择当前最优节点，因此最终答案的质量不会比中间任何节点差。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<div class="section" id="s4">
+  <h2 class="section-title"><span class="num">4</span> 数据流解析：推理全过程</h2>
+  <p class="section-desc">以一个多跳问答为例，解析 BAVT 从输入到输出的完整数据流。</p>
+
+  <div class="svg-wrap" style="background:rgba(20,20,35,.4);border-radius:16px;padding:20px;margin:16px 0;">
+  <svg viewBox="0 0 1100 300" xmlns="http://www.w3.org/2000/svg" style="width:100%;font-family:'Noto Sans SC',system-ui,sans-serif;">
+    <defs><marker id="arrM2" markerWidth="8" markerHeight="8" refX="8" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="#fed6e3"/></marker></defs>
+    <rect x="0" y="0" width="1100" height="300" rx="16" fill="#1a2340"/>
+    <text x="550" y="25" text-anchor="middle" fill="#a8edea" font-size="14" font-weight="700">BAVT 推理数据流</text>
+    <!-- Step 1 -->
+    <rect x="20" y="50" width="150" height="80" rx="12" fill="#252a3a" stroke="#a8edea" stroke-opacity=".3"/>
+    <text x="95" y="75" text-anchor="middle" fill="#a8edea" font-size="11" font-weight="600">📋 问题输入</text>
+    <text x="95" y="95" text-anchor="middle" fill="#8b949e" font-size="10">多跳问题</text>
+    <text x="95" y="112" text-anchor="middle" fill="#8b949e" font-size="10">+ 预算 B</text>
+    <!-- Step 2 -->
+    <rect x="200" y="50" width="170" height="80" rx="12" fill="#252a3a" stroke="#a8edea" stroke-opacity=".5" stroke-width="2"/>
+    <text x="285" y="75" text-anchor="middle" fill="#a8edea" font-size="11" font-weight="600">🌳 树初始化</text>
+    <text x="285" y="95" text-anchor="middle" fill="#8b949e" font-size="10">根节点=问题</text>
+    <text x="285" y="112" text-anchor="middle" fill="#8b949e" font-size="10">生成初始步骤</text>
+    <!-- Step 3 -->
+    <rect x="400" y="50" width="170" height="80" rx="12" fill="#252a3a" stroke="#a8edea" stroke-opacity=".5" stroke-width="2"/>
+    <text x="485" y="75" text-anchor="middle" fill="#a8edea" font-size="11" font-weight="600">📊 价值评估</text>
+    <text x="485" y="95" text-anchor="middle" fill="#8b949e" font-size="10">残差价值ΔV</text>
+    <text x="485" y="112" text-anchor="middle" fill="#8b949e" font-size="10">× 预算缩放</text>
+    <!-- Step 4 -->
+    <rect x="600" y="50" width="170" height="80" rx="12" fill="#252a3a" stroke="#a8edea" stroke-opacity=".5" stroke-width="2"/>
+    <text x="685" y="75" text-anchor="middle" fill="#a8edea" font-size="11" font-weight="600">✂️ 节点选择</text>
+    <text x="685" y="95" text-anchor="middle" fill="#8b949e" font-size="10">选最高分节点</text>
+    <text x="685" y="112" text-anchor="middle" fill="#8b949e" font-size="10">扩展/剪枝</text>
+    <!-- Step 5 -->
+    <rect x="800" y="50" width="170" height="80" rx="12" fill="#252a3a" stroke="#a8edea" stroke-opacity=".5" stroke-width="2"/>
+    <text x="885" y="75" text-anchor="middle" fill="#a8edea" font-size="11" font-weight="600">🔨 扩展节点</text>
+    <text x="885" y="95" text-anchor="middle" fill="#8b949e" font-size="10">LLM生成新步骤</text>
+    <text x="885" y="112" text-anchor="middle" fill="#8b949e" font-size="10">+ 工具调用</text>
+    <!-- Step 6 -->
+    <rect x="1000" y="50" width="80" height="80" rx="12" fill="#252a3a" stroke="#fed6e3" stroke-opacity=".3"/>
+    <text x="1040" y="85" text-anchor="middle" fill="#fed6e3" font-size="11" font-weight="600">✅</text>
+    <text x="1040" y="105" text-anchor="middle" fill="#8b949e" font-size="10">输出</text>
+    <!-- Arrows -->
+    <line x1="170" y1="90" x2="200" y2="90" stroke="#fed6e3" stroke-width="1.5" marker-end="url(#arrM2)"/>
+    <line x1="370" y1="90" x2="400" y2="90" stroke="#fed6e3" stroke-width="1.5" marker-end="url(#arrM2)"/>
+    <line x1="570" y1="90" x2="600" y2="90" stroke="#fed6e3" stroke-width="1.5" marker-end="url(#arrM2)"/>
+    <line x1="770" y1="90" x2="800" y2="90" stroke="#fed6e3" stroke-width="1.5" marker-end="url(#arrM2)"/>
+    <line x1="970" y1="90" x2="1000" y2="90" stroke="#fed6e3" stroke-width="1.5" marker-end="url(#arrM2)"/>
+    <!-- Loop -->
+    <path d="M885,130 L885,170 L485,170 L485,130" fill="none" stroke="#a8edea" stroke-width="1.5" stroke-dasharray="6,3" marker-end="url(#arrM2)"/>
+    <text x="685" y="190" text-anchor="middle" fill="#a8edea" font-size="10">🔄 循环直到预算耗尽或找到答案</text>
+    <!-- Budget indicator -->
+    <rect x="20" y="220" width="1060" height="60" rx="12" fill="#252a3a" stroke="rgba(255,255,255,.08)"/>
+    <text x="550" y="245" text-anchor="middle" fill="#a8edea" font-size="12" font-weight="600">💰 预算追踪</text>
+    <text x="550" y="268" text-anchor="middle" fill="#8b949e" font-size="11">每步扣减：token消耗 + 工具调用次数 | 剩余比 = B_remaining / B_total | 比率→0时自然停止探索</text>
+  </svg>
+  </div>
+  <p class="fc">▲ BAVT 完整推理数据流：问题→树初始化→价值评估→节点选择→扩展→循环直到预算耗尽</p>
+</div>
+
+<hr class="divider">
+
+<div class="section" id="s5">
+  <h2 class="section-title"><span class="num">5</span> 关键技术细节与理论分析</h2>
+
+  <div class="module-card">
+    <h3>收敛性定理</h3>
+    <p>BAVT 的理论保证可以形式化为：给定总预算 B 和容差 ε > 0，BAVT 在 B 步内以至少 1-ε 的概率找到最终答案。证明的关键步骤：</p>
+    <p>(1) 搜索树的价值 V(最优叶节点) 随扩展次数单调递增（因为每次选择当前最优节点扩展）</p>
+    <p>(2) 预算条件选择确保在有限步内必定终止（因为剩余预算单调递减至0）</p>
+    <p>(3) 残差价值估计的误差有界（假设 LLM 价值估计的偏差不超过常数 C），因此累计误差可控</p>
+    <p>这个保证虽然在实际中可能因 LLM 价值估计的不完美而打折扣，但提供了理论上的可靠性锚点。</p>
+  </div>
+
+  <div class="module-card">
+    <h3>剪枝策略：低效工具调用的自动识别</h3>
+    <p>BAVT 通过残差价值自动识别和剪枝低效的推理路径。当某个节点的 ΔV 接近0或为负时，意味着"这一步几乎没有让我离答案更近"——这样的路径会被低优先级排序，自然被"饿死"（不被选中扩展）。这比显式剪枝更优雅——不需要设定阈值，预算压力自然会淘汰低效路径。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<div class="section" id="s6">
+  <h2 class="section-title"><span class="num">6</span> 实验结果与消融分析</h2>
+
+  <table class="data-table">
+    <thead>
+      <tr><th>方法</th><th>HotpotQA</th><th>2WikiMQA</th><th>Musique</th><th>Bamboogle</th><th>平均预算消耗</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>CoT</td><td>52.1</td><td>63.4</td><td>38.2</td><td>55.0</td><td>1×</td></tr>
+      <tr><td>Best-of-N (N=4)</td><td>56.8</td><td>67.1</td><td>42.5</td><td>59.3</td><td>4×</td></tr>
+      <tr><td>Standard MCTS</td><td>58.2</td><td>68.8</td><td>44.1</td><td>61.0</td><td>4×</td></tr>
+      <tr><td>BAVT (1× budget)</td><td>59.5</td><td>70.2</td><td>46.8</td><td>63.7</td><td>1×</td></tr>
+      <tr><td>BAVT (4× budget)</td><td><strong>63.1</strong></td><td><strong>73.5</strong></td><td><strong>51.2</strong></td><td><strong>68.4</strong></td><td>4×</td></tr>
+    </tbody>
+  </table>
+
+  <div class="highlight-box">
+    <h4>🎯 关键发现</h4>
+    <p>BAVT 在 1× 预算下的表现超过了 Best-of-N (4×) 和 Standard MCTS (4×)，证明了智能预算管理远比暴力扩展更有效。在 4× 预算下，BAVT 进一步拉开差距。</p>
+  </div>
+
+  <div class="module-card">
+    <h3>消融实验</h3>
+    <p>• <strong>去掉残差价值</strong>（用绝对价值替代）：性能下降约 5-8%，过度自信导致搜索方向偏差</p>
+    <p>• <strong>去掉预算条件</strong>（固定温度选择）：性能下降约 3-5%，低预算时浪费资源在高风险节点</p>
+    <p>• <strong>两者都去掉</strong>（退化为标准 MCTS）：性能下降约 10-15%，验证了两个模块的互补性</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<div class="section" id="s7">
+  <h2 class="section-title"><span class="num">7</span> 设计精妙之处与局限性</h2>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+    <div>
+      <h3 style="color:#fed6e3;margin-bottom:14px;font-size:1.15rem;">✨ 设计精妙之处</h3>
+      <div class="insight-box"><h4>1. 残差价值的抗过度自信设计</h4><p>通过差分消除 LLM 自评的系统偏差，巧妙利用了偏差的相对稳定性——绝对值不准，但变化量可信。</p></div>
+      <div class="insight-box"><h4>2. 无参数的探索-利用过渡</h4><p>剩余预算比率是天然的缩放因子，随搜索进行自然从探索过渡到利用，无需手动调参。</p></div>
+      <div class="insight-box"><h4>3. 理论与实用的平衡</h4><p>既有理论收敛保证，又不需要训练额外模型，实用性很强。</p></div>
+    </div>
+    <div>
+      <h3 style="color:#ffc107;margin-bottom:14px;font-size:1.15rem;">⚠️ 局限性</h3>
+      <div class="limit-box"><h4>1. 仅在 QA 任务上验证</h4><p>实验限于多跳 QA 基准，未在代码生成、具身推理等更复杂场景验证。</p></div>
+      <div class="limit-box"><h4>2. LLM 价值估计仍不完美</h4><p>残差价值缓解了过度自信，但 LLM 的价值判断仍可能出错，尤其是步骤间差异很小时。</p></div>
+      <div class="limit-box"><h4>3. 搜索开销</h4><p>每步需要多次 LLM 调用（生成+评估+选择），延迟较高。</p></div>
+    </div>
+  </div>
+</div>
+
+<hr class="divider">
+
+<div class="section" id="s8">
+  <h2 class="section-title"><span class="num">8</span> Q&A 深度解析</h2>
+
+  <div class="qa-card"><div class="qa-q">Q1: BAVT 和标准 MCTS 的核心区别是什么？</div><div class="qa-a">标准 MCTS 用固定的 UCB 公式选择节点，探索常数需要手动设定，且不考虑预算约束。BAVT 做了两个关键改造：(1) 用残差价值替代绝对价值，更可靠地估计节点质量；(2) 用预算条件选择替代 UCB，根据剩余资源自动调整探索强度。此外，MCTS 通常需要外部奖励模型，而 BAVT 由 LLM 自身完成价值估计，完全免训练。</div></div>
+  <div class="qa-card"><div class="qa-q">Q2: 残差价值为什么比绝对价值更鲁棒？</div><div class="qa-a">假设 LLM 对每一步的绝对价值评估都偏高一个常数 C（过度自信），那么 ΔV = (V_real + C) - (V_prev + C) = V_real - V_prev。常数偏差在差分中被消除了！当然实际偏差不是完全恒定的，但研究表明 LLM 的过度自信偏差在相似步骤间相对稳定，因此差分能显著降低偏差影响。</div></div>
+  <div class="qa-card"><div class="qa-q">Q3: 预算如何定义？是 token 数还是工具调用次数？</div><div class="qa-a">论文中使用的是综合预算定义：B = α × token消耗 + β × 工具调用次数。两个分量的权重可以根据实际场景调整。对于 API 成本敏感的场景，可以加大工具调用次数的权重；对于延迟敏感的场景，可以加大 token 消耗的权重。灵活性是 BAVT 设计的一个优点。</div></div>
+  <div class="qa-card"><div class="qa-q">Q4: BAVT 能否与 RL 训练结合？</div><div class="qa-a">可以。虽然 BAVT 本身是免训练的，但可以通过 RL 训练 LLM 生成更高质量的推理步骤和更准确的价值估计。训练后的 LLM 作为 BAVT 的主干，价值估计更准确，搜索效率更高。这是一个自然的增强方向。</div></div>
+  <div class="qa-card"><div class="qa-q">Q5: "智能预算管理 > 暴力扩展"的结论有多通用？</div><div class="qa-a">这个结论在多跳 QA 任务上得到了验证，但其通用性需要更多实验确认。直觉上，对于"步骤质量差异大"的任务（有的步骤价值很高，有的几乎无用），智能预算管理的优势最大——因为剪枝低效步骤的收益大。对于"每步价值差不多"的任务，智能管理和暴力扩展的差异可能较小。</div></div>
+  <div class="qa-card"><div class="qa-q">Q6: BAVT 在低预算下的优势从何而来？</div><div class="qa-a">低预算时（如1×），暴力扩展方法（Best-of-N、标准MCTS）的资源不够覆盖足够的搜索空间，往往在到达有希望的路径之前就耗尽了预算。BAVT 的预算条件选择确保在低预算时聚焦最有希望的路径——从一开始就"精打细算"，不浪费任何一步。这就是为什么 BAVT 在1×预算下能超过4×预算的基线。</div></div>
+  <div class="qa-card"><div class="qa-q">Q7: BAVT 的理论保证在实际中有多可靠？</div><div class="qa-a">理论保证假设 LLM 的价值估计偏差有界，这在实际中通常成立但不完美。如果 LLM 对某步的价值严重高估，可能导致搜索被误导。不过，残差价值设计已经大幅缓解了这个问题。论文的经验结果显示，BAVT 在绝大多数情况下确实能找到高质量答案，理论保证与实践表现基本一致。</div></div>
+  <div class="qa-card"><div class="qa-q">Q8: BAVT 与 DeepConf 的早停机制有什么区别？</div><div class="qa-a">DeepConf 的早停基于模型自身的 logprobs 置信度——如果当前生成的 token 置信度低就停止。BAVT 的"早停"是基于搜索树的价值评估和预算条件——如果某条路径的残差价值低且预算紧张，就不在这条路径上继续投入。前者是生成级别的（在 token 层面），后者是推理步骤级别的（在搜索路径层面），粒度和机制完全不同。</div></div>
+</div>
+
+<hr class="divider">
+
+<div class="section" id="s9">
+  <h2 class="section-title"><span class="num">9</span> 代码使用与实战</h2>
+
+  <div class="code-block">
+    <pre><span class="cg"># 克隆 BAVT 仓库</span>
+<span class="ck">git</span> clone https://github.com/mlbrilliance/bavt-budget-aware-agent.git
+<span class="ck">cd</span> bavt-budget-aware-agent
+
+<span class="cg"># 安装依赖</span>
+<span class="ck">pip</span> install -r requirements.txt
+
+<span class="cg"># 仓库结构</span>
+<span class="cv">bavt-budget-aware-agent/</span>
+├── <span class="cf">bavt/</span>
+│   ├── <span class="cf">search_tree.py</span>      <span class="cg"># 动态搜索树</span>
+│   ├── <span class="cf">value_estimator.py</span>  <span class="cg"># 残差价值预测器</span>
+│   ├── <span class="cf">budget_selector.py</span>  <span class="cg"># 预算条件节点选择</span>
+│   └── <span class="cf">agent.py</span>           <span class="cg"># BAVT 智能体主类</span>
+├── <span class="cf">eval/</span>               <span class="cg"># 评估脚本</span>
+├── <span class="cf">data/</span>               <span class="cg"># 基准数据集</span>
+└── <span class="cf">configs/</span>            <span class="cg"># 配置文件</span></pre>
+  </div>
+
+  <div class="code-block">
+    <pre><span class="cg"># 运行 BAVT 在 HotpotQA 上</span>
+<span class="ck">python</span> run.py \
+  --dataset hotpotqa \
+  --model meta-llama/Llama-3-70B \
+  --method bavt \
+  --budget 1.0 \
+  --residual_value True
+
+<span class="cg"># 对比基线</span>
+<span class="ck">python</span> run.py --dataset hotpotqa --model meta-llama/Llama-3-70B --method best_of_n --budget 4.0
+<span class="ck">python</span> run.py --dataset hotpotqa --model meta-llama/Llama-3-70B --method mcts --budget 4.0</pre>
+  </div>
+
+  <table class="data-table">
+    <thead><tr><th>参数</th><th>默认值</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td>--budget</td><td>1.0</td><td>预算倍率（1.0=CoT 等价）</td></tr>
+      <tr><td>--residual_value</td><td>True</td><td>是否使用残差价值预测</td></tr>
+      <tr><td>--alpha</td><td>1.0</td><td>预算缩放指数</td></tr>
+      <tr><td>--max_depth</td><td>8</td><td>搜索树最大深度</td></tr>
+      <tr><td>--beam_width</td><td>3</td><td>每步扩展的候选数</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="footer">
+  <p>📖 Spend Less, Reason Better (BAVT) — 深度解读 | 生成于 2026-05-21</p>
+  <p>论文来源: <a href="https://arxiv.org/abs/2603.12634" style="color:#a8edea;">arXiv:2603.12634</a> | 代码: <a href="https://github.com/mlbrilliance/bavt-budget-aware-agent" style="color:#a8edea;">GitHub</a></p>
+</div>
+
+</div>
+<script src="theme.js"></script>
+</body>
+</html>

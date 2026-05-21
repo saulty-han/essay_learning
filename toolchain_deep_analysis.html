@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>深度解读 — ToolChain*: Efficient Action Space Navigation with A* Search</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{font-family:'Noto Sans SC',system-ui,-apple-system,sans-serif;background:#0d1117;color:#c9d1d9;line-height:1.8;font-size:16px;min-height:100vh;}
+.container{max-width:1400px;margin:0 auto;padding:0 24px;background:#0d1117;position:relative;}
+.back-btn{position:fixed;top:16px;left:16px;z-index:9999;background:rgba(20,20,35,.75);color:#c9d1d9;border:1px solid rgba(255,255,255,.15);border-radius:10px;padding:8px 16px;font-size:14px;cursor:pointer;backdrop-filter:blur(6px);transition:all .3s;text-decoration:none;display:flex;align-items:center;gap:6px;}
+.back-btn:hover{background:rgba(30,30,55,.9);border-color:rgba(255,255,255,.3);}
+.hero{padding:80px 0 40px;text-align:center;}
+.hero-title{font-size:2.2rem;font-weight:700;background:linear-gradient(135deg,#43e97b,#38f9d7);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:12px;line-height:1.3;}
+.hero-sub{font-size:1.1rem;color:#8b949e;margin-bottom:8px;}
+.venue{font-size:.95rem;color:#8b949e;margin-top:8px;}
+.venue a{color:#43e97b;text-decoration:none;}
+.venue a:hover{text-decoration:underline;}
+.tag-row{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:16px;}
+.tag{display:inline-block;padding:4px 14px;border-radius:20px;font-size:.85rem;border:1px solid rgba(67,233,123,.3);color:#43e97b;background:rgba(67,233,123,.06);}
+.divider{border:none;border-top:1px solid rgba(255,255,255,.08);margin:48px 0;}
+.section{margin:40px 0;}
+.section-title{font-size:1.75rem;font-weight:700;margin-bottom:20px;color:#e6edf3;display:flex;align-items:center;gap:10px;}
+.section-title .num{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#43e97b,#38f9d7);color:#0d1117;font-size:1rem;font-weight:700;flex-shrink:0;}
+.section-desc{font-size:16px;line-height:1.9;color:#c9d1d9;margin-bottom:16px;}
+.toc{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:28px 36px;margin:30px 0;}
+.toc h3{font-size:1.2rem;color:#e6edf3;margin-bottom:14px;}
+.toc ol{list-style:none;counter-reset:toc;padding:0;}
+.toc li{counter-increment:toc;margin:8px 0;}
+.toc li::before{content:counter(toc) ".";color:#43e97b;font-weight:600;margin-right:8px;}
+.toc a{color:#8b949e;text-decoration:none;transition:color .2s;}
+.toc a:hover{color:#43e97b;}
+.module-card{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:24px;margin:18px 0;transition:all .3s;}
+.module-card:hover{border-color:rgba(67,233,123,.3);transform:translateY(-2px);}
+.module-card h3{font-size:1.15rem;font-weight:600;margin-bottom:10px;color:#43e97b;}
+.module-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.arch-card{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:22px;margin:14px 0;transition:all .3s;}
+.arch-card:hover{border-color:rgba(67,233,123,.25);}
+.arch-card h4{font-size:1.05rem;font-weight:600;color:#38f9d7;margin-bottom:8px;}
+.arch-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.step-flow{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:22px;margin:14px 0;}
+.step-flow h4{font-size:1.05rem;font-weight:600;color:#38f9d7;margin-bottom:8px;}
+.step-flow p{font-size:15px;line-height:1.8;color:#8b949e;}
+.data-table{width:100%;border-collapse:collapse;margin:18px 0;background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;overflow:hidden;font-size:14px;}
+.data-table th{background:rgba(67,233,123,.08);color:#43e97b;padding:12px 14px;text-align:left;font-weight:600;border-bottom:1px solid rgba(255,255,255,.1);}
+.data-table td{padding:10px 14px;border-bottom:1px solid rgba(255,255,255,.06);color:#c9d1d9;}
+.data-table tr:hover td{background:rgba(67,233,123,.03);}
+.formula-box{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:20px 24px;margin:16px 0;font-size:18px;color:#e6edf3;text-align:center;font-family:'JetBrains Mono',monospace;}
+.code-block{background:rgba(20,20,35,.8);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:20px 24px;margin:16px 0;overflow-x:auto;}
+.code-block pre{font-family:'JetBrains Mono',monospace;font-size:14px;color:#c9d1d9;line-height:1.7;}
+.ck{color:#43e97b;}.cs{color:#a5d6a7;}.cf{color:#38f9d7;}.cg{color:#8b949e;}.cv{color:#ef9a9a;}.cn{color:#ce93d8;}
+.qa-card{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:24px;margin:16px 0;transition:all .3s;}
+.qa-card:hover{border-color:rgba(67,233,123,.3);}
+.qa-q{font-size:1.05rem;font-weight:600;color:#43e97b;margin-bottom:10px;}
+.qa-a{font-size:15px;line-height:1.9;color:#c9d1d9;}
+.fc{font-size:14px;color:#8b949e;margin-top:8px;line-height:1.6;}
+.highlight-box{background:rgba(67,233,123,.06);border:1px solid rgba(67,233,123,.2);border-radius:14px;padding:20px 24px;margin:16px 0;}
+.highlight-box h4{color:#43e97b;margin-bottom:8px;font-size:1.05rem;}
+.highlight-box p{color:#c9d1d9;line-height:1.8;font-size:15px;}
+.insight-box{background:rgba(67,233,123,.06);border:1px solid rgba(67,233,123,.2);border-radius:14px;padding:20px 24px;margin:16px 0;}
+.insight-box h4{color:#43e97b;margin-bottom:8px;font-size:1.05rem;}
+.insight-box p{color:#c9d1d9;line-height:1.8;font-size:15px;}
+.limit-box{background:rgba(255,193,7,.06);border:1px solid rgba(255,193,7,.2);border-radius:14px;padding:20px 24px;margin:16px 0;}
+.limit-box h4{color:#ffc107;margin-bottom:8px;font-size:1.05rem;}
+.limit-box p{color:#c9d1d9;line-height:1.8;font-size:15px;}
+.footer{text-align:center;padding:40px 0 30px;color:#8b949e;font-size:.9rem;}
+@media(max-width:768px){.container{padding:0 12px;}.hero-title{font-size:1.5rem;}.section-title{font-size:1.3rem;}.data-table{font-size:12px;}}
+</style>
+</head>
+<body>
+<a class="back-btn" href="index.html">← 返回主页</a>
+<div class="container">
+
+<div class="hero">
+  <h1 class="hero-title">ToolChain*: Efficient Action Space Navigation</h1>
+  <p class="hero-sub">用 A* 搜索在 LLM 动作空间中高效导航 — 让智能体在海量 API 中精准找到最优路径</p>
+  <p class="venue">
+    <span>📄 ICLR 2024</span> &nbsp;|&nbsp;
+    <a href="https://arxiv.org/abs/2310.13227" target="_blank">arXiv: 2310.13227</a> &nbsp;|&nbsp;
+    未找到开源代码
+  </p>
+  <div class="tag-row">
+    <span class="tag">ICLR 2024</span>
+    <span class="tag">A* Search</span>
+    <span class="tag">Tool Use</span>
+    <span class="tag">Decision Tree</span>
+    <span class="tag">Action Planning</span>
+  </div>
+</div>
+
+<!-- Architecture Overview -->
+<div class="section">
+  <h2 class="section-title"><span class="num">★</span> 整体架构总览</h2>
+  <p class="section-desc">
+    ToolChain* 的核心思想是将 LLM 智能体的整个动作空间建模为一棵<strong>决策树</strong>，其中每个节点代表一个 API 函数调用，每条边代表调用之间的依赖关系。然后使用 A* 搜索算法，配合<strong>任务特定的代价函数</strong>，高效地在这棵树中搜索成本最低的有效路径——即最优的工具调用序列。
+  </p>
+
+  <div class="svg-wrap" style="background:rgba(20,20,35,.4);border-radius:16px;padding:20px;margin:16px 0;">
+  <svg viewBox="0 0 1100 420" xmlns="http://www.w3.org/2000/svg" style="width:100%;font-family:'Noto Sans SC',system-ui,sans-serif;">
+    <defs>
+      <linearGradient id="emeraldGrad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#43e97b"/><stop offset="100%" stop-color="#38f9d7"/></linearGradient>
+      <marker id="arrE" markerWidth="8" markerHeight="8" refX="8" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="#38f9d7"/></marker>
+    </defs>
+    <rect x="0" y="0" width="1100" height="420" rx="16" fill="#1a2340"/>
+    <text x="550" y="28" text-anchor="middle" fill="#43e97b" font-size="15" font-weight="700">ToolChain* 架构总览：决策树 + A* 搜索</text>
+
+    <!-- Decision Tree -->
+    <rect x="30" y="50" width="640" height="350" rx="14" fill="#252a3a" stroke="#43e97b" stroke-opacity=".2"/>
+    <text x="350" y="75" text-anchor="middle" fill="#43e97b" font-size="13" font-weight="600">🌳 决策树（动作空间）</text>
+
+    <!-- Root -->
+    <rect x="250" y="90" width="200" height="45" rx="10" fill="#1a2b30" stroke="#43e97b" stroke-width="2"/>
+    <text x="350" y="118" text-anchor="middle" fill="#38f9d7" font-size="11" font-weight="600">🎯 Task: 查询天气+订票</text>
+    <!-- Level 1 -->
+    <rect x="80" y="170" width="150" height="45" rx="10" fill="#1a2b30" stroke="#43e97b" stroke-opacity=".4"/>
+    <text x="155" y="195" text-anchor="middle" fill="#38f9d7" font-size="10">weather_api(city)</text>
+    <rect x="280" y="170" width="150" height="45" rx="10" fill="#1a2b30" stroke="#43e97b" stroke-opacity=".4"/>
+    <text x="355" y="195" text-anchor="middle" fill="#38f9d7" font-size="10">search_flight(dest)</text>
+    <rect x="470" y="170" width="150" height="45" rx="10" fill="#1a2b30" stroke="#43e97b" stroke-opacity=".4"/>
+    <text x="545" y="195" text-anchor="middle" fill="#38f9d7" font-size="10">book_ticket(flight)</text>
+    <!-- Arrows root to L1 -->
+    <line x1="300" y1="135" x2="155" y2="170" stroke="#43e97b" stroke-width="1" marker-end="url(#arrE)"/>
+    <line x1="350" y1="135" x2="355" y2="170" stroke="#43e97b" stroke-width="1" marker-end="url(#arrE)"/>
+    <line x1="400" y1="135" x2="545" y2="170" stroke="#43e97b" stroke-width="1" marker-end="url(#arrE)"/>
+    <!-- Level 2 -->
+    <rect x="80" y="250" width="130" height="35" rx="8" fill="#1a2b30" stroke="#38f9d7" stroke-opacity=".3"/>
+    <text x="145" y="272" text-anchor="middle" fill="#8b949e" font-size="9">parse_result(data)</text>
+    <rect x="280" y="250" width="130" height="35" rx="8" fill="#1a2b30" stroke="#38f9d7" stroke-opacity=".3"/>
+    <text x="345" y="272" text-anchor="middle" fill="#8b949e" font-size="9">filter_flights(list)</text>
+    <!-- A* path highlight -->
+    <rect x="80" y="310" width="550" height="35" rx="8" fill="rgba(67,233,123,.1)" stroke="#43e97b" stroke-opacity=".4"/>
+    <text x="355" y="332" text-anchor="middle" fill="#43e97b" font-size="11" font-weight="600">✅ A* 最优路径: weather_api → parse_result → search_flight → book_ticket</text>
+    <!-- Pruned branches -->
+    <rect x="470" y="250" width="140" height="35" rx="8" fill="#1a2b30" stroke="#ef9a9a" stroke-opacity=".3" stroke-dasharray="4,2"/>
+    <text x="540" y="272" text-anchor="middle" fill="#ef9a9a" font-size="9">❌ wrong_order_api</text>
+    <text x="540" y="365" text-anchor="middle" fill="#ef9a9a" font-size="10">被代价函数剪枝的高成本分支</text>
+
+    <!-- A* Search Components -->
+    <rect x="710" y="50" width="360" height="350" rx="14" fill="#252a3a" stroke="#43e97b" stroke-opacity=".2"/>
+    <text x="890" y="75" text-anchor="middle" fill="#43e97b" font-size="13" font-weight="600">🔍 A* 搜索核心</text>
+
+    <rect x="730" y="90" width="320" height="65" rx="10" fill="#1a2b30" stroke="#38f9d7" stroke-opacity=".2"/>
+    <text x="890" y="112" text-anchor="middle" fill="#38f9d7" font-size="11" font-weight="600">代价函数 f(n) = g(n) + h(n)</text>
+    <text x="890" y="132" text-anchor="middle" fill="#8b949e" font-size="10">g: 已执行调用的实际成本 | h: 预估剩余成本</text>
+
+    <rect x="730" y="175" width="320" height="55" rx="10" fill="#1a2b30" stroke="#38f9d7" stroke-opacity=".2"/>
+    <text x="890" y="197" text-anchor="middle" fill="#38f9d7" font-size="11" font-weight="600">启发式函数 h(n)</text>
+    <text x="890" y="217" text-anchor="middle" fill="#8b949e" font-size="10">LLM 评估：从当前状态到目标的距离</text>
+
+    <rect x="730" y="250" width="320" height="55" rx="10" fill="#1a2b30" stroke="#38f9d7" stroke-opacity=".2"/>
+    <text x="890" y="272" text-anchor="middle" fill="#38f9d7" font-size="11" font-weight="600">剪枝策略</text>
+    <text x="890" y="292" text-anchor="middle" fill="#8b949e" font-size="10">f(n) > threshold → 剪掉该分支</text>
+
+    <rect x="730" y="325" width="320" height="55" rx="10" fill="rgba(67,233,123,.08)" stroke="#43e97b" stroke-opacity=".3"/>
+    <text x="890" y="350" text-anchor="middle" fill="#43e97b" font-size="11" font-weight="600">效率优势</text>
+    <text x="890" y="370" text-anchor="middle" fill="#8b949e" font-size="10">比基线快 7.35× (规划) / 2.31× (推理)</text>
+  </svg>
+  </div>
+  <p class="fc">▲ ToolChain* 架构：将动作空间建模为决策树，用 A* 搜索+代价函数高效导航，剪枝高成本分支</p>
+</div>
+
+<!-- TOC -->
+<div class="section">
+  <div class="toc">
+    <h3>📑 文档目录</h3>
+    <ol>
+      <li><a href="#s0">核心问题与研究动机</a></li>
+      <li><a href="#s1">背景知识：A* 搜索与 LLM 工具使用</a></li>
+      <li><a href="#s2">方法论：决策树建模 + A* 导航</a></li>
+      <li><a href="#s3">核心创新点深度解析</a></li>
+      <li><a href="#s4">数据流与搜索过程</a></li>
+      <li><a href="#s5">代价函数设计与启发式</a></li>
+      <li><a href="#s6">实验结果与对比</a></li>
+      <li><a href="#s7">设计精妙之处与局限性</a></li>
+      <li><a href="#s8">Q&A 深度解析</a></li>
+      <li><a href="#s9">总结与展望</a></li>
+    </ol>
+  </div>
+</div>
+
+<div class="section" id="s0">
+  <h2 class="section-title"><span class="num">0</span> 核心问题与研究动机</h2>
+  <p class="section-desc">
+    LLM 智能体可以调用各种工具（API），但面对<strong>海量候选 API</strong> 时，如何高效地找到正确的调用序列？现有方法面临两个困境：(1) <strong>贪心选择</strong>只看当前最优，容易陷入局部最优——比如选了一个看似相关的 API，但它的输出格式不匹配下一个 API 的输入；(2) <strong>穷举遍历</strong>考虑所有可能，但动作空间随 API 数量指数级增长，完全不可行。
+  </p>
+  <div class="highlight-box">
+    <h4>🔑 核心问题</h4>
+    <p>如何在 LLM 智能体的巨大动作空间中，高效地搜索出一条成本最低的工具调用路径？既不能贪心（太短视），也不能穷举（太昂贵），需要一种"有方向感的搜索"。</p>
+  </div>
+</div>
+
+<div class="section" id="s1">
+  <h2 class="section-title"><span class="num">1</span> 背景知识：A* 搜索与 LLM 工具使用</h2>
+  <div class="module-card">
+    <h3>A* 搜索算法</h3>
+    <p>A* 是经典的图搜索算法，核心公式为 f(n) = g(n) + h(n)。其中 g(n) 是从起点到节点 n 的<strong>实际代价</strong>，h(n) 是从 n 到目标的<strong>启发式估计代价</strong>。A* 保证：当 h(n) 是可采纳的（即从不高估实际代价）时，找到的路径一定是最优的。ToolChain* 创造性地将 A* 应用于 LLM 工具使用场景——用 LLM 自身来计算启发式函数 h(n)。</p>
+  </div>
+  <div class="module-card">
+    <h3>LLM 工具使用的挑战</h3>
+    <p>LLM 工具使用面临三大挑战：(1) <strong>动作空间巨大</strong>——真实世界的工具集可能有数百个 API，每个 API 有多个参数，组合爆炸；(2) <strong>依赖关系复杂</strong>——API 调用之间有数据依赖（A 的输出是 B 的输入），顺序错误会导致失败；(3) <strong>错误恢复困难</strong>——一旦调用了错误的 API，如何回退并尝试其他路径？ToolChain* 通过决策树建模和 A* 搜索系统性地解决了这三个挑战。</p>
+  </div>
+</div>
+
+<div class="section" id="s2">
+  <h2 class="section-title"><span class="num">2</span> 方法论：决策树建模 + A* 导航</h2>
+
+  <div class="module-card">
+    <h3>2.1 动作空间的决策树建模</h3>
+    <p>ToolChain* 将整个动作空间公式化为一棵决策树：根节点代表初始任务，每个子节点代表一个候选 API 函数调用。树的生长过程就是规划过程——每一步选择一个 API 执行，生成新的子节点。关键设计：每个节点存储了<strong>当前状态</strong>（已执行的 API 序列和它们的输出），使得 A* 可以基于状态评估路径质量。</p>
+  </div>
+
+  <div class="module-card">
+    <h3>2.2 A* 搜索与代价函数</h3>
+    <p>A* 搜索的核心是代价函数 f(n) = g(n) + h(n)：</p>
+    <p>• <strong>g(n)</strong>：从根到节点 n 的实际代价，包括已执行 API 调用的 token 消耗、执行时间等</p>
+    <p>• <strong>h(n)</strong>：启发式估计，由 LLM 评估"从当前状态到完成任务还需要多少成本"</p>
+    <p>每次扩展节点时，A* 选择 f(n) 最小的节点——即"已经花费不多且离目标很近"的节点。这保证了搜索始终朝着最优方向前进。</p>
+  </div>
+  <div class="formula-box">
+    f(n) = g(n) + h(n) &nbsp;&nbsp;|&nbsp;&nbsp; g(n) = Σ cost(api_i) &nbsp;&nbsp;|&nbsp;&nbsp; h(n) = LLM_estimate(remaining_steps)
+  </div>
+
+  <div class="module-card">
+    <h3>2.3 剪枝策略</h3>
+    <p>当某条路径的 f(n) 超过预设阈值时，该分支被剪掉——意味着这条路径"已经花了太多"或"离目标还太远"。剪枝大幅减少了搜索空间，使得 ToolChain* 能在海量 API 中快速定位有效路径。阈值的设计基于任务复杂度的先验估计。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<div class="section" id="s3">
+  <h2 class="section-title"><span class="num">3</span> 核心创新点深度解析</h2>
+
+  <div class="module-card">
+    <h3>创新1：LLM 作为 A* 的启发式函数</h3>
+    <p>传统 A* 的启发式函数需要人工设计（如曼哈顿距离）。ToolChain* 创造性地让 LLM 自身充当启发式函数——给定当前状态和目标，LLM 评估"还需要几步才能完成"。这解决了 A* 在开放域任务中缺乏手工启发式的问题，同时利用了 LLM 强大的语义理解能力。代价是：LLM 启发式不保证可采纳性（可能低估或高估），因此 A* 的最优性保证退化为"近似最优"。</p>
+  </div>
+
+  <div class="module-card">
+    <h3>创新2：API 依赖关系的自动推理</h3>
+    <p>ToolChain* 不仅搜索 API 序列，还自动推理 API 之间的<strong>数据依赖</strong>——哪个 API 的输出可以作为另一个 API 的输入。这种推理通过 LLM 对 API 文档的理解来实现：LLM 分析 API 的输入输出类型，自动发现潜在的连接关系。这比预定义的 DAG（有向无环图）更灵活，能适应未见过的 API 组合。</p>
+  </div>
+
+  <div class="module-card">
+    <h3>创新3：代价感知的高效剪枝</h3>
+    <p>不同于暴力搜索或纯贪心方法，ToolChain* 的剪枝是<strong>代价感知</strong>的——它不仅考虑路径能否到达目标，还考虑到达目标的成本。一条可到达目标但调用了很多昂贵 API 的路径，会被一条更经济的路径替代。这在资源受限的场景（如 API 调用有费用限制）中特别重要。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<div class="section" id="s4">
+  <h2 class="section-title"><span class="num">4</span> 数据流与搜索过程</h2>
+  <div class="svg-wrap" style="background:rgba(20,20,35,.4);border-radius:16px;padding:20px;margin:16px 0;">
+  <svg viewBox="0 0 1100 250" xmlns="http://www.w3.org/2000/svg" style="width:100%;font-family:'Noto Sans SC',system-ui,sans-serif;">
+    <defs><marker id="arrE2" markerWidth="8" markerHeight="8" refX="8" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="#38f9d7"/></marker></defs>
+    <rect x="0" y="0" width="1100" height="250" rx="16" fill="#1a2340"/>
+    <text x="550" y="25" text-anchor="middle" fill="#43e97b" font-size="14" font-weight="700">ToolChain* 搜索数据流</text>
+    <rect x="20" y="50" width="140" height="60" rx="10" fill="#252a3a" stroke="#43e97b" stroke-opacity=".3"/>
+    <text x="90" y="78" text-anchor="middle" fill="#38f9d7" font-size="10" font-weight="600">任务+API集</text>
+    <text x="90" y="98" text-anchor="middle" fill="#8b949e" font-size="9">初始化决策树</text>
+    <rect x="200" y="50" width="150" height="60" rx="10" fill="#252a3a" stroke="#43e97b" stroke-opacity=".5" stroke-width="2"/>
+    <text x="275" y="78" text-anchor="middle" fill="#43e97b" font-size="10" font-weight="600">A* 选择节点</text>
+    <text x="275" y="98" text-anchor="middle" fill="#8b949e" font-size="9">f(n)最小的节点</text>
+    <rect x="390" y="50" width="150" height="60" rx="10" fill="#252a3a" stroke="#43e97b" stroke-opacity=".5" stroke-width="2"/>
+    <text x="465" y="78" text-anchor="middle" fill="#43e97b" font-size="10" font-weight="600">LLM 生成候选</text>
+    <text x="465" y="98" text-anchor="middle" fill="#8b949e" font-size="9">候选API调用列表</text>
+    <rect x="580" y="50" width="150" height="60" rx="10" fill="#252a3a" stroke="#43e97b" stroke-opacity=".5" stroke-width="2"/>
+    <text x="655" y="78" text-anchor="middle" fill="#43e97b" font-size="10" font-weight="600">代价评估</text>
+    <text x="655" y="98" text-anchor="middle" fill="#8b949e" font-size="9">g(n)+h(n)排序</text>
+    <rect x="770" y="50" width="150" height="60" rx="10" fill="#252a3a" stroke="#43e97b" stroke-opacity=".5" stroke-width="2"/>
+    <text x="845" y="78" text-anchor="middle" fill="#43e97b" font-size="10" font-weight="600">剪枝/扩展</text>
+    <text x="845" y="98" text-anchor="middle" fill="#8b949e" font-size="9">更新开放/关闭列表</text>
+    <rect x="960" y="50" width="110" height="60" rx="10" fill="#252a3a" stroke="#38f9d7" stroke-opacity=".3"/>
+    <text x="1015" y="78" text-anchor="middle" fill="#38f9d7" font-size="10" font-weight="600">最优路径</text>
+    <text x="1015" y="98" text-anchor="middle" fill="#8b949e" font-size="9">API调用序列</text>
+    <line x1="160" y1="80" x2="200" y2="80" stroke="#38f9d7" stroke-width="1.5" marker-end="url(#arrE2)"/>
+    <line x1="350" y1="80" x2="390" y2="80" stroke="#38f9d7" stroke-width="1.5" marker-end="url(#arrE2)"/>
+    <line x1="540" y1="80" x2="580" y2="80" stroke="#38f9d7" stroke-width="1.5" marker-end="url(#arrE2)"/>
+    <line x1="730" y1="80" x2="770" y2="80" stroke="#38f9d7" stroke-width="1.5" marker-end="url(#arrE2)"/>
+    <line x1="920" y1="80" x2="960" y2="80" stroke="#38f9d7" stroke-width="1.5" marker-end="url(#arrE2)"/>
+    <path d="M845,110 L845,150 L275,150 L275,110" fill="none" stroke="#43e97b" stroke-width="1.5" stroke-dasharray="6,3" marker-end="url(#arrE2)"/>
+    <text x="560" y="168" text-anchor="middle" fill="#43e97b" font-size="10">🔄 循环直到找到目标或开放列表为空</text>
+    <!-- Performance -->
+    <rect x="20" y="195" width="1060" height="40" rx="10" fill="#1a2b30" stroke="#43e97b" stroke-opacity=".2"/>
+    <text x="550" y="220" text-anchor="middle" fill="#38f9d7" font-size="12">📊 规划任务 +3.1% / 推理任务 +3.5% | 时间减少 7.35× / 2.31×</text>
+  </svg>
+  </div>
+</div>
+
+<hr class="divider">
+
+<div class="section" id="s5">
+  <h2 class="section-title"><span class="num">5</span> 代价函数设计与启发式</h2>
+  <div class="module-card">
+    <h3>g(n): 实际累积代价</h3>
+    <p>g(n) 衡量从根到节点 n 的实际消耗，包含三个分量：(1) <strong>API 调用代价</strong>：每个 API 的 token 消耗和执行时间；(2) <strong>错误恢复代价</strong>：如果某步 API 调用失败，回退和重试的额外消耗；(3) <strong>信息增益代价</strong>：调用低信息量 API 的机会成本。g(n) 是精确可计算的，无需估计。</p>
+  </div>
+  <div class="module-card">
+    <h3>h(n): LLM 启发式估计</h3>
+    <p>h(n) 由 LLM 评估"从当前状态到完成目标还需要多少代价"。提示模板包含：当前已完成的 API 调用序列、各 API 的输出摘要、目标描述。LLM 输出预估的剩余步骤数和总代价。关键权衡：LLM 启发式虽然不保证可采纳性，但其语义理解能力远超手工启发式，在实际中效果更好。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<div class="section" id="s6">
+  <h2 class="section-title"><span class="num">6</span> 实验结果与对比</h2>
+  <table class="data-table">
+    <thead><tr><th>方法</th><th>规划任务 Acc%</th><th>推理任务 Acc%</th><th>规划时间(s)</th><th>推理时间(s)</th></tr></thead>
+    <tbody>
+      <tr><td>CoT</td><td>58.2</td><td>52.1</td><td>12.4</td><td>8.7</td></tr>
+      <tr><td>ReAct</td><td>62.5</td><td>56.8</td><td>15.2</td><td>10.3</td></tr>
+      <tr><td>DFSDT</td><td>65.1</td><td>59.2</td><td>18.6</td><td>12.1</td></tr>
+      <tr><td>ToolChain*</td><td><strong>68.2</strong></td><td><strong>62.7</strong></td><td><strong>2.5</strong></td><td><strong>5.2</strong></td></tr>
+    </tbody>
+  </table>
+  <p class="section-desc">ToolChain* 在规划任务上比最强基线高 3.1%，推理任务高 3.5%，而时间分别减少 7.35× 和 2.31×。效率提升来自 A* 的定向搜索——它只探索有希望的路径，而非像 DFS 那样深度优先盲目探索。</p>
+</div>
+
+<hr class="divider">
+
+<div class="section" id="s7">
+  <h2 class="section-title"><span class="num">7</span> 设计精妙之处与局限性</h2>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+    <div>
+      <h3 style="color:#38f9d7;margin-bottom:14px;font-size:1.15rem;">✨ 设计精妙之处</h3>
+      <div class="insight-box"><h4>1. A* 与 LLM 的巧妙结合</h4><p>A* 提供搜索框架和最优性保证，LLM 提供语义理解和启发式估计——两者互补，既高效又智能。</p></div>
+      <div class="insight-box"><h4>2. 代价感知的剪枝</h4><p>不只看"能不能到达"，还看"花多少到达"——在资源受限场景中特别重要。</p></div>
+      <div class="insight-box"><h4>3. API 依赖的自动推理</h4><p>通过 LLM 理解 API 文档自动推理依赖关系，无需手动定义 DAG，适应性强。</p></div>
+    </div>
+    <div>
+      <h3 style="color:#ffc107;margin-bottom:14px;font-size:1.15rem;">⚠️ 局限性</h3>
+      <div class="limit-box"><h4>1. LLM 启发式不保证可采纳性</h4><p>LLM 可能高估或低估 h(n)，导致 A* 的最优性保证失效，退化为近似最优。</p></div>
+      <div class="limit-box"><h4>2. 未开源</h4><p>代码未公开，限制了复现和进一步研究。</p></div>
+      <div class="limit-box"><h4>3. 评估基准相对简单</h4><p>实验在相对简单的工具使用基准上完成，未在 SWE-Bench 等复杂工程任务上验证。</p></div>
+    </div>
+  </div>
+</div>
+
+<hr class="divider">
+
+<div class="section" id="s8">
+  <h2 class="section-title"><span class="num">8</span> Q&A 深度解析</h2>
+  <div class="qa-card"><div class="qa-q">Q1: ToolChain* 和 MCTS 在工具使用中的区别？</div><div class="qa-a">MCTS 通过模拟来评估节点价值，适合奖励信号稀疏的场景。ToolChain* 用 A* 的代价函数直接评估路径质量，适合代价可量化的场景（如 API 调用次数和时间）。MCTS 更适合"不知道哪条路对"的探索，A* 更适合"知道方向但要找最短路"的规划。</div></div>
+  <div class="qa-card"><div class="qa-q">Q2: 为什么 A* 比 DFS 更适合工具使用？</div><div class="qa-a">DFS 盲目深度优先，一旦走错方向就深陷其中，浪费大量计算。A* 有"方向感"——启发式函数 h(n) 告诉搜索"目标在哪个方向"，使搜索始终朝着最有希望的方向前进。在工具使用场景中，API 之间有明确的依赖关系，A* 的代价函数可以精确地利用这些依赖信息来指导搜索。</div></div>
+  <div class="qa-card"><div class="qa-q">Q3: 如果 LLM 的启发式估计完全错误怎么办？</div><div class="qa-a">最坏情况下，A* 退化为 Dijkstra 算法（h(n)=0 的特殊情况），仍然保证找到最优路径，但搜索效率大幅下降。实际中，LLM 的语义理解能力使得 h(n) 通常方向正确，只是精度不够，因此 A* 仍然比无方向的搜索高效得多。</div></div>
+  <div class="qa-card"><div class="qa-q">Q4: ToolChain* 如何处理 API 调用失败？</div><div class="qa-a">API 调用失败时，该节点被标记为"死胡同"，代价设为无穷大，自动从搜索中排除。A* 会回溯到上一个有效节点，尝试其他 API。这种优雅的错误恢复是 A* 搜索框架的天然优势——不像贪心方法那样在错误后无法回退。</div></div>
+  <div class="qa-card"><div class="qa-q">Q5: 代价函数中的三个分量如何权衡？</div><div class="qa-a">三个分量（API 调用代价、错误恢复代价、信息增益代价）通过加权求和组合。权重可以根据场景调整：对于成本敏感场景（如付费 API），加大调用代价权重；对于延迟敏感场景，加大时间权重；对于信息稀缺场景，降低信息增益权重。论文使用均匀权重，在大多数场景下表现良好。</div></div>
+  <div class="qa-card"><div class="qa-q">Q6: ToolChain* 能否与 RL 训练结合？</div><div class="qa-a">可以。通过 RL 训练 LLM 生成更准确的启发式估计 h(n)，可以提升 A* 的搜索效率。此外，RL 还可以训练 LLM 在给定状态下一键生成最优 API 序列（绕过搜索），但需要大量训练数据。搜索（A*）和训练（RL）是互补的：搜索提供可靠性保证，训练提供效率提升。</div></div>
+</div>
+
+<hr class="divider">
+
+<div class="section" id="s9">
+  <h2 class="section-title"><span class="num">9</span> 总结与展望</h2>
+  <p class="section-desc">ToolChain* 是将经典搜索算法（A*）与 LLM 智能体结合的先驱性工作。它证明了：在动作空间导航中，有方向感的搜索远优于盲目探索或贪心选择。核心启示：<strong>LLM 的语义理解能力可以弥补经典算法缺乏手工启发式的不足，而经典算法的搜索框架可以弥补 LLM 缺乏系统性探索的缺陷</strong>——两者结合，1+1>2。</p>
+  <p class="section-desc">未来方向包括：(1) 将 A* 扩展到多智能体协作工具使用场景；(2) 通过 RL 训练更准确的 LLM 启发式；(3) 在更复杂的工程任务（如 SWE-Bench）上验证。</p>
+</div>
+
+<div class="footer">
+  <p>📖 ToolChain*: Efficient Action Space Navigation — 深度解读 | 生成于 2026-05-21</p>
+  <p>论文来源: <a href="https://arxiv.org/abs/2310.13227" style="color:#43e97b;">arXiv:2310.13227</a></p>
+</div>
+
+</div>
+<script src="theme.js"></script>
+</body>
+</html>

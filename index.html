@@ -60,11 +60,106 @@ header p{color:#8b949e;margin-top:8px;font-size:1.05rem;}
   <p>AI 论文的深度解析与架构可视化</p>
 </header>
 <div class="stats">
-  <div class="stat"><div class="num">3</div><div class="label">文章总数</div></div>
-  <div class="stat"><div class="num">3</div><div class="label">论文解读</div></div>
-  <div class="stat"><div class="num">3</div><div class="label">架构分析</div></div>
+  <div class="stat"><div class="num">8</div><div class="label">文章总数</div></div>
+  <div class="stat"><div class="num">8</div><div class="label">论文解读</div></div>
+  <div class="stat"><div class="num">8</div><div class="label">架构分析</div></div>
 </div>
 <div class="grid">
+
+<a class="card" href="abmcts_deep_analysis.html">
+  <div class="date">2026-05-21</div>
+  <div class="tags">
+    <span class="tag" style="border-color:rgba(240,147,251,.4);color:#f093fb;">NeurIPS 2025 Spotlight</span>
+    <span class="tag">论文解读</span>
+  </div>
+  <h2>Wider or Deeper? (AB-MCTS / TreeQuest)</h2>
+  <div class="sub">自适应分支蒙特卡洛树搜索 — 在"更宽"和"更深"之间智能切换</div>
+  <div class="desc">Sakana AI 提出的 AB-MCTS 通过贝叶斯后验更新动态决定搜索方向：生成新候选（更宽）还是改进现有响应（更深）。无上限分支因子充分利用 LLM 输出多样性，统一了重复采样和顺序改进。在代码任务上比重复采样提升 7%+，Multi-LLM 版本进一步提升至 9.5%。</div>
+  <div class="chips">
+    <span class="chip">AB-MCTS</span>
+    <span class="chip">Adaptive Branching</span>
+    <span class="chip">Bayesian Posterior</span>
+    <span class="chip">TreeQuest</span>
+    <span class="chip">Multi-LLM</span>
+  </div>
+  <div class="read-time">📖 约 28 分钟阅读</div>
+</a>
+
+<a class="card" href="toolchain_deep_analysis.html">
+  <div class="date">2026-05-21</div>
+  <div class="tags">
+    <span class="tag" style="border-color:rgba(67,233,123,.4);color:#43e97b;">ICLR 2024</span>
+    <span class="tag">论文解读</span>
+  </div>
+  <h2>ToolChain*: A* Search for LLM Action Space</h2>
+  <div class="sub">用 A* 搜索在 LLM 动作空间中高效导航 — 让智能体在海量 API 中精准找到最优路径</div>
+  <div class="desc">将 LLM 智能体的动作空间建模为决策树，用 A* 搜索配合 LLM 启发式函数高效剪枝错误分支。规划任务平均提升 3.1%，推理任务提升 3.5%，时间分别减少 7.35× 和 2.31×。经典搜索算法与 LLM 语义理解的巧妙结合。</div>
+  <div class="chips">
+    <span class="chip">A* Search</span>
+    <span class="chip">Tool Use</span>
+    <span class="chip">Decision Tree</span>
+    <span class="chip">Cost Function</span>
+    <span class="chip">Pruning</span>
+  </div>
+  <div class="read-time">📖 约 22 分钟阅读</div>
+</a>
+
+<a class="card" href="bavt_deep_analysis.html">
+  <div class="date">2026-05-21</div>
+  <div class="tags">
+    <span class="tag" style="border-color:rgba(168,237,234,.4);color:#a8edea;">Preprint 2026</span>
+    <span class="tag">论文解读</span>
+  </div>
+  <h2>Spend Less, Reason Better (BAVT)</h2>
+  <div class="sub">预算感知价值树搜索 — 让 LLM 智能体在有限预算下精打细算地推理</div>
+  <div class="desc">UBC & Vector Institute 提出的免训练推理时框架 BAVT，通过残差价值预测克服 LLM 自评过度自信，预算条件节点选择实现无参数的探索-利用过渡。在1×预算下超过 4× 资源基线性能，证明智能预算管理 > 暴力计算扩展。具有理论收敛保证。</div>
+  <div class="chips">
+    <span class="chip">Budget-Aware</span>
+    <span class="chip">Residual Value</span>
+    <span class="chip">Multi-Hop QA</span>
+    <span class="chip">Convergence Guarantee</span>
+    <span class="chip">Training-Free</span>
+  </div>
+  <div class="read-time">📖 约 25 分钟阅读</div>
+</a>
+
+<a class="card" href="reactree_deep_analysis.html">
+  <div class="date">2026-05-21</div>
+  <div class="tags">
+    <span class="tag" style="border-color:rgba(161,140,209,.4);color:#a18cd1;">AAMAS 2026</span>
+    <span class="tag">论文解读</span>
+  </div>
+  <h2>ReAcTree: Hierarchical LLM Agent Trees</h2>
+  <div class="sub">带控制流的层次化 LLM 智能体树 — 长周期任务规划从"单线冒险"变为"团队协作"</div>
+  <div class="desc">将复杂目标分解为动态智能体树中的子目标，引入编程式控制流（顺序/循环/条件/并行）编排执行策略，配合双记忆系统（情景记忆+工作记忆）实现跨子目标知识共享。WAH-NL 上目标成功率 61%（ReAct 仅 31%），提升约 2×。</div>
+  <div class="chips">
+    <span class="chip">Hierarchical Planning</span>
+    <span class="chip">Control Flow</span>
+    <span class="chip">Dual Memory</span>
+    <span class="chip">Embodied Agent</span>
+    <span class="chip">Behavior Tree</span>
+  </div>
+  <div class="read-time">📖 约 25 分钟阅读</div>
+</a>
+
+<a class="card" href="agentic_reasoning_deep_analysis.html">
+  <div class="date">2026-05-21</div>
+  <div class="tags">
+    <span class="tag" style="border-color:rgba(247,151,30,.4);color:#f7971e;">arXiv Survey 2026</span>
+    <span class="tag">论文解读</span>
+  </div>
+  <h2>Agentic Reasoning for Large Language Models</h2>
+  <div class="sub">♢ Foundations · Evolution · Collaboration ♢ — 从推理到行动的统一路线图</div>
+  <div class="desc">UIUC 等 6 机构 29 位作者联合撰写的综述，系统梳理智能体推理的三维分类框架：环境动态性（基础→进化→集体）、优化设置（In-Context vs. Post-Training）、应用评估。覆盖规划/工具/搜索/反馈/记忆/多智能体等方向，附带 Awesome-Agentic-Reasoning 200+ 论文集。</div>
+  <div class="chips">
+    <span class="chip">Survey</span>
+    <span class="chip">Multi-Agent</span>
+    <span class="chip">Self-Evolution</span>
+    <span class="chip">Planning</span>
+    <span class="chip">3D Taxonomy</span>
+  </div>
+  <div class="read-time">📖 约 30 分钟阅读</div>
+</a>
 
 <a class="card" href="deepconf_deep_analysis.html">
   <div class="date">2026-05-15</div>
