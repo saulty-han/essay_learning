@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>DeepConf 论文全文翻译 — Deep Think with Confidence</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="translation_style.css">
+<script>window.MathJax={tex:{inlineMath:[['$','$'],['\\(','\\)']],displayMath:[['$$','$$'],['\\[','\\]']]},svg:{fontCache:'global'}};</script>
+<script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+</head>
+<body>
+<div class="container">
+
+<a class="back-btn" href="index.html">&#8592; 返回目录</a>
+
+<!-- HERO -->
+<div class="hero">
+<h1 class="hero-title">DeepConf：带置信度的深度思考<br><span style="font-size:1.1rem;color:#666;font-weight:400;">Deep Think with Confidence</span></h1>
+<p class="hero-sub">利用模型内部置信度信号在生成时/生成后动态过滤低质量推理轨迹，无需额外训练或调参，在测试时同时提升效率与精度</p>
+<div class="hero-meta">Yichao Fu, Xuewei Wang, Yuandong Tian, Jiawei Zhao · Meta AI / UCSD · arXiv:2508.15260</div>
+<div class="tag-row"><span class="tag">Test-time Scaling</span><span class="tag">Confidence</span><span class="tag">Self-Consistency</span><span class="tag">Early Stopping</span><span class="tag">Reasoning</span></div>
+</div>
+
+<!-- TOC -->
+<div class="toc"><h3>目录</h3><ol>
+<li><a href="#sec-abstract">摘要 (Abstract)</a></li>
+<li><a href="#sec-intro">1. 引言 (Introduction)</a></li>
+<li><a href="#sec-conf">2. 置信度作为推理质量指标</a></li>
+<li><a href="#sec-method">3. Deep Think with Confidence</a></li>
+<li><a href="#sec-exp">4. 实验 (Experiments)</a></li>
+<li><a href="#sec-future">5. 未来工作 (Future Work)</a></li>
+<li><a href="#sec-concl">6. 结论 (Conclusion)</a></li>
+</ol></div>
+
+<!-- ======== ABSTRACT ======== -->
+<h2 id="sec-abstract" class="sec-title">摘要 (Abstract)</h2>
+<p>大语言模型（LLM）通过自一致性多数投票等测试时缩放方法在推理任务上展现出巨大潜力，但该方法常导致准确率收益递减且计算开销高昂。为此，我们提出 <strong>DeepConf（带置信度的深度思考）</strong>——一种简单而强大的方法，在测试时同时提升推理效率与性能。DeepConf 利用模型内部置信度信号，在生成时或生成后动态过滤低质量推理轨迹；它无需额外模型训练或超参调优，可无缝集成进现有服务框架。我们在多种推理任务与最新开源模型（含 Qwen3、GPT-OSS 系列）上评估。值得注意的是，在 AIME 2025 等困难基准上，DeepConf@512 达到最高 99.9% 准确率，且相较完整并行思考减少多达 84.7% 的生成 token。</p>
+
+<!-- ======== INTRODUCTION ======== -->
+<h2 id="sec-intro" class="sec-title">1. 引言 (Introduction)</h2>
+<p>自一致性（self-consistency）采样多条推理路径并以多数投票聚合，显著提升推理准确率，但推理开销随每条查询生成的推理轨迹数线性增长，限制实际部署——例如用 Qwen3-8B 在标准多数投票上将 AIME 2025 的 pass@1 从 68% 提升至 82%，每题需额外 511 条轨迹、消耗 1 亿 token。此外，并行思考存在收益递减：性能常随轨迹数增加而饱和或下降；标准多数投票对所有轨迹一视同仁，忽略质量差异，当低质量轨迹主导投票时导致次优。</p>
+<p>近期工作利用 next-token 分布统计评估轨迹质量（高置信度对应低熵、低不确定性），通过聚合熵/置信度等 token 级统计量计算全局置信度以过滤低质量轨迹。但全局置信度有两大局限：(1) 掩盖局部推理步的置信度波动，可能隐藏特定中间步的关键推理断裂；(2) 需先生成完整轨迹才能计算，无法对低质量轨迹早停。</p>
+<p>我们提出 <strong>DeepConf</strong>——一种结合并行思考与置信度感知过滤的简单而有效的测试时方法，基于<strong>局部</strong>置信度测量，在离线（生成后）与在线（生成时）两种模式下识别并丢弃低置信度轨迹，在保持或提升精度的同时减少不必要的 token 生成。在 AIME 2025 上，离线 DeepConf@512（GPT-OSS-120B，无工具）达 99.9%，饱和该基准（cons@512 为 97.0%、pass@1 为 91.8%）；在线模式相较标准并行思考最多减少 84.7% token 且保持/超过精度。</p>
+
+<div class="figure-wrap">
+<img src="images/deepconf_pages/p01.png" alt="Figure 1">
+<div class="fig-caption"><strong>图 1：</strong>上：DeepConf 在 AIME 2025 的结果；下：基于 DeepConf 的并行思考（含早停逻辑与置信度加权多数投票的伪代码）。</div>
+</div>
+
+<!-- ======== CONFIDENCE AS INDICATOR ======== -->
+<h2 id="sec-conf" class="sec-title">2. 置信度作为推理质量指标</h2>
+<p>近期工作表明，可用模型内部 token 分布导出的指标有效估计轨迹质量（Kang et al., 2025），无需外部监督即可区分高质量与错误轨迹。</p>
+<p><strong>Token 熵（式 1）：</strong> $H_i=-\sum_j P_i(j)\log P_i(j)$，低熵表示分布尖锐、模型确定，高熵表示不确定。</p>
+<div class="eq-block">$$H_i=-\sum_j P_i(j)\log P_i(j)$$</div>
+<p><strong>Token 置信度（式 2）：</strong> $C_i=-\frac{1}{k}\sum_{j=1}^k\log P_i(j)$，即位置 $i$ 处 top-k token 平均负对数概率；高置信度对应尖锐分布。图 2 显示正确与错误轨迹的置信度分布差异。</p>
+<div class="eq-block">$$C_i=-\frac{1}{k}\sum_{j=1}^k\log P_i(j)$$</div>
+<p><strong>平均轨迹置信度（式 3）：</strong> $C_{avg}=\frac{1}{N}\sum_{i=1}^N C_i$，可有效区分正确/错误路径，但存在局限——全局聚合掩盖中间失败（少数高置信 token 可掩盖大量低置信段）、且需完整轨迹才能评估、无法早停。</p>
+<div class="eq-block">$$C_{avg}=\frac{1}{N}\sum_{i=1}^{N}C_i$$</div>
+
+<div class="figure-wrap">
+<img src="images/deepconf_pages/p03.png" alt="Figure 2">
+<div class="fig-caption"><strong>图 2：</strong>正确 vs. 错误推理轨迹在不同置信度指标下的分布（HMMT25 数据：30 题，各 4096 条轨迹）。</div>
+</div>
+
+<!-- ======== METHOD ======== -->
+<h2 id="sec-method" class="sec-title">3. Deep Think with Confidence</h2>
+<p>针对全局置信度的局限，引入捕获局部中间步质量的多种置信度测量（第 3.1 节），并分别用于离线（第 3.2 节）与在线（第 3.3 节）思考。</p>
+<h3 class="subsec-title">3.1 置信度测量</h3>
+<p><strong>组置信度（式 4）：</strong> 以滑动窗口（如 $n=1024$ 或 2048）对轨迹上重叠的 token 段求平均，得到更局部、更平滑的信号：</p>
+<div class="eq-block">$$C_{G_i}=\frac{1}{|G_i|}\sum_{t\in G_i}C_t$$</div>
+<p>中间步中极低置信度（伴随 "wait"、"however"、"think again" 等重复低置信 token）会打断推理流并引发后续错误。<strong>Bottom 10% 组置信度（式 5）：</strong> 取轨迹中置信度最低 10% 的组均值，经验上 10% 能有效捕获最具问题的推理段：</p>
+<div class="eq-block">$$C_{bottom\text{-}10}(t)=\frac{1}{|G_b|}\sum_{G_j\in G_b}C_{G_j}$$</div>
+<p><strong>最低组置信度（式 6）：</strong> $C_{least}(t)=\min_{G_j\in G}C_{G_j}$，即最低置信组的置信度，是 bottom-10% 的特例，用于在线早停。<strong>尾部置信度（式 7）：</strong> $C_{tail}(t)=\frac{1}{|T_{tail}|}\sum_{t\in T_{tail}}C_t$，聚焦最后固定数量 token（如 2048），因长链推理末尾质量常退化、最终步对结论至关重要。图 2 表明 bottom-10% 与 tail 比均值更能分离正确/错误分布。</p>
+<div class="eq-block">$$C_{least}(t)=\min_{G_j\in G}C_{G_j},\qquad C_{tail}(t)=\frac{1}{|T_{tail}|}\sum_{t\in T_{tail}}C_t$$</div>
+<h3 class="subsec-title">3.2 离线思考（带置信度）</h3>
+<p><strong>多数投票：</strong> 每轨迹答案等权，$V(a)=\sum_{t\in T}\mathbb{I}(answer(t)=a)$，取最高票 $\hat a=\arg\max_a V(a)$。<strong>置信度加权多数投票：</strong> 以轨迹置信度 $C_t$ 加权，$V(a)=\sum_{t\in T}C_t\cdot\mathbb{I}(answer(t)=a)$，偏向高置信轨迹支持的答案。<strong>置信度过滤：</strong> 在加权投票基础上仅保留置信度 top-$\eta\%$ 的轨迹（$\eta=10\%$ 聚焦最高置信、$\eta=90\%$ 保留多样性以减偏）。</p>
+
+<div class="figure-wrap">
+<img src="images/deepconf_pages/p05.png" alt="Figure 3">
+<div class="fig-caption"><strong>图 3：</strong>置信度测量与离线带置信度思考的流程示意（含各置信度定义与加权投票/过滤）。</div>
+</div>
+
+<h3 class="subsec-title">3.3 在线思考（带置信度）</h3>
+<p>在线评估置信度可在生成时实时估计轨迹质量、动态终止无希望轨迹，适用于资源受限或需快速响应场景。基于最低组置信度提出 <strong>DeepConf-low</strong> 与 <strong>DeepConf-high</strong> 两种算法，含离线预热与自适应采样两部分。</p>
+<div class="figure-wrap">
+<img src="images/deepconf_pages/p06.png" alt="Figure 4">
+<div class="fig-caption"><strong>图 4：</strong>DeepConf 在线生成流程：离线预热确定停止阈值 $s$，在线生成中当组置信度低于 $s$ 即早停该轨迹。</div>
+</div>
+<p><strong>离线预热：</strong> 对每个新提示生成 $N_{init}$ 条预热轨迹（如 16），停止阈值 $s=Percentile_{100-\eta}(\{C_t\})$，DeepConf-low 取 $\eta=10\%$（第 90 百分位）、DeepConf-high 取 $\eta=90\%$（第 10 百分位）。<strong>自适应采样：</strong> 以共识度 $\beta=\frac{V(\hat a)}{\sum_a V(a)}$ 衡量难度，$\tau$ 为预设共识阈值；若 $\beta<\tau$ 则继续生成至预算 $B$，否则停止。在线早停的轨迹组置信度 $&lt;s$，会被离线过滤排除，故在线过程近似离线最低组置信度策略，且随 $N_{init}$ 增大精度趋近离线（算法 1、2）。</p>
+
+<!-- ======== EXPERIMENTS ======== -->
+<h2 id="sec-exp" class="sec-title">4. 实验 (Experiments)</h2>
+<h3 class="subsec-title">4.1 实验设置</h3>
+<p><strong>模型：</strong> DeepSeek-8B（Qwen3-8B 蒸馏自 R1）、Qwen3-8B/32B、GPT-OSS-20B/120B。<strong>基准：</strong> AIME24/25、BRUMO25、HMMT25（高难数学竞赛）、GPQA-Diamond（研究生级 STEM）。<strong>基线：</strong> 自一致性（cons@K）+ 多数投票。<strong>设置：</strong> 每题预生成 4096 条完整轨迹池；离线从中重采样 K=512 工作集并投票；在线重采样驱动带早停的实时生成。报告 Pass@1、Cons@K、Measure@K（置信度加权投票）、Measure+top-$\eta\%$@K，及总生成 token；所有指标在 64 次独立运行上平均。</p>
+<h3 class="subsec-title">4.2 离线评估</h3>
+<div class="table-note">
+<strong>表 1：离线置信度测量基准（准确率 %，K=512）。</strong>相比 Cons@512，置信度加权+过滤在多数设置下更优；$\eta=10\%$ 增益最大（如 DeepSeek-8B AIME25 82.3%→87.4%、Qwen3-32B AIME24 85.3%→90.8%；GPT-OSS-120B AIME25 达 99.9%）。Bottom-10% 与 Tail 等局部测量效果突出；激进过滤 ($\eta=10\%$) 偶尔因模型对错误题过度自信而受损，此时保守 $\eta=90\%$ 更安全。所有方法相对 pass@1 均有大幅提升。
+</div>
+<p>图 5 显示最低组置信度过滤（DeepSeek-8B）在四个数据集上，保留 top 10% 较多数投票最佳精度提升 +0.26~+9.38 个百分点（均 +5.27），较单轨迹提升 +10.26~+20.94（均 +14.30）；保守 $\eta=90\%$ 匹配或略超多数投票最佳精度（+0.16~+0.57，均 +0.29），同时仍大幅优于单轨迹。这启发了在线变体：聚焦最低置信段可可靠识别局部推理断裂，为离线过滤与在线早停提供强信号。</p>
+<div class="figure-wrap">
+<img src="images/deepconf_pages/p09.png" alt="Figure 5">
+<div class="fig-caption"><strong>图 5：</strong>最低组置信度过滤的离线精度（DeepSeek-8B）随投票预算变化，对比保留 top 90%/10% 与多数投票/无投票。</div>
+</div>
+<h3 class="subsec-title">4.3 在线评估</h3>
+<p>在 K∈{32,64,128,256,512} 下评估在线算法的精度-开销权衡。DeepConf-low ($\eta=10\%$) 与 DeepConf-high ($\eta=90\%$) 持续采样至共识 $\ge\tau(=0.95)$ 或达预算 K。表 2 显示 K=512 下，相较多数投票基线，DeepConf-low 在 AIME24/25/BRUMO25/HMMT25 上减少 43–79% token，多数情况下精度持平或提升（如 DeepSeek-8B AIME24 +5.8%），少数设置略有下降；更保守的 DeepConf-high 节省 18–59% token 而精度几乎不变。</p>
+<div class="table-note">
+<strong>表 2：在线 DeepConf 基准（K=512 的准确率与 token×10⁸）。</strong>例 GPT-OSS-120B：Cons@512 生成 3.23×10⁸ token / 97.1%；DeepConf-high 1.42（-56.0%）/97.0%；DeepConf-low 0.49（-84.7%）/97.9%。DeepSeek-8B AIME24：Cons 3.55/86.7%；high 1.45（-59.0%）/86.7%；low 0.78（-77.9%）/92.5%。
+</div>
+<p>图 7 对比 DeepConf 与多数投票基线（DeepSeek-8B）：DeepConf-low 平均省 token 62.88%、high 省 47.67%，精度相当。图 6 展示 GPT-OSS-120B 各任务 token 节省模式（最高 85.8%）。这些结果印证设计：用最低置信段门控轨迹可提供强局部早停信号，自适应共识停止进一步压缩 token 而不损精度。</p>
+
+<div class="figure-wrap">
+<img src="images/deepconf_pages/p10.png" alt="Figure 6">
+<div class="fig-caption"><strong>图 6：</strong>基于 GPT-OSS-120B 的不同任务生成 token 对比（DeepConf-low/high vs cons@512）。</div>
+</div>
+<div class="figure-wrap">
+<img src="images/deepconf_pages/p10.png" alt="Figure 7">
+<div class="fig-caption"><strong>图 7：</strong>在线最低组置信度过滤的精度 vs. 生成 token（DeepSeek-8B），high/low 意为投票保留 top 90%/10% 置信轨迹。</div>
+</div>
+
+<!-- ======== FUTURE WORK ======== -->
+<h2 id="sec-future" class="sec-title">5. 未来工作 (Future Work)</h2>
+<p>几个有前景方向：(1) 将 DeepConf 扩展到强化学习，用基于置信度的早停引导策略探索、提升训练样本效率；(2) 解决模型对错误推理路径过度自信的问题（本实验观察到的关键局限）；(3) 探索更鲁棒的置信度校准与不确定性量化方法，以更好识别并缓解过度自信但错误的预测。</p>
+
+<!-- ======== CONCLUSION ======== -->
+<h2 id="sec-concl" class="sec-title">6. 结论 (Conclusion)</h2>
+<p>我们提出 <strong>DeepConf</strong>——一种简单而有效的方法，在集成投票场景中显著提升推理性能与计算效率。通过在 SOTA 推理模型与困难数据集上的广泛实验，DeepConf 在 8B 至 120B 参数跨模型尺度上均展现一致的精度提升与有意义的 token 节省。我们希望该方法彰显测试时压缩作为高效 LLM 推理实用且可扩展方案的潜力。</p>
+
+<div class="footer">
+论文全文翻译 · DeepConf (arXiv:2508.15260, 2025)<br>
+翻译自 Meta AI / UCSD 原文 · 含 Figure 1–7 及 Table 1–2（论文原页高清渲染图）<br>
+图片来源：论文 PDF 页面高清渲染
+</div>
+
+</div><!-- end .container -->
+</body>
+</html>

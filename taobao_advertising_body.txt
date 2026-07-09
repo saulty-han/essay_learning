@@ -1,0 +1,732 @@
+=== PAGE 1 ===
+Enhancing Taobao Display Advertising with Multimodal
+Representations: Challenges, Approaches and Insights
+Xiang-Rong Sheng∗
+Feifan Yang∗
+Litong Gong∗
+Biao Wang∗
+xiangrong.sxr@alibaba-inc.com
+yangfeifan.yff@alibaba-inc.com
+gonglitong.glt@alibaba-inc.com
+eric.wb@alibaba-inc.com
+Alibaba Group
+Beijing, China
+Zhangming Chan
+Yujing Zhang
+Yueyao Cheng
+Yong-Nan Zhu
+zhangming.czm@alibaba-inc.com
+jinghan.zyj@alibaba-inc.com
+yueyao.syy@alibaba-inc.com
+yongnan.zy@alibaba-inc.com
+Alibaba Group
+Beijing, China
+Tiezheng Ge
+Han Zhu†
+Yuning Jiang
+Jian Xu
+Bo Zheng
+tiezheng.gtz@alibaba-inc.com
+zhuhan.zh@alibaba-inc.com
+mengzhu.jyn@alibaba-inc.com
+xiyu.xj@alibaba-inc.com
+bozheng@alibaba-inc.com
+Alibaba Group
+Beijing, China
+ABSTRACT
+Despite the recognized potential of multimodal data to improve
+model accuracy, many large-scale industrial recommendation sys-
+tems, including Taobao display advertising system, predominantly
+depend on sparse ID features in their models. In this work, we
+explore approaches to leverage multimodal data to enhance the
+recommendation accuracy. We start from identifying the key chal-
+lenges in adopting multimodal data in a manner that is both ef-
+fective and cost-efficient for industrial systems. To address these
+challenges, we introduce a two-phase framework, including: 1) the
+pre-training of multimodal representations to capture semantic sim-
+ilarity, and 2) the integration of these representations with existing
+ID-based models. Furthermore, we detail the architecture of our
+production system, which is designed to facilitate the deployment
+of multimodal representations. Since the integration of multimodal
+representations in mid-2023, we have observed significant perfor-
+mance improvements in Taobao display advertising system. We
+believe that the insights we have gathered will serve as a valuable
+resource for practitioners seeking to leverage multimodal data in
+their systems.
+CCS CONCEPTS
+•Information systems → Information retrieval.
+KEYWORDS
+Multimodal Representations, Recommendation System
+∗Equal contribution.
+†Corresponding author.
+Permission to make digital or hard copies of all or part of this work for personal or
+classroom use is granted without fee provided that copies are not made or distributed
+for profit or commercial advantage and that copies bear this notice and the full citation
+on the first page. Copyrights for components of this work owned by others than the
+author(s) must be honored. Abstracting with credit is permitted. To copy otherwise, or
+republish, to post on servers or to redistribute to lists, requires prior specific permission
+and/or a fee. Request permissions from permissions@acm.org.
+CIKM ’24, October 21–25, 2024, Boise, ID, USA
+© 2024 Copyright held by the owner/author(s). Publication rights licensed to ACM.
+ACM ISBN 979-8-4007-0436-9/24/10. . . $15.00
+https://doi.org/10.1145/3627673.3680068
+ACM Reference Format:
+Xiang-Rong Sheng, Feifan Yang, Litong Gong, Biao Wang, Zhangming Chan,
+Yujing Zhang, Yueyao Cheng, Yong-Nan Zhu, Tiezheng Ge, Han Zhu, Yuning
+Jiang, Jian Xu, Bo Zheng. 2024. Enhancing Taobao Display Advertising
+with Multimodal Representations: Challenges, Approaches and Insights. In
+Proceedings of the 33rd ACM International Conference on Information and
+Knowledge Management (CIKM ’24), October 21–25, 2024, Boise, ID, USA.
+ACM, New York, NY, USA, 8 pages. https://doi.org/10.1145/3627673.3680068
+1 INTRODUCTION
+Traditionally, the recommendation models employed in Taobao’s
+display advertising system, as with many other industrial systems,
+have largely relied on discrete IDs as features. Despite their wide-
+spread use, ID-based models have intrinsic drawbacks, such as the
+inability to capture the semantic information contained within
+multimodal data.
+To address these issues, certain industrial systems have attempted
+to incorporate multimodal data into the ID-based models [26, 29].
+Typically, these approaches employ a two-phase framework, in-
+cluding 1) acquiring multimodal representations through either
+generic or scenario-specific pre-training, and 2) integrating these
+representations into the recommendation models.
+Despite these advancements, a significant number of industrial
+systems still depend exclusively on ID features. This is often attrib-
+uted to the concern that the performance gains from multimodal
+data might not compensate for the costs involved in their deploy-
+ment. These costs encompass pre-training multimodal encoders,
+incrementally generating representations for new items, and other
+necessary upgrades to both online servers and near-line training
+systems. Therefore, the successful integration of multimodal repre-
+sentations hinges on the ability to boost their performance benefits
+while concurrently minimizing deployment costs.
+To accomplish these two key objectives, three practical chal-
+lenges should be addressed:
+• Design of the pre-training task. The effectiveness of multi-
+modal representations in enhancing performance hinges on their
+ability to provide meaningful semantic information, which is diffi-
+cult for ID features to capture. It is essential to design pre-training
+arXiv:2407.19467v1  [cs.IR]  28 Jul 2024
+=== PAGE 2 ===
+CIKM ’24, October 21–25, 2024, Boise, ID, USA Xiang-Rong Sheng et al.
+Feature Interaction
+Historical
+Interacted Items
+ID Embedding
+Target 
+Item
+Other
+Featues
+Target  
+Item
+Historical
+Interacted Items
+Multimodal Embedding     
+SimTier MAKE
+Image / Text of  
+the Purchased Item
+User Query 
+Image / Text Memory Bank 
+Multimodal Encoder
+InfoNCE Loss
+(b). Integration
+MLP
+(a). Pre-Training
+Momemtum
+Encoder
+Freezing
+ Updating
+Figure 1: An overview of our two-phase framework: the pre-training of multimodal representations, followed by the integration
+of pre-trained representations into recommendation models. In the first phase (refer to Figure (a)), we undertake pre-training
+through semantic-aware contrastive learning. This method equips the multimodal representations with ability to identify
+semantic similar items. Subsequently, in the second phase (refer to Figure (b)), we introduce our proposed SimTier and make
+methods to effectively incorporate the pre-trained multimodal representations into the recommendation models.
+tasks that enable multimodal representations to encapsulate such
+semantic information.
+• Integration of multimodal representation. The inherent dis-
+crepancies between ID features and multimodal representations,
+such as difference in training epochs, calls for approaches that
+can effectively incorporating multimodal representations into the
+ID-based model. These approaches should leverage the strengths
+of each feature type to enhance the model’s overall performance.
+• Design of the production system. The entire production work-
+flow, including the generation of multimodal representations for
+new items and their up-to-date application in downstream tasks,
+should be designed with efficiency.
+To address these challenges, we adopt a two-phase framework as
+depicted in Figure 1. Specifically, during the pre-training phase, we
+propose the Semantic-aware Contrastive Learning (SCL) method.
+In this phase, we utilize the user’s search query and subsequent
+purchase action to construct semantically similar sample pairs, cap-
+turing the dimensions of semantic similarity that are most relevant
+to users in e-commerce scenarios. For negative samples, we draw
+from a large memory bank. The SCL method enables multimodal
+representations to effectively measure semantic similarities among
+items.
+Upon obtaining high-quality multimodal representations, we
+propose two approaches to incorporate these representations into
+the existing ID-based model. Firstly, we develop an approach named
+SimTier to measure the degree of similarity between the target item
+and items the user has previously interacted with. The resulting
+SimTier vector is then concatenated with other embeddings and fed
+into the subsequent layers. Furthermore, to address the discrepancy
+in training epochs between multimodal representations and ID
+embeddings, we introduce the MultimodAl Knowledge Extractor
+(MAKE) module. The MAKE module separates the optimization
+of parameters associated with multimodal representations from
+those of the ID-based model, enabling more effective learning for
+the parameters related to multimodal representations.
+We also present the design of our production system that facili-
+tates the deployment of multimodal representations. Specifically,
+the system generates multimodal representations for newly intro-
+duced items in real-time and ensures these representations are
+immediately available for the training infrastructure and the online
+prediction server. This design achieves minimal latency—merely a
+few seconds between the introduction of an item and the model’s
+use of its multimodal representation. Since mid-2023, multimodal
+representations have been deployed in Taobao display advertising
+system, leading to significant performance improvements.
+2 PRELIMINARIES
+Before delving into the specifics, we first introduce the typical
+ID-based model structure utilized in different stages (including
+retrieval [15, 38], pre-ranking [27, 34], and ranking stages [1, 3, 7,
+10, 36]) of industrial system.
+ID Features in Recommendation Models: Common recom-
+mendation models are trained on large-scale datasets comprising
+billions of ID features [16, 32]. These ID features serve to represent
+users profiles, user historical interacted items, the target item (to
+be predicted), and the contextual information. For example, we can
+represent the target item with its respective item ID and category ID
+and represent user historical interacted items through a sequence
+of corresponding item IDs and category IDs.
+Structure of ID-based Model: The ID-based recommendation
+model follows an embedding and MLP (Multi-Layer Perceptron)
+architecture, which typically incorporates historical behavior mod-
+eling modules [35, 36]. Initially, all ID features are converted into
+embeddings. The historical behavior modeling modules then mea-
+sures a user’s interest towards the target item by analyzing the
+relevance between the embedding of target item and embeddings
+=== PAGE 3 ===
+Enhancing Taobao Display Advertising with Multimodal Representations: Challenges, Approaches and Insights CIKM ’24, October 21–25, 2024, Boise, ID, USA
+of the user’s historical interacted items. Specifically, the modules
+produce fixed-length vectors by aggregating the embeddings of
+the target item and those of the historical interacted items. These
+vectors are then concatenated with other ID embeddings to form
+the input for subsequent MLP, which produce the final prediction.
+3 PRE-TRAINING OF MULTIMODAL
+REPRESENTATIONS
+As for the multimodal data, its utilization can improve historical
+behavior modeling. Specifically, multimodal data can be used to
+measure the semantic similarity between the target item and users’
+historical interacted items. Take item images as an example, they
+can be used to measure the visual similarity between the image of
+the target item and those of historical interacted items. Intuitively,
+a higher semantic similarity indicates a stronger resemblance be-
+tween the target item and the users’ historical behavior, suggesting
+a higher likelihood of the user’s interest. This insight emphasizes
+the importance of designing a pre-training task tailored to enable
+multimodal representations to effectively discern the semantic sim-
+ilarity across item pairs.
+3.1 Semantic-Aware Contrastive Learning
+To derive representations with the capability to discern semantic
+similarity, we propose the semantic-aware contrastive learning
+(SCL) method that attracts the semantically similar sample pairs
+and repulses the dissimilar sample pairs. To accomplish this, it is
+essential to define semantically similar and dissimilar pairs for su-
+pervision. To understand the importance of this point, consider
+the example shown in Figure 5, where the three pillows are almost
+identical yet display slight variances, like differences in patterns or
+minor appearance discrepancies. If the definition of semantically
+similar pairs is inadequate, the representation might fail to cap-
+ture such subtle differences. Indeed, these slight distinctions are
+frequently missed by representations focused on capturing general
+concepts.
+In the following, we will elaborate our construction of pre-
+training dataset tailored for e-commerce scenario and the opti-
+mization strategies of contrastive learning process.
+3.2 Construction of Pre-Training Dataset
+In the context of e-commerce, a user’s search query and subse-
+quent purchase action often signifies a strong semantic similarity
+between the query and the purchased item. For example, if a user
+searches for an image of a pillow and subsequently purchases a
+pillow, this sequence of actions indicates that the two images (the
+queried image and the image of the purchased item) are semanti-
+cally similar enough to satisfy the user’s purchase intentions. Thus,
+as shown in Table 1, in training the text encoder, we pair the text
+of the user’s search query with the title of the item they ultimately
+purchased as the semantically similar pair. Similarly, for the im-
+age modality, user’s image query (obtained from the image search
+scenario of Taobao) is paired with the image of the subsequent
+purchased item. This pairing strategy naturally captures the di-
+mensions of semantic similarity that are most relevant to users in
+e-commerce scenarios, reflecting the elements that influence their
+purchasing decisions.
+Table 1: The construction of semantically similar pair for
+pre-training.
+modality semantically similar pair
+Image <user’s image query, image of the purchased item>
+Text <user’s text query, title of the purchased item>
+For each semantically similar pair, we consider all other samples
+as potential dissimilar samples, which can be achieved by using
+the samples in the current mini-batch as negatives. To further im-
+prove the model performance, we aim to increase the number of
+negative samples available during training. Specifically, we draw
+inspiration from MoCo [12] and adopt a technique that updates the
+model with momentum, facilitating sampling more negatives from
+a larger memory bank. More sophisticated strategies for construct-
+ing negative pairs, such as identifying hard negatives [23], will be
+elaborated in Section 6.1.2.
+3.3 Optimization
+We utilize the well-regarded InfoNCE loss [19] as the loss function.
+Given an encoded query 𝑞 and its corresponding encoded positive
+sample 𝑘, along with 𝑘0, 𝑘1, . . . , 𝑘𝐾 representing the set of encoded
+sample representations in the memory bank, where 𝐾 denotes the
+memory bank size [12], the InfoNCE loss employs the dot product
+to measure similarity (with all representations being L2 normalized).
+As shown in Equation 1, the loss value decreases when query 𝑞
+closely matches its designated positive sample 𝑘 and diverges from
+all other samples within the memory bank.
+𝐿InfoNCE = − log exp(𝑞 ·𝑘+)/𝜏
+Í𝐾
+𝑖=0 exp(𝑞 ·𝑘𝑖 )/𝜏
+. (1)
+Here, 𝜏 represents a learnable temperature parameter. For our ex-
+periments, we set the value of 𝐾 to 196,800.
+By this means, the SCL method enables the representations to
+have the ability to discern fine differences between comparable
+items, which are crucial for recommendation models.
+4 INTEGRATION WITH RECOMMENDATION
+MODELS
+A direct method to integrate multimodal representations into an
+ID-based recommendation model involves concatenating these mul-
+timodal representations with the ID embeddings for both the target
+item and users’ past interacted items [9, 29]. This concatenation
+is followed by the utilization of user behavior modeling modules,
+which are subsequently input into the MLP for the final prediction.
+Although this method is straightforward, we find that the perfor-
+mance improvements are modest. To investigate this matter, we
+share our observations and insights.
+4.1 Observations and Insights
+We begin by sharing our observations and insights on incorporating
+multimodal representations.
+Observation 1: simplifying the usage of multimodal repre-
+sentations improves performances. Our research reveals that
+=== PAGE 4 ===
+CIKM ’24, October 21–25, 2024, Boise, ID, USA Xiang-Rong Sheng et al.
+…
+Deep Interest Network Shallow MLP
+MAKE
+Multi-Epoch Training
+(b). MAKE
+…
+Stratify
+Semantic
+Similarity…
+(a). SimTier
+SimTier
+Target Item Historical Interacted Items 
+-1 1 0 
+5 
+4 
+3 
+2 
+1 
+Target Item Historical Interacted Items Target  
+Item
+Historical
+Interacted Items
+Multimodal Embedding      
+SimTier MAKE
+Figure 2: An illustration of the proposed SimTier and Multimodal Knowledge Extractor ( MAKE) approaches, with details
+provided in Section 4.2 and 4.3, respectively.
+the direct integration of multimodal representations into the ID-
+based model does not yield optimal performance, as explained in
+more detail in Section 6.3. This issue arises because the parameters
+associated with multimodal representations, e.g., the parameters of
+the MLP that are connected with multimodal representations, are
+not adequately learned during the joint training process with the ID
+embeddings [29]. In contrast, strategies that simplify the usage of
+multimodal representations, for instance, transforming them into
+semantic IDs (thereby representing the embedding vectors with
+IDs) [26, 29], appear to offer improved performance.
+Observation 2: ID-based and multimodal-based models
+have training epoch discrepancy.In industrial scenario, ID-based
+models are typically trained for only one epoch to avoid overfit-
+ting [33]. In contrast, models in CV and NLP field often undergo
+training over multiple epochs. A natural question arises: how many
+training epochs are ideal for a multimodal-based recommendation
+model? To answer this question, we developed a recommendation
+model that exclusively utilizes multimodal representations as input
+features, without any ID features, and analyzed how its performance
+varied with the number of training epochs.
+The detailed convergence curve is illustrated in Figure 3. We
+find that model leveraging multimodal data benefits from training
+across multiple epochs on the same dataset, with its performance
+showing notable enhancements as the number of epochs increases.
+In contrast, ID-based models suffer from the one-epoch overfitting
+phenomenon, where model performance dramatically degrades
+at the beginning of the second epoch [ 33]. The result suggests
+that the parameters associated with multimodal representations
+require more epochs to converge properly, which contrasts with
+the behavior of the ID-based model. Consequently, when in-
+corporating multimodal representations into an ID-based
+model, and trained over only one epoch, there is a risk that
+the multimodal-related parameters may not be sufficiently
+trained.
+4.2 Method I: SimTier
+The observation 1 calls for simplifying the usage of multimodal
+representations. To this end, we propose a straightforward yet
+effective method SimTier. As shown in Figure 2 (a),SimTier begins
+by computing the dot product similarity between the multimodal
+representation of the target candidate item, denoted as 𝑣𝑐, and the
+0.59
+0.60
+0.61
+ MM
+ID
+0 2 4 6 8 10
+Epoch
+0.55
+0.60
+0.65
+Figure 3: The multimodal-based CTR prediction model (MM)
+demonstrates a continuous increase in GAUC after several
+training epochs. In contrast, the ID-based model (ID) shows a
+sharp decline in GAUC during testing after the second epoch
+of training.
+multimodal representations of the user’s historically interacted
+items {𝑣𝑖 }𝐿
+𝑖=1,
+𝑠𝑖 = 𝑣𝑖 ·𝑣𝑐, ∀𝑖 ∈ { 1, . . . , 𝐿}. (2)
+Following the calculation of the similarity scores, we partition
+the score range of [-1.0, 1.0] into N predefined tiers. Within each
+tier, we count the number of similarity scores that fall into that cor-
+responding range. Hence, we obtain an N-dimensional vector, with
+each dimension representing the number of similarity scores in the
+corresponding tier. Thus, SimTier effectively converts a set of high-
+dimensional multimodal representations into a N-dimensional vec-
+tor that encapsulate the degree of similarity between the target item
+and the user’s historical interactions. The obtainedN-dimensional
+vector is then concatenated with other embeddings and fed to the
+following MLP. We provide the pseudo code of SimTier in Algo-
+rithm 1.
+4.3 Method II: Multimodal Knowledage
+Extractor (MAKE)
+To address the difference in training epochs required for ID fea-
+tures versus multimodal representations, we introduce theMultimodAl
+Knowledge Extractor (MAKE) module, decoupling the optimiza-
+tion of multimodal related parameters from that of ID features.
+=== PAGE 5 ===
+Enhancing Taobao Display Advertising with Multimodal Representations: Challenges, Approaches and Insights CIKM ’24, October 21–25, 2024, Boise, ID, USA
+Algorithm 1 A Tensorflow-style Pseudocode of the SimTier.
+# B: batch size, S: sequence length, N: tier number, D: dim
+# Input: target [B, D], seq [B, S, D]
+# Output: sim_tier [B, N]
+# Compute the similarity scores [B, S]
+sim_score = reduce_sum(expand_dims(target, 1)*seq, axis=2)
+# Assign tier to each score [B, S]
+indices = reshape(ceil((sim_score + 1) / 2 * N), [-1, S])
+# Accumulate counts for each tier [B, N]
+weight = equal(
+reshape(range(0, N, 1), [1, N, 1]),
+expand_dims(indices, axis=1)
+)
+sim_tier = reduce_sum(weight, axis=2, keep_dims=True)
+The MAKE module consist of two steps: 1) multi-epoch training to
+extract useful multimodal knowledge and 2) knowledge utilization
+by the downstream task.
+Multi-epoch training of multimodal related parameters.
+The goal of theMAKE module is pre-training the parameters related
+to multimodal representations over multiple epochs to ensure their
+convergence. In practice, we utilize the CTR prediction task as the
+recommendation pre-training task. As shown in Figure 2 (b), we
+first develop a DIN-based user behavior modeling module [36]. This
+module processes the pre-trained multimodal representations of the
+target item and historical interacted items, resulting in the output
+vMAKE:
+vMAKE = DIN({vi}L
+i=0, vc). (3)
+After that, vMAKE is fed into a four-layer Multi-layer Perceptron
+(MLPMAKE) and produced the logit ˆ𝑣
+ˆ𝑣 = MLPMAKE (vMAKE). (4)
+Then we optimize the cross-entropy loss between the predicted
+click probability and the binary click label𝑦, as shown in Equation 5.
+LMAKE =
+∑︁
+−𝑦 log 𝜎 ( ˆ𝑣) − ( 1 − 𝑦) log(1 − 𝜎 ( ˆ𝑣)) (5)
+The recommendation pre-training task allows theMAKE module
+to refine its parameters via training over multiple epochs and ex-
+tract knowledge vMAKE from multimodal representations, thereby
+enhancing its effectiveness for recommendation tasks.
+Knowledge utilization. After acquiring the vector vMAKE, the
+subsequent step is to integrate it into the downstream recommen-
+dation task. Practically, we concatenate vMAKE and intermediate
+outputs from MLP MAKE with other embeddings and input this
+combined data into the subsequent layers. The implementation
+of the multi-epoch training of MAKE module reconciles the train-
+ing epochs difference required for ID embeddings and multimodal
+representations, resulting in better performances.
+5 INDUSTRIAL DESIGN FOR ONLINE
+DEPLOYMENT
+In industrial settings, new items (including advertisements) are
+constantly being created. To maintain prediction accuracy for these
+new items, it’s crucial for the recommendation model to acquire the
+multimodal representation of new items in real-time. This calls for
+the ability of continuous generating multimodal representations
+for new items and a real-time utilization by near-line trainer and
+Multimodal Index Table
+Multimodal Encoders
+Raw ImageRaw Text
+Near-liner Trainer
+Recommendation Model
+Realtime Prediction
+Server
+...Image
+...Text
+Creation of new items
+Online Requests
+Figure 4: An overview of the online system.
+online server. The illustrative overview of our online system is pro-
+vided in Figure 4. To achieve the real-time generation of multimodal
+representations, upon the introduction of new items, the system
+automatically initiates a request to the pre-trained multimodal en-
+coders to compute the multimodal representations for these new
+items. Once inferred, these representations are sent to the multi-
+modal index table. Following this step, the downstream training
+systems and inference servers are able to retrieve the multimodal
+representations from the index table, facilitating near-line training
+and real-time online prediction capabilities. This process ensures
+minimal latency—reduced to just a few seconds—between an item’s
+introduction and the utilization of its multimodal representation
+by the model.
+6 EXPERIMENT
+In this section, we delve into a case study that examines the inte-
+gration of image representations into the CTR prediction model,
+aiming to provide a comprehensive analysis. It is notable that our
+approach is general, capable of accommodating several modal types
+(such as text and video) and applicable across different stages within
+the recommendation systems.
+6.1 Experiment Setup
+6.1.1 Datasets. We start by detailing the datasets used for the
+pre-training phase and the downstream integration phase.
+• Pre-training Dataset. In the pre-training dataset, each sample
+consists of a Query (user’s image query) and a Positive (the image
+of the purchased item). To further enhance the performance, we
+also add a hard Negative (the image of the clicked item triggered
+by the positive item). A case of the pre-training dataset is depicted
+in Figure 5.
+• CTR Prediction Dataset. The CTR prediction dataset is ob-
+tained from the Taobao display advertising system, using impres-
+sion logs of one week.
+6.1.2 Compared Pre-training Methods. We employ a range of widely-
+used pre-training method for comparison.
+• CLIP-O. CLIP-O refers to the CLIP visual encoder (CLIP-ViT-
+B/16) that has been pre-trained using a universal dataset [21].
+• CLIP-E. CLIP-E is the fine-tuned version based on the CLIP-O
+model in the e-commerce scenario using aligned item descrip-
+tions and item images.
+• SCL. The proposed semantic-aware pre-training method. The
+SCL approach employs Momentum Contrast (MoCo) to expand
+the set of negative samples. Furthermore, SCL applies triplet
+=== PAGE 6 ===
+CIKM ’24, October 21–25, 2024, Boise, ID, USA Xiang-Rong Sheng et al.
+QueryImage PositiveImage NegativeImage
+Figure 5: A case of the pre-training dataset.
+loss [23] to each <Query, Positive, Negative> triplet to effectively
+discriminate hard negatives. Our experimental analysis investi-
+gate the impact of excluding triplet loss and MoCo to assess their
+contributions to the overall performance.
+6.1.3 Compared Recommendation Methods. We employ a range of
+widely-used integration approach for comparison.
+• ID-based Model (production baseline). The baseline is a ID-based
+model that underpins our online system.
+• Vector. The Vector method utilize the pre-trained multimodal
+representations as the side-information of each item, and con-
+catenated them with other ID embeddings within the model.
+• SimScore. Similarity Score (SimScore) can be seen as a simplified
+version of the Vector method. The semantic similarity score for
+each historical interacted item with respect to the target item is
+used as side information.
+• SimTier and MAKE. The proposedSimTier and MAKE approaches.
+6.1.4 Evaluation Metrics. We evaluate both the pre-training perfor-
+mance and CTR prediction performance of the proposed methods.
+• Evaluating Pre-training Methods. Throughout our exten-
+sive experimentation, we discovered that the Top-N accuracy
+(Acc@N) is well correlated with the performance of downstream
+recommendation models. In detail, the Acc@N metric quanti-
+fies the ability of the representation to identify semantic similar
+items:
+Acc@N = 1
+𝐷
+𝐷∑︁
+𝑖=1
+I(𝑝𝑖 ∈ Top𝑁 (𝑞𝑖, 𝑆)), (6)
+where 𝐷 denotes the size of test set. The terms 𝑞𝑖 and 𝑝𝑖 corre-
+spond to the query and the positive of the 𝑖-th sample, respec-
+tively. 𝑆 = {𝑝𝑜𝑠𝑖 }𝐷
+𝑖=1 represents the set comprising all positives,
+and Top𝑁 is a function that retrieves the top-N results for each
+query by leveraging a multimodal representation from the set
+𝑆. The symbol I(·) signifies an indicator function that yields a
+value of 1 when the 𝑖-th 𝑝𝑖 is among the retrieval results for 𝑞𝑖,
+and 0 in all other cases.
+• Evaluating Recommendation Methods. We assess the effec-
+tiveness of the CTR prediction model using the AUC and Group
+AUC (GAUC) metrics, where a higher AUC/GAUC value signifies
+superior ranking ability [25, 36, 37].
+6.2 Performance on Pre-Training Dataset
+6.2.1 Rationale for Utilizing Accuracy to Evaluate the Effectiveness
+of Pre-trained Representations. The most precise way to gauge the
+effectiveness of pre-trained representations is by measuring the
+improvement in recommendation accuracy with the integration of
+Table 2: Pre-training performance of different methods
+Method Acc@1 Acc@5
+CLIP-O 0.2559 0.3575
+CLIP-E 0.2952 0.3917
+SCL 0.7474 0.8850
+w/o Triplet Loss 0.6957 0.8604
+w/o Triplet Loss & MoCo 0.5760 0.7590
+Table 3: Overall performance on CTR prediction dataset.
+Method GAUC AUC
+ID-based Model - -
+Vector +0.29% +0.18%
+SimScore +0.77% +0.40%
+SimTier +0.96% +0.59%
+MAKE +0.93% +0.51%
+SimTier+MAKE +1.25% +0.75%
+multimodal representations. However, this evaluation process can
+be lengthy for iteration of pre-training methods, and an interme-
+diary metric for a quicker assessment of pre-trained multimodal
+representations is desirable.
+In our research, we observed a strong correlation between
+the enhancement in pre-training accuracy and the boost in
+recommendation performance. We illustrate this relationship
+in Figure 6(a), where we can see that the improvement of Acc@1
+is consistent with the improvement of GAUC. Hence, we predom-
+inantly rely on pre-training accuracy to determine the quality of
+multimodal representations. The exploration of other potential
+intermediary metrics for evaluating pre-trained multimodal repre-
+sentations remains a interesting topic for future work.
+6.2.2 Importance of Semantic-Aware Contrastive Learning. To in-
+vestigate how different pre-training tasks affect the quality of mul-
+timodal representations, we conducted a series of experiments.
+The results, presented in Table 2, offer two important observa-
+tions. First, the proposed SCL pre-training method surpasses other
+semantic-similarity-agnostic methods, emphasizing the necessity
+of the semantic-aware learning. . Second, incorporating tech-
+niques like Momentum Contrast (MoCo) [12] and Triplet Loss [23]
+further enhances the quality of the multimodal representations,
+demonstrating the choice of negative sample greatly impacts the
+performance.
+6.3 Performance on CTR prediction Dataset
+6.3.1 Performance on Different Integration Strategies. In the CTR
+prediction dataset, we evaluate the proposed SimTier and MAKE
+against other methods. The overall results are shown in Table 3,
+from which two observations can be noted. Firstly, SimTier and
+MAKE outperform other methods significantly. Secondly, the combi-
+nation of SimTier and MAKE can further improve the performance,
+with a 1.25% increase in GAUC, 0.75% increase in AUC compared
+=== PAGE 7 ===
+Enhancing Taobao Display Advertising with Multimodal Representations: Challenges, Approaches and Insights CIKM ’24, October 21–25, 2024, Boise, ID, USA
+0.55 0.60 0.65 0.70 0.75
+Acc@1
+0.4%
+0.6%
+0.8%GAUC
+(a)
+1 2 3 4 5 6 7 8
+Item Groups
+0.0%
+0.5%
+1.0%
+1.5%
+AUC
+LogLoss (b)
+0 2 4 6 8 10
+Epoch
+0.4%
+0.6%
+0.8%
+1.0%GAUC
+ (c)
+Figure 6: (a) The correlation between pre-training metric and CTR prediction performance. (b) The relative improvement on
+item groups with different frequency. (c) The relative performance of the recommendation model with different pre-training
+epochs on MAKE. Note that 0 epoch implies that MAKE does not undergo pre-training, but is instead jointly optimized with the
+downstream task.
+with the ID-based model. The above results demonstrate the ef-
+fectiveness of the proposed methods on integrating multimodal
+representations into the ID-based model.
+6.3.2 Performance on Different Training Epochs of MAKE. To ex-
+plore the impact of multi-epoch pre-training of MAKE on the fi-
+nal recommendation performance, we conduct experiments where
+MAKE is pre-trained for varying numbers of epochs before inte-
+gration into the recommendation model. The results are shown in
+Figure 6(c). Note that 0 epochs implies thatMAKE does not undergo
+pre-training and is instead jointly optimized with the downstream
+task. The results indicate that as the number of pre-training epochs
+for MAKE increases, the performance of the final recommendation
+model also improves. This demonstrates that multi-epoch training
+of MAKE effectively enhances model performance.
+6.3.3 Performance on Infrequent Items. To examine the general-
+ization ability of multimodal representation on long-tail items, we
+assess the relative improvement across item groups categorized by
+their frequency of occurrence. We divide all items into eight groups,
+with Group 1 containing items of the lowest frequency and Group
+8 encompassing those with the highest frequency in the training
+dataset. Afterward, we compute the relative improvement of AUC
+as |AUCMM-AUCID|/AUCID for each group, where 𝑀𝑀 denotes the
+combination of SimTier and MAKE method and 𝐼 𝐷 represents the
+ID-based production baseline model. We also compute the relative
+improvement of LogLoss as |LogLossMM-LogLossID|/LogLossID to
+measure the calibration ability [11, 24]. The result presented in the
+Figure 6(b) indicates that the multimodal representation exhibits
+a significant improvement in all groups, demonstrating the effec-
+tiveness of our model over different types of items. Meanwhile,
+we see a more significant improvement for low-frequency
+items. The result demonstrate that multimodal representations can
+address the shortcomings of ID-based model on long-tail items and
+enhance the prediction accuracy.
+6.4 Online Performance
+Since mid-2023, multimodal representations have been integrated
+into pre-ranking, ranking, and re-ranking models within the Taobao
+display advertising system, resulting in substantial performance
+improvements. For instance, incorporating image representations
+in the CTR prediction model yielded a overall 3.5% increase in CTR,
+a 1.5% boost in RPM, and a 2.9% rise in ROI. Notably, the impact
+was even more pronounced for new ads (created within the last
+24 hours), with improvements of 6.9% in CTR, 3.7% in RPM, and
+7.7% in ROI. The significant gains on new ads also validate the
+effectiveness of multimodal data in mitigating the cold-start issue.
+7 RELATED WORK
+Currently, ID features constitute the core of industrial recommen-
+dation models [2, 5, 7, 14, 31, 33, 35, 36]. Despite their widespread
+adoption, ID features have notable limitations, including the chal-
+lenge of capturing semantic information and the persistent issue of
+the cold-start problem [9, 18, 22, 28]. In contrast, multimodal data
+offer rich semantic information, prompting numerous studies to
+explore their incorporation into recommendation models. Some
+research has investigated the potential of learning multimodal rep-
+resentations in an end-to-end manner alongside recommendation
+model training [4, 8, 30]. However, the substantial computational
+resources required for such processes often preclude their adoption
+in industrial systems. Therefore, our focus is on the two-phase
+paradigm [6, 9, 13, 17, 20, 26, 29], and we aim to share our methods
+and the valuable insights.
+8 CONCLUSION AND DISCUSSION
+Multimodal-based recommendation has attracted attention over
+decades. However, integrating multimodal representations into in-
+dustrial systems presents many hard challenges, particularly in the
+realms of representation quality, integration methods, and system
+implementation—challenges that are amplified within the context
+of large-scale industrial systems.
+In this study, we delve into these challenges and share the ap-
+proaches we employed for pre-training and incorporation of multi-
+modal representations. Additionally, we provide insights gleaned
+from our experiences during the online deployment stage. We be-
+lieve the strategies and insights we have amassed through our jour-
+ney will serve as a valuable resource for those aiming to expedite
+the adoption of multimodal-based recommendations in industrial
+systems.
+=== PAGE 8 ===
+CIKM ’24, October 21–25, 2024, Boise, ID, USA Xiang-Rong Sheng et al.

@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Bao 论文全文翻译 — Learning to Steer Query Optimizers</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="translation_style.css">
+<script>window.MathJax={tex:{inlineMath:[['$','$'],['\\(','\\)']],displayMath:[['$$','$$'],['\\[','\\]']]},svg:{fontCache:'global'}};</script>
+<script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+</head>
+<body>
+<div class="container">
+
+<a class="back-btn" href="index.html">&#8592; 返回目录</a>
+
+<!-- HERO -->
+<div class="hero">
+<h1 class="hero-title">Bao：学会引导查询优化器<br><span style="font-size:1.1rem;color:#666;font-weight:400;">Learning to Steer Query Optimizers</span></h1>
+<p class="hero-sub">基于上下文多臂老虎机与树卷积神经网络的学习型查询优化系统</p>
+<div class="hero-meta">Ryan Marcus, Parimarjan Negi, Hongzi Mao, Nesime Tatbul, Mohammad Alizadeh, Tim Kraska · MIT CSAIL / Intel Labs · SIGMOD 2020 (arXiv:2004.03814)</div>
+<div class="tag-row"><span class="tag">Query Optimization</span><span class="tag">Multi-Armed Bandit</span><span class="tag">Thompson Sampling</span><span class="tag">Tree CNN</span><span class="tag">PostgreSQL</span></div>
+</div>
+
+<!-- TOC -->
+<div class="toc"><h3>目录</h3><ol>
+<li><a href="#sec-abstract">摘要 (Abstract)</a></li>
+<li><a href="#sec-intro">1. 引言 (Introduction)</a></li>
+<li><a href="#sec-model">2. 系统模型 (System Model)</a></li>
+<li><a href="#sec-select">3. 查询 Hint 选择 (Selecting Query Hints)</a></li>
+<li><a href="#sec-related">4. 相关工作 (Related Work)</a></li>
+<li><a href="#sec-exps">5. 实验 (Experiments)</a></li>
+<li><a href="#sec-concl">6. 结论 (Conclusion)</a></li>
+</ol></div>
+
+<!-- ======== ABSTRACT ======== -->
+<h2 id="sec-abstract" class="sec-title">摘要 (Abstract)</h2>
+<p>查询优化始终是数据管理系统中最具挑战性的问题之一。近年来，将机器学习技术应用于查询优化的尝试颇有前景，但由于训练开销巨大、无法适应变化、以及尾部性能差等根本性缺陷，这些方案少有实际收益。受多臂老虎机（multi-armed bandit）领域悠久研究的启发，我们提出了 <strong>Bao（Bandit Optimizer，老虎机优化器）</strong>。</p>
+<p>Bao 通过为每条查询提供<strong>优化器提示（hint）</strong>，充分利用了现有查询优化器中沉淀的「工程智慧」。Bao 将现代树卷积神经网络（Tree CNN）与 Thompson Sampling（一种历经数十年研究、理论成熟的强化学习算法）相结合。由此，Bao 能够<strong>自动从错误中学习</strong>，并适应查询负载、数据与模式（schema）的变化。</p>
+<p>实验表明，Bao 能够极快（比此前方法快一个数量级）地学习到提升端到端查询执行性能（包括尾部延迟）的策略。在云环境中，我们进一步展示 Bao 相比某商业系统既能降低成本又能提升性能。</p>
+
+<!-- ======== INTRODUCTION ======== -->
+<h2 id="sec-intro" class="sec-title">1. 引言 (Introduction)</h2>
+<p>查询优化对数据库管理系统至关重要。尽管历经数十年研究，查询优化最核心的两个环节——<strong>基数估计（cardinality estimation）</strong>与<strong>代价建模（cost modeling）</strong>——始终难以攻破。已有众多工作尝试用机器学习解决这些难题，但它们普遍存在三个根本性局限，使其难以集成进真实 DBMS：</p>
+<ol style="padding-left:2em;">
+<li><strong>样本效率低下（Sample efficiency）</strong>：大多数机器学习方案在产生正向影响前需要不切实际的大量训练数据。例如基于 ML 的基数估计器需要从底层数据收集精确基数，而这一操作在实践中代价高昂（正因如此我们才想「估计」基数）。强化学习技术往往要处理成千上万条查询才能超越传统优化器，仅数据收集与模型训练就可能耗费数天。</li>
+<li><strong>脆弱性（Brittleness）</strong>：即便昂贵的训练只做一次，负载、数据或模式的变化会让情况更糟。学习型基数估计器在数据变化时必须重新训练，否则会过时；多个强化学习方案假设数据与模式保持不变，否则需完全重训。</li>
+<li><strong>尾部灾难（Tail catastrophe）</strong>：已有研究表明，学习方法在平均性能上可超越传统优化器，但在尾部（tail）常常出现灾难性退化（例如查询性能劣化 100 倍），尤其在训练数据稀疏时。这种即便罕见也不可接受的失败，在许多真实应用中是无法容忍的。</li>
+</ol>
+
+<div class="figure-wrap">
+<img src="images/bao_pages/p01.png" alt="Figure 1">
+<div class="fig-caption"><strong>图 1：在 PostgreSQL 中禁用 loop join 算子对特定查询的影响。</strong>对于 JOB 基准的查询 16b，禁用 loop join 带来约 3 倍性能提升；但对查询 24b，禁用 loop join 却造成近 50 倍的严重退化。这说明粗粒度提示「禁用 loop join」对部分查询有益、对另一些有害——正需要 Bao 来按查询自适应地选择。</div>
+</div>
+
+<p><strong>Bao 的核心观察</strong>：以往尝试用学习组件替换整个（或大部分）查询优化器的工作，可能「把孩子和洗澡水一起倒掉了」。Bao 认识到传统优化器沉淀了数十年的精心编码智慧，因此不再丢弃它们，而是<strong>在现有优化器之上提供粗粒度 hint 来「引导」其方向</strong>。例如，PostgreSQL 常因基数低估而错误地选择 loop join；对某些查询禁用 loop join 有益，对另一些则有害。Bao 的目标就是为不同查询学习选择不同的 hint 子集。</p>
+<p>具体而言，Bao 位于现有优化器之上，将问题形式化为一个<strong>上下文多臂老虎机（contextual multi-armed bandit）</strong>：每个 hint 子集（hint set）视为一个「臂（arm）」。系统学习一个预测模型，判断哪组 hint 对某条查询性能最好；查询到来时选择 hint、执行并观察奖励，逐步精炼模型。由于站在传统优化器肩膀上，Bao 天然具备代价/基数估计能力，能像底层优化器一样适应数据与模式变化，并能降低尾部延迟。</p>
+<p>Bao 还具备若干工程优势：易于融入 DBMS 缓存信息（只需暴露缓存状态描述）；相比黑盒深度学习更易调试（工程师可检查 Bao 所选 hint，必要时写例外规则）；架构可扩展（增减 hint 只需极少额外训练）。</p>
+<p>在方法上，Bao 将<strong>树卷积模型（TCNN）</strong>与 <strong>Thompson Sampling</strong> 相结合。本文贡献包括：(1) 提出 Bao，一个能按查询逐例学习应用 hint 的学习型系统；(2) 提出与工作负载/数据/模式无关的简洁预测模型与特征化方案；(3) 首次展示一个在成本与延迟上同时超越开源与商业系统、并能适应负载/数据/模式变化的学习型查询优化系统。</p>
+
+<!-- ======== SYSTEM MODEL ======== -->
+<h2 id="sec-model" class="sec-title">2. 系统模型 (System Model)</h2>
+<p>Bao 的系统模型如图 2 所示。用户提交查询后，Bao 的目标是为该特定查询选择一组能带来最佳性能的 hint 集。Bao 利用底层优化器为每个 hint 集生成一份查询计划，并将每份计划转换为<strong>向量树（vector tree）</strong>（每个节点是一个特征向量），输入到树卷积神经网络预测模型中，预测每份计划的执行结果（如墙钟时间）。随后 Bao 用 <strong>Thompson Sampling</strong> 在选择「探索新计划」与「利用已知快速计划」之间取得平衡，选中的计划送入执行引擎；执行完成后，该计划与观测性能被加入 Bao 的「经验（experience）」，并周期性地用于重训预测模型，形成反馈闭环。</p>
+
+<div class="figure-wrap">
+<img src="images/bao_pages/p03.png" alt="Figure 2">
+<div class="fig-caption"><strong>图 2：Bao 系统模型。</strong>用户查询经 Parser 进入 Bao；Bao 为多个 hint 集各生成一份计划树，经 TCNN 预测后由 Thompson Sampling 选出执行计划，执行结果（奖励）回流到经验池并周期性重训模型。</div>
+</div>
+
+<p><strong>查询 hint 与 hint 集</strong>：hint 是传给优化器、改变其行为的标志（如禁用 loop join、强制使用索引）。Bao 仅关注布尔型 hint。每条查询，Bao 选择一个<strong>hint 集</strong>（一组合法 hint）传给优化器，并假设所有合法 hint 集都能产生语义正确的计划。</p>
+<p><strong>模型训练</strong>：Bao 的预测模型负责估计某 hint 集所生成计划的质量。该问题被形式化为上下文多臂老虎机——每个 hint 集是一个臂，优化器给出的计划树是上下文信息；Bao 用 Thompson Sampling 求解，兼具理论保证与实际成功。</p>
+<p><strong>为何不「拼接」计划</strong>：Bao 只选单个 hint 集产生的计划，而非把不同 hint 集的计划「缝合」在一起。设 hint 集数为 $k$、查询关系数为 $n$，仅选单个 hint 集使 Bao 每查询只有 $O(k)$ 种选择；若缝合，动作空间将膨胀到 $O(k \times 2^n)$，远大于以往强化学习方案的规模。由于动作空间大小直接决定收敛速度，Bao 选择更小的动作空间以快速收敛。</p>
+
+<!-- ======== SELECTING HINTS ======== -->
+<h2 id="sec-select" class="sec-title">3. 查询 Hint 选择 (Selecting Query Hints)</h2>
+<p>本节形式化 Bao 的优化目标，并将其建模为上下文多臂老虎机，再应用 Thompson Sampling 求解。</p>
+<p>设 hint 集族 $\mathcal{F}$ 中每个 $HSet_i$ 是将查询 $q$ 映射到计划树 $t$ 的函数（由底层优化器实现）。用户定义性能指标 $P$（如执行时间、磁盘操作数）。Bao 的选择函数 $B: \mathcal{Q}\to\mathcal{F}$ 的目标是选出使 $P$ 最优的计划。我们将目标形式化为<strong>遗憾最小化（regret minimization）</strong>问题，查询 $q$ 的遗憾定义为 Bao 所选计划与理想 hint 集所生成计划之间的性能差：</p>
+<div class="eq-block">$$R_q = \left(P\big(B(q)(q)\big) - \min_i P\big(HSet_i(q)\big)\right)^2 \tag{1}$$</div>
+
+<h3 class="subsec-title">3.1 上下文多臂老虎机与 Thompson Sampling</h3>
+<p>在上下文多臂老虎机（CMAB）中，智能体反复从固定数量的臂中选择，先接收上下文，再选臂并获得收益；目标是通过最小化遗憾来最大化收益。对 Bao 而言，每个「臂」是一个 hint 集，「上下文」是底层优化器针对各 hint 集生成的计划树集合。Thompson Sampling 通过逐步积累「计划树—性能」观测经验，周期性据此构建预测模型来选臂；关键在于它不是训练出「最可能」的模型参数 $\mathbb{E}[P(\theta|\mathcal{E})]$，而是从后验分布 $P(\theta|\mathcal{E})$ 中<strong>采样</strong>参数——这在探索与利用之间取得平衡。</p>
+
+<div class="figure-wrap">
+<img src="images/bao_pages/p04.png" alt="Figure 3">
+<div class="fig-caption"><strong>图 3：查询计划树的二值化（binarization）。</strong>原查询计划树（左）通过为单子节点插入灰色「null」右孩子，被转换为严格二叉树（右），以便后续树卷积处理。</div>
+</div>
+
+<h3 class="subsec-title">3.2 预测模型：向量化与树卷积</h3>
+<p>Bao 的预测模型采用树卷积神经网络（TCNN）。首先需将查询计划树转化为向量树：</p>
+<ul style="padding-left:2em;">
+<li><strong>二值化</strong>：将非二叉树（含聚合、排序、哈希等多孩子节点）插入 null 节点转为严格二叉树（图 3）。多孩子算子（如多路 union）可拆为左深二叉树。</li>
+<li><strong>向量化</strong>：每个节点编码为三部分向量——(1) 算子类型的 one-hot 编码；(2) 基数与代价模型信息（如 Card./Cost）；(3) 可选的缓存信息（图 4）。该方案与工作负载/模式无关：不编码具体表列，故模式变化无需从头开始；仅用基数估计与代价模型表示数据，数据变化能被干净地反映。</li>
+</ul>
+
+<div class="figure-wrap">
+<img src="images/bao_pages/p05.png" alt="Figures 4 & 5">
+<div class="fig-caption"><strong>图 4（上方）：向量化查询计划树示例。</strong>每个节点向量以算子 one-hot 开头，后接基数/代价信息。<br><strong>图 5（下方）：Bao 预测模型架构。</strong>向量树经三层堆叠树卷积 → 动态池化（dynamic pooling）压平为单向量 → 两层全连接映射为性能预测（代价预测）。采用 ReLU 与层归一化。</div>
+</div>
+
+<p><strong>树卷积</strong>：将若干树形「滤波器」在更大的计划树上滑动（类比图像卷积），产生同尺寸变换树；多层堆叠后，深层可识别更复杂模式（如长链 merge join、bushy 哈希树）。这种对查询优化天然适用的归纳偏置（inductive bias）是 TCNN 的优势。<strong>与 Thompson Sampling 集成</strong>：最简单且实践证明有效的做法是<strong> bootstrap（自助采样）</strong>——用从经验 $\mathcal{E}$ 中有放回抽取的 $|\mathcal{E}|$ 个样本训练网络，从而诱导出所需的参数采样特性。</p>
+
+<h3 class="subsec-title">3.3 训练循环</h3>
+<p>Bao 的训练循环遵循经典 Thompson Sampling 体制：查询到达 → 为每个 hint 集构建计划树 → 用当前 TCNN 选计划执行 → 计划树与观测性能加入经验 → 周期性重训 TCNN（采样参数以平衡探索/利用）。</p>
+<p>针对实际约束做两处偏离：(1) 经典 Thompson Sampling 每选一次就重采样参数，但训练神经网络耗时且经验无限增长会使训练时间无界；因此 Bao <strong>每 $n$ 条查询才重采样一次</strong>参数，并<strong>只保留最近 $k$ 条经验</strong>，由用户按需在模型质量与训练开销间权衡。(2) 在现代云平台（按秒计费的 GPU 可随时挂载/卸载），模型训练（用 GPU）与查询处理（用 CPU/磁盘/RAM）可重叠：需采样参数时临时挂载 GPU 训练，完成后换入新参数并卸载 GPU。</p>
+
+<!-- ======== RELATED WORK ======== -->
+<h2 id="sec-related" class="sec-title">4. 相关工作 (Related Work)</h2>
+<p><strong>基数估计</strong>：最早的方法 Leo 用相似查询的多次运行调整直方图估计；近年的深度学习方法（如 Naru 用无监督+蒙特卡洛积分）在单表上取得合理估计，但均<strong>未证明估计精度的提升能转化为查询性能的提升</strong>。Ortiz 等人的实验研究表明，某些学习型基数估计在特定数据集上可改善平均性能，但<strong>未评估尾部延迟</strong>。</p>
+<p><strong>强化学习构造优化器</strong>：多个工作表明，在充分训练后此类方法能找到按 PostgreSQL 代价更低的计划；Neo 首次将深度强化学习直接用于查询延迟，训练 24 小时后可达到与商业系统竞争的策略。但它们<strong>都无法处理模式/数据/负载的变化</strong>，且只展示了长训练后的平均性能改善，未展示尾部性能改善。</p>
+<p><strong>Thompson Sampling</strong> 在统计与决策领域历史悠久，近期被广泛用于强化学习中基于经验更新信念的高效手段；也被应用于云负载管理与 SLA 合规。更广义地，强化学习还被用于弹性集群管理、调度与物理设计。Bao 属于「用机器学习构建易用、自适应、创新系统」的机器编程（machine programming）趋势。</p>
+
+<!-- ======== EXPERIMENTS ======== -->
+<h2 id="sec-exps" class="sec-title">5. 实验 (Experiments)</h2>
+<p>核心问题：Bao 能否对包含负载/数据/模式变化的真实数据库负载产生正向、实际的影响？我们不仅量化查询性能，还量化在云基础设施上执行负载的<strong>美元成本</strong>（含 Bao 引入的训练开销）。</p>
+<p>实验分三部分：(1) 实验设置（§5.1）；(2) 真实世界适用性（§5.2），在启用缓存的 GCP 上对比 PostgreSQL 与某商业系统，考察负载性能、尾部延迟、总成本、对劣化 hint 的鲁棒性，以及与以往学习型方法的差异；(3) 最优性/遗憾评估（§5.3），在隔离冷缓存服务器上评估 Bao 适应不同优化目标、相对最优选择与开源优化器的中位/尾部延迟，以及在 JOB 上的逐查询表现。</p>
+
+<h3 class="subsec-title">5.1 实验设置</h3>
+<p>评估数据集如表 1 所示：</p>
+<div class="table-note">
+<strong>表 1：评估数据集规模、查询数、负载/数据/模式是否动态。</strong><br>
+&bull; <strong>IMDb</strong>：7.2 GB，5000 查询，负载动态、数据/模式静态（JOB 基准增强版）。<br>
+&bull; <strong>Stack</strong>：100 GB，5000 查询，负载/数据动态、模式静态（本文新提出，含 170 个 StackExchange 站点的 1800 万问答）。<br>
+&bull; <strong>Corp</strong>：1 TB，2000 查询，负载/模式动态（某匿名企业的仪表盘分析负载，中途发生大规模事实表规范化导致的模式变更）。
+</div>
+<p>训练/测试采用「时间序列切分」：Bao 始终在从未见过的下一条查询 $q_{t+1}$ 上评估，且仅用更早查询的数据训练，执行后只将该次决策的奖励加入经验。这与以往强化学习可针对同一查询探索多种决策不同，更贴近真实（执行一次后不再获得替代计划信息）。</p>
+<p>预测模型用三层树卷积（输出维度 256/128/64）+ 动态池化 + 两层线性（32/1），ReLU 与层归一化，Adam 训练（batch 16，至 100 epoch 或收敛）。除非特别说明，使用 48 个 hint 集的族（连接算子 {hash, merge, loop join} 与扫描算子 {seq, index, index-only} 的子集），回看窗口 $k=2000$、每 $n=100$ 条查询重训，在 GPU 时间与查询性能间取得良好折中。</p>
+
+<h3 class="subsec-title">5.2 真实世界性能（warm-cache 场景）</h3>
+<p>本节在 GCP 上评估 Bao，并为每个叶子节点向量补充缓存信息（通过商业系统内部表与 PostgreSQL 的 pg_buffercache 扩展获取文件缓存比例）。</p>
+
+<div class="figure-wrap">
+<img src="images/bao_pages/p07.png" alt="Figures 6 & 7">
+<div class="fig-caption"><strong>图 6（上方）：IMDb 负载在四种 GCP VM 规格下，Bao 与两种传统优化器的成本（左）与负载延迟（右）。</strong>图 6a 对比 PostgreSQL 引擎上的 Bao vs. PostgreSQL 优化器；图 6b 对比 ComSys 引擎上的 Bao vs. ComSys 优化器。<br><strong>图 7（下方）：三种数据集（IMDb/Stack/Corp）在 N1-16 VM 上，Bao 与两种优化器的成本与负载延迟。</strong></div>
+</div>
+
+<p><strong>云上的成本与性能</strong>：图 6a 显示，在各类 VM 规格上 Bao 同时实现更低成本与更低负载延迟。例如在 N1-16 上，Bao 将成本降低超 50%（从 $4.60 降至 $2.20），并将总负载时间从逾 6 小时压缩到 3 小时出头；GPU 租赁费用已被查询性能提升所弥补。差异在更大 VM 上更显著，说明 Bao 比 PostgreSQL 更擅长针对不同硬件自我调优。图 6b 对比商业系统时，Bao 在四种机型上仍实现更低成本与延迟，但差异较小、整体成本更低，表明商业系统是更强的基线（在 N1-16 上 Bao 仅比其降低约 20%）。</p>
+
+<div class="figure-wrap">
+<img src="images/bao_pages/p09.png" alt="Figure 8">
+<div class="fig-caption"><strong>图 8：IMDb 负载下查询的百分位延迟。</strong>每列代表一种 VM 规格（由小到大）。上行对比 PostgreSQL 引擎上的 Bao vs. PostgreSQL 优化器；下行对比商业系统引擎上的 Bao vs. 商业系统。Bao 在 50%/95%/99%/99.5% 各百分位上均显著优于基线，尾部延迟改善尤为突出。</div>
+</div>
+
+<p><strong>模式/负载/数据变化</strong>：图 7 固定 N1-16，考察不同负载。Bao 相对 PostgreSQL 有显著提升，相对商业系统有边际提升。原文进一步展示 Bao 对引发持续或突发劣化性能的 hint 具有鲁棒性，并在定量/定性上与以往学习型查询优化方法存在明显差异（Bao 训练约 1 小时即可见效，而以往方法需数天）。</p>
+
+<h3 class="subsec-title">5.3 最优性与适应性（冷缓存、隔离服务器）</h3>
+<p>该部分在私有隔离服务器、冷缓存下评估，考察：(1) Bao 适应不同优化目标（如磁盘 I/O 次数）的能力；(2) 相对最优选择与开源优化器的中位/尾部延迟；(3) 在 JOB 上的逐查询表现。实验验证了 Bao 能快速收敛到接近最优的 hint 选择，且尾部延迟显著优于传统优化器。</p>
+
+<!-- ======== CONCLUSION ======== -->
+<h2 id="sec-concl" class="sec-title">6. 结论 (Conclusion)</h2>
+<p>Bao 通过将学习型组件构建在<strong>传统查询优化器之上</strong>（而非替换之），并用上下文多臂老虎机框架 + 树卷积神经网络 + Thompson Sampling 来按查询自适应地选择粗粒度 hint，成功规避了以往学习型优化器「训练开销大、无法适应变化、尾部灾难」三大缺陷。它仅需约 1 小时训练即可在端到端查询性能（含尾部延迟）上超越开源乃至商业系统，并能持续适应负载、数据与模式的变化；在云环境中还实现了成本与性能的双赢。</p>
+<p>Bao 的设计哲学——「站在优化器肩膀上、用 hint 引导而非重写」——为学习型数据库系统提供了一条务实、可调试、可扩展的落地路径。</p>
+
+<div class="footer">
+论文全文翻译 · Bao (Bandit Optimizer) · SIGMOD 2020 / arXiv:2004.03814<br>
+翻译自 MIT CSAIL 原文 · 含 Figure 1–8 及 Table 1（论文原页高清渲染图）<br>
+图片来源：论文 PDF 页面高清渲染
+</div>
+
+</div><!-- end .container -->
+</body>
+</html>

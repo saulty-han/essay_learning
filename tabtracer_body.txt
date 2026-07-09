@@ -1,0 +1,1306 @@
+=== PAGE 1 ===
+TabTracer: Monte Carlo Tree Search for Complex Table
+Reasoning with Large Language Models
+Zhizhao Luo1,2, Zhaojing Luo2, Meihui Zhang2,∗, Rui Mao3
+1Beijing Institute of Technology, Zhuhai, 2Beijing Institute of Technology, 3Shenzhen University
+{zzluo,zjluo,meihui_zhang}@bit.edu.cn,mao@szu.edu.cn
+ABSTRACT
+Large language models (LLMs) have emerged as powerful tools
+for natural language table reasoning, where there are two main
+categories of methods. Prompt-based approaches rely on language-
+only inference or one-pass program generation without step-level
+verification. Agent-based approaches use tools in a closed loop,
+but verification is often local, and backtracking is limited, allowing
+errors to propagate and increasing cost. Moreover, they rely on
+chain- or beam-style trajectories that are typically combinatorially
+redundant, leading to high token costs. In this paper, we propose
+TabTracer, an agentic framework that coordinates multi-step tool
+calls over intermediate table states, with explicit state tracking for
+verification and rollback. First, it enforces step-level verification
+with typed operations and lightweight numeric and format checks
+to provide reliable rewards and suppress hallucinations. Second,
+execution-feedback Monte Carlo Tree Search maintains a search
+tree of candidate table states and uses backpropagated reflection
+scores to guide UCB1 selection and rollback via versioned snapshots.
+Third, it reduces redundancy with budget-aware pruning, dedupli-
+cation, and state hashing with a monotonicity gate to cut token cost.
+Comprehensive evaluation on TabFact, WikiTQ, and CRT datasets
+shows that TabTracer outperforms state-of-the-art baselines by up
+to 6.7% in accuracy while reducing token consumption by 59–84%.
+1 INTRODUCTION
+Structured tables are a ubiquitous medium for organizing data [3,
+14] across domains such as healthcare analytics [7], financial risk
+management [2], and scientific discovery [5]. However, their ex-
+plicit structure often imposes rigid constraints that are misaligned
+with the flexibility of natural language, making it difficult to map
+ambiguous user intents to precise table operations for composi-
+tional inference [13]. To address these complexities, table reasoning
+studies how to answer natural-language questions grounded in
+tabular evidence [30].
+Early table reasoning methods primarily relied on executable
+semantic parsing or program induction [ 30, 31]. Although inter-
+pretable, they were burdened by heavy symbolic engineering and
+search, and were fragile under weak supervision, non-canonical cell
+values, and schema/domain shifts [20, 54]. Table-oriented pretrain-
+ing [18, 49] was introduced to ease this engineering burden and
+robustness fragility by learning stronger text-table representations,
+enabling end-to-end reasoning without explicit logical forms. Yet
+this line still depended on task-specific fine-tuning, so generaliza-
+tion across tasks and domains remained constrained. By contrast,
+large language models (LLMs) [ 19, 46] offer stronger in-context
+generalization and broader cross-schema transfer.
+LLM-based table reasoning treats the LLM as the core reasoning
+engine [36] and relies on prompting to drive table understanding,
+reasoning, and answering. Early LLM-based approaches are largely
+prompt-based [10, 42, 57]. They feed the table and question in a
+single shot or a fixed multi-stage prompt, where the step order is
+pre-defined, and stage outputs are passed forward in one direction,
+without changing downstream decisions based on intermediate
+execution. There is no external execution signal to confirm whether
+intermediate hypotheses (e.g., chosen columns or filtered rows) are
+correct, so once a model misreads the schema or keeps the wrong
+subset, subsequent reasoning is built on that error. In Figure 1,
+CoT [45] (star) illustrates how language-only judgment can intro-
+duce counting or statistical errors that then propagate along the
+chain. These limitations motivate agent-based methods [15, 48, 55],
+which close the loop by letting the LLM (or multiple LLMs) select
+actions, call tools, and update decisions based on execution feed-
+back. However, the feedback is often local, systematic backtracking
+is limited, and multi-branch reasoning inflates token cost. In Fig-
+ure 1, ReAcTable [53] (moon-1) fails to trigger tool use and stalls
+before code generation, Chain-of-Table [44] (moon-2) accumulates
+process errors without timely rollback, misreading month as “date”
+and failing to aggregate by month, and Table-Critic [50] (moon-3)
+is close but mismatched in expression while incurring heavy token
+cost from multi-branch dialogue. Overall, existing methods still
+face clear challenges in both accuracy and efficiency.
+Challenge 1:Existing methods lack step-level verification and
+reliable rewards, so intermediate mistakes often go unchecked and
+propagate. When tables are linearized for LLMs, two-dimensional
+structural cues such as row and column alignment and schema,
+type, or unit constraints are weakened [25, 29], which makes se-
+mantic errors and tabular hallucinations harder to detect. LLMs are
+also insensitive to numerical precision in counting and aggrega-
+tion tasks, leading to numerical hallucinations [8, 23] that further
+compound across steps. We need machine-checkable step verifi-
+cation and execution-grounded rewards that reflect intent, where
+lightweight numeric and format checks [6] make verification prac-
+tical and keep reasoning grounded in evidence [ 34, 44, 53]. This
+is difficult because table operators and data formats vary widely,
+making it hard to define unified pre- and post-conditions [26, 37]. It
+is also hard to build reliable rewards when many tool interfaces are
+free-form or weakly parsed, which makes intermediate verification
+unreliable.
+Challenge 2:Lack of effective backtracking makes early errors
+hard to correct. Most methods follow a linear or shallow branching
+process, so once the question or table is misread early, later steps can
+only patch the current path locally [16]. They rarely roll back key
+decisions or explore alternatives, which entrenches and amplifies
+errors. A better approach is a backtrackable reasoning mechanism
+that can return to key decision points when execution evidence
+conflicts with the current hypothesis, reset or replace subpaths,
+1
+arXiv:2602.14089v1  [cs.DB]  15 Feb 2026
+=== PAGE 2 ===
+Luo et al.
+<november 13 , 1959> * 5, 
+<november 16 , 1959> * 4,
+<january 28 , 1960> * 3
+: ... with  4 songs recorded on each date.
+: More songs were recorded in November than in January.
+: There were specific months.
+Prompt-based Agent-based TabTracer
+Q For the songsʼ recording dates,  were the songs recorded inspeciﬁc months or evenly distributed?
+tracknumbertitle songwriter recording datetime
+1 swing low ,sweet chariotwallis willis (adaptedby malcolm dodds)november 13 , 1959315
+...
+12me! oh lord (adapted bymalcolm dodds)november 13 , 1959210
+Jan = 3 songsNov = 9 songs
+: This code will convert the `recording_date` ...
+tracknumberrecording date
+1november 13 , 1959...
+12november 13 , 1959
+The recording ... were evenly distributed across the months.
+: I will count the occurrences of each date ...
+November 13, 1959 4 songs; November 16, 1959 4 songs; January 28, 1960 4 songs... so the recording ... distributed across the months
+Execution
+Pruned
+Backprop
+0.80.1
+0.90.20.5
+...
+Thought #1
+Thought #2
+: Chain- : Beam- : MCTS
+Not Match
+Figure 1: Prompt-based and agent-based outputs fail to com-
+plete the aggregation, while TabTracer(our approach) slices
+the table to count songs per date and aggregate by month
+(Nov=9 vs Jan=3).
+and choose among candidate branches based on evidence [ 35].
+However, this is challenging. Execution feedback is often local
+and noisy, which makes it hard to form stable value estimates or
+confidence scores for reliable backtracking, and the system must
+balance continuing the current path against rolling back to explore
+alternatives to avoid oscillation or over-backtracking.
+Challenge 3:There is no budget-aware search that suppresses
+redundant branches while keeping progress stable within token
+and latency constraints. Many multi-branch or multi-agent meth-
+ods adopt chain-style or beam-style search topologies [11, 41, 47].
+Chain-style reasoning, as shown in Figure 1, cannot backtrack, so
+an early mistake collapses the entire path. Beam search in Figure 1
+retains multiple branches, but many are near duplicates, leading to
+redundant expansions and high token and execution costs [60]. A
+more robust strategy involves execution-grounded prioritization,
+pruning, and deduplication, which collectively ensure search effi-
+cacy within a constrained budget [9, 17]. However, implementing
+this approach is fraught with practical difficulties. One primary
+obstacle stems from the inherent noise and locality of execution
+feedback. Such limitations can lead pruning heuristics to inadver-
+tently discard valid reasoning paths while retaining misleading ones.
+Furthermore, preventing the search from revisiting redundant table
+states presents a significant challenge. For instance, alternating
+operations of table shrinkage and expansion can cause the search
+process to degenerate into cycles [56]. While structuring the search
+space as a Directed Acyclic Graph (DAG) is theoretically ideal for
+efficiency, ensuring such acyclicity remains difficult to guarantee
+in practical implementations.
+In this paper, we propose TabTracer, which is an agentic frame-
+work that runs an execute-and-reflect loop over intermediate table
+states. The system starts with lightweight profiling of the table
+and question, extracting column names and types, missing-value
+patterns, table scale, and question type to seed the initial state and
+constrain the action space. First, to enforce step-level verification
+and provide execution-grounded rewards, TabTracer employs typed
+table operators for column selection, row filtering, and computa-
+tion, and each operation produces a versioned intermediate table
+accompanied by machine-checkable pre- and post-checks. This
+mechanism ensures that the reasoning process remains grounded
+in verifiable evidence, thereby effectively suppressing numerical
+hallucinations and preventing error propagation across steps. Sec-
+ondly, to enable reliable backtracking, execution-feedback Monte
+Carlo Tree Search(MCTS) [4] maintains a tree of candidate table
+states, backpropagates reflection scores to update node values for
+UCB1 selection, and relies on versioned snapshots to support roll-
+back and subpath replacement when evidence conflicts. Thirdly,
+to control redundancy and token cost, we enforce a fixed token
+budget with pruning and deduplication. State hashing and reuse
+suppress near-duplicate expansions, and a monotonicity gate com-
+mits a node only when the semantic state genuinely changes, which
+yields DAG-like progress and reduces redundant executions under
+the budget. As shown in Figure 1, TabTracer first slices a focused
+subtable (e.g., track/recording date) and then performs targeted
+aggregations via state-validated tool executions to yield the final
+answer. The resulting search tree is more compact, reaches the
+answer with fewer expansions, and implies lower token usage.
+In summary, our main contributions are as follows:
+• We present TabTracer, an agentic framework that uses
+typed operators with step-level checks to produce reliable
+execution rewards and reduce hallucinations.
+• We develop an execution-feedback MCTS framework that
+maintains candidate table states and supports evidence-
+driven backtracking with versioned snapshots, correcting
+early errors rather than patching the current path.
+• We propose budget-aware pruning and deduplication with
+state hashing, monotonicity gating, and failure memory
+to suppress near-duplicate expansions and reduce token
+consumption under a fixed budget.
+• We demonstrate through comprehensive evaluation on Tab-
+Fact, WikiTQ, and CRT datasets that TabTracer outperforms
+state-of-the-art baselines by up to 6.7% in accuracy while
+reducing token consumption by 59–84%.
+The remainder of the paper is organised as follows: Section 2 re-
+views related work, Section 3 elaborates on the TabTracer method-
+ology, Section 4 presents experimental settings and results, and
+Section 5 concludes the paper.
+2
+=== PAGE 3 ===
+TabTracer: MCTS for Complex Table Reasoning with LLMs
+2 RELATED WORK
+2.1 Prompt-Based Reasoning Methods
+Prompt-based methods organize the table and question into a single-
+shot or fixed two-stage prompt. The LLM does not make multi-step
+decisions based on external execution feedback, so the reasoning
+relies on language-only inference or one-pass program generation.
+We group this line into language-only self-reasoning and fixed-
+pipeline programs.
+Language-only self-reasoning.These methods avoid exe-
+cutable programs and external feedback, and instead use prompt
+structure and representation to guide reasoning. Tab-CoT [ 61]
+aligns rows and columns with a structured Markdown reasoning
+table. Two-stage self-augmentation prompting extracts structural
+cues before reasoning and improves robustness [38]. Simple table
+serialization yields better table-reasoning performance with mini-
+mal in-context examples [10]. FLEXTAF [52] improves alignment
+via multi-format selection and voting. This line mainly improves
+prompt structure, representation, and stability, but still lacks tool-
+level verification and rollback, so early deviations are hard to correct.
+In this work, TabTracer grounds language reasoning in executable
+tools and adds step-level verifiable feedback and reflection-based
+rewards, reducing the accumulation of format-correct but semanti-
+cally wrong steps.
+Fixed-pipeline programs.These methods generate a program
+or extraction directive once, and the execution result does not
+feed back into subsequent decisions, forming a one-way pipeline.
+Binder [12] embeds LLM APIs inside hybrid programs, but the
+execution flow remains fixed. TabSQLify [27] operates on a SQL-to-
+subtable-to-answer workflow, whereas H-STAR [1] utilizes a two-
+stage approach comprising fixed extraction and routed reasoning.
+LOTUS [33] introduces semantic operators with query optimization.
+TabTrim [16] performs gold-trajectory supervised pruning with par-
+allel subtable configurations. These methods heavily depend on the
+semantic correctness of extraction or program generation, and once
+a subtable or program is wrong, recovery is difficult. In contrast,
+TabTracer replaces the one-way pipeline with information-gain
+MCTS and uses versioned table states with hash-based deduplica-
+tion to enable backtracking and reuse.
+2.2 Agent-Based Reasoning Systems
+Agent-based methods treat the LLM as a controller that makes multi-
+step decisions in a closed loop, using tools, retrieval, or execution
+feedback to update subsequent actions. We group them into tool-
+using agents and multi-agent collaboration.
+Tool-using agents.This line focuses on repeated tool calls with
+feedback to improve executability and control. Chain-of-Table [44]
+evolves the table via iterative operations. ReAcTable [ 53] brings
+ReAct to table QA and uses execution feedback with voting across
+multiple trajectories. AixelAsk [51] formulates reasoning as DAG
+optimization with decomposition and retrieval. TableMind [ 21]
+trains tool-use policies with SFT and RAPO. Despite feedback, veri-
+fication often stays at syntax or local execution, with limited seman-
+tic checks or backtracking. In this work, TabTracer adds step-level
+machine-checkable verification and reflection rewards, and cou-
+ples tool execution with MCTS-style backtracking to correct early
+mistakes.
+Multi-agent collaboration.These methods emphasize coordi-
+nation among multiple agents that share context, critique, or itera-
+tively refine results. AutoTQA [59] uses multi-role FSM scheduling
+for multi-table QA. MACT [58] introduces online planning. Table-
+Critic [50] relies on multi-role critique with a self-evolving template
+tree. TALON [22] adopts an exploration-retrieval-answer pipeline
+for long tables. However, verification is still largely language-based,
+multi-agent dialogue inflates token cost and latency, and systems
+often repair within the current path rather than systematically
+backtrack. Our approach avoids multi-agent overhead by using
+budget-aware search with state reuse, and suppresses redundant
+branches via a blacklist of known bad state-action pairs to maintain
+stable exploration at lower cost.
+3 METHOD
+To address three challenges in table reasoning, namely weak step-
+level verification and unreliable rewards that lead to hallucinations,
+lack of effective backtracking, and redundant search cost, TabTracer
+is an agentic framework that couples LLM-based planning with
+environment interaction over semantic table states, while explicitly
+managing those states for verification and recovery. As shown in
+Figure 2, it first uses theReasoning Layerto run budget-aware
+MCTS that manages branching, enables backtracking, and sup-
+presses near-duplicate paths. The selected actions are then executed
+by theExecution Layervia typed dataframe tools with pre/post-
+condition checks. Finally, theStorage Layerpreserves versioned
+table states so rollback and reuse remain possible.
+Formally, we denote the layered agent as:
+G=(L reason,L exec,L store),(1)
+where Lreason hosts the planner, Lexec exposes deterministic
+dataframe tools (column selection, row filtering, and code-based
+computation), and Lstore provides a hash-indexed rollback cache
+that stores versioned table snapshots for reuse and rollback. The
+subsequent subsections elaborate on each layer before analysing
+their joint guarantees and runtime optimisations.
+3.1 Reasoning Layer
+This layer begins with table-aware data profiling before running
+the budgeted MCTS controller and reflection loop that decide
+which tool call to issue next. Accordingly, we first describe the
+profiling routine and its induced state abstraction, then detail the
+information-guided MCTS update in Section 3.1.2, and finally show
+how the resulting scores underpin convergence guarantees relied
+upon by the subsequent layers.
+3.1.1Data profiling.The left block of Figure 2 shows the data
+profiling. We load the full table into a dataframe, log row/column
+counts, detect special rows/columns or missing values (e.g., whether
+theaveragecolumn is complete), and render a markdown preview
+that becomes the planner’s contextual memory. In parallel, the ques-
+tion is rephrased and classified (numerical, comparative, lookup,
+etc.), and the profiler proposes an initial tool skeleton. This metadata
+materialises the root snapshot—capturing the table URI, semantic
+hash, planner/tool traces, and the latest reflection—and is sufficient
+for downstream planning.
+3
+=== PAGE 4 ===
+Luo et al.
+What was the standard deviation of the
+average scores per game for players in the
+1982 all-Ireland senior hurling championship?
+Question
+GenerateAndExecuteCode
+Table_uri: ...6b60b3.parquet
+Instruction: Calculate the standard
+deviation of the 'average'
+Context_info: The table has been
+filtered to include only the 'rank',
+'player', 'county', and 'average'
+columns.
+Table_uri: ...f2c735.parquet
+Hash: "1647...951993"
+Code: 
+Status message: success
+...6b60b3.parquet
+1
+2
+3
+...f2c735.parquet
+Table_uri: ...6b60b3.parquet
+Hash: "8734...990047"
+Status message: success
+SelectColumns
+Table_uri: ...8f65eb.parquet
+Columns:
+  - rank
+  - player
+  - county
+  - average
+Bad State-Action Pair
+hash signaturetoolModel
+Input
++         +
+Output
+1.945
+Dynamic prompt
+3
+Reasoning Execution Storage
+Data ProfilingTable
+Special rows/columns: Null
+General observations: The 'average' column shows
+the average score per game for each player. There
+are no missing values (NaN) in the critical columns.
+rankplayercountytallytotalmatchesaverage
+1 pádraig
+horanoffaly5 - 1732 4 8.00
+...
+50 pat
+horgancork0 - 1818 4 4.50 1. SelectColumns (rank, player, county, average);
+2. GenerateAndExecuteCode
+(standard_deviation_of_averages)
+Semantic Question Type      <general type>
+Backpropagation
+Expand
+Select
+Simulation
+Depth: xxx
+Value: xxx
+Visits: xxx
+Table_uri: xxx
+Df_hash: xxx
+Last_operation_tpye: xxx
+Reflection: xxx
+Init
+state
+Exploration
+Reward -> Exploitation
+SelectColumns
+FilterRows
+GenerateAndExecuteCode1
+2
+3
+Reasoning
+State
+Figure 2: The reasoning layer includes planning and reflection, the execution layer issues atomic dataframe tools, and the
+versioned storage layer preserves snapshots for fallback and retry.
+Here asnapshotdenotes the persisted table state after a tool
+execution (identified by its URI and hash), while atracerecords
+the reasoning messages that produced that state. Formally, we
+view TabTracer as an MDP M=⟨S,A,T,R, 𝜋⟩ whose state space
+collects those persisted snapshots and their semantic traces:
+S=
+
+⟨𝑢, 𝜒, 𝜇, 𝑟⟩:𝑢∈ U, 𝜒∈ H, 𝜇∈ M msg, 𝑟∈ R refl
+	
+.(2)
+Here 𝑢 is the URI of a Parquet snapshot, 𝜒 is its semantic
+hash (a deterministic fingerprint derived from the dataframe
+content) returned by deterministic tools, 𝜇 stores the ordered
+planner/tool messages that produced the state (serving as the
+semantic context previously denoted by C), and 𝑟 is the most
+recent reflection summarising execution feedback. The finite action
+set is A={FilterRows,SelectColumns,GenExeCode} . Here
+SelectColumnsreduces column width,FilterRowsprunes rows
+with guarded predicates, andGenExeCoderuns aggregations or
+multi-step computations. Details are given in Section 3.2. Actions
+correspond to deterministic tools. Transition T loads the snapshot
+denoted by 𝑢𝑡 , applies the requested tool, and writes the successor
+back to storage together with its hash. Reward R is the normalised
+reflection score. This compact record is Markov-sufficient because
+deterministic tool execution implies:
+𝑃(𝑠 𝑡+1 , 𝑟𝑡 |𝑠 0:𝑡, 𝑎0:𝑡 )=𝑃(𝑠 𝑡+1 , 𝑟𝑡 |𝑠 𝑡 , 𝑎𝑡 ),(3)
+so the semantic hash acts as a certificate that two nodes encode
+the same dataframe, while the message/reflection traces preserve
+the semantic context needed for subsequent prompts. Rather than
+maintaining a full hash ledger, TabTracer stores only the current
+snapshot plus a cache of ineffective state–action signatures, which
+keeps the planner observable without bloating memory. This state
+abstraction supports downstream planning and makes the stored
+snapshots sufficient for subsequent tool use.
+3.1.2Information-Guided MCTS Cycle.We define the search
+tree over table states. Each node stores a snapshot together with its
+reasoning trace, and each edge corresponds to a single action that
+transforms the table state, typically via a tool invocation. Sequential
+execution without backtracking creates brittle reasoning chains
+where early errors corrupt downstream computations. TabTracer
+employs information-guided MCTS to maintain multiple candidate
+paths and enable recovery from suboptimal decisions. Guided by
+the state view above, the planner repeats four stages per simulation:
+(i)Selectionwalks the existing tree with an exploration-biased
+score. (ii)Expansionexecutes the most promising normalised tool
+proposal under deterministic guards. (iii)Reflectionqueries the
+reflection operator for dense feedback about the newly created node,
+and (iv)Backuppropagates the scalar reward and solved status to
+the root. The complete procedure is formalized in Algorithm 1. To
+exploit the structured state, the planner executes a single tool per
+simulation, obtains dense rewards through reflection, and prioritises
+nodes via the score in Eq. (6).
+Although backpropagation uses the scalar reward 𝑟𝑡 , the rollout-
+level objective aggregates multiple execution signals. Let 𝜙𝑡 =
+(𝜙row
+𝑡 , 𝜙col
+𝑡 , 𝜙rel
+𝑡 , 𝜙sol
+𝑡 ) collect row/column shrinkage, tool relevance,
+and solution-confidence heuristics derived from execution meta-
+data. The rollout objective is then:
+J (𝜋)=E 𝜏∼𝜋
+"𝑇−1∑︁
+𝑡=0
+𝛾𝑡 𝑓eval (𝜙𝑡 )
+#
+,(4)
+where 𝑓eval denotes the reflection scorer that integrates these sig-
+nals. The reflection module receives all components of 𝜙𝑡 via struc-
+tured prompts (including row/column counts from Eq. (8), tool
+metadata, and question context), enabling context-dependent in-
+tegration. The resulting reflection score 𝑟𝑡 represents an implicit
+4
+=== PAGE 5 ===
+TabTracer: MCTS for Complex Table Reasoning with LLMs
+Algorithm 1TabTracer Single-Step MCTS
+Require:Initial state𝑠 0, simulation budget𝐵, blacklistK
+1:Initialise root node𝑛 0 with𝑠 0
+2:for𝑡=1to𝐵do
+3:𝑛←SelectLeaf(𝑛 0){UCB1 selection with guards}
+4:(𝑐ℎ𝑖𝑙𝑑, 𝑎, 𝑠 ′, 𝜌𝑛,𝑎) ←ExpandNode(𝑛,K){Alg. 2}
+5:if𝑐ℎ𝑖𝑙𝑑=⊥then
+6:continue
+7:end if
+8:(𝑠𝑐𝑜𝑟𝑒, 𝑠𝑜𝑙𝑣𝑒𝑑, 𝑒𝑣𝑖𝑑𝑒𝑛𝑐𝑒) ←Reflect(𝑛.𝑠𝑡𝑎𝑡𝑒, 𝑎, 𝑠 ′){Alg. 3}
+9: Backpropagate(𝑐ℎ𝑖𝑙𝑑, 𝑠𝑐𝑜𝑟𝑒, 𝑠𝑜𝑙𝑣𝑒𝑑, 𝜌 𝑛,𝑎, 𝑒𝑣𝑖𝑑𝑒𝑛𝑐𝑒) {update
+value/visits and solved flag}
+10:if𝑠𝑜𝑙𝑣𝑒𝑑then
+11:break
+12:end if
+13:end for
+14:returnBestSolution(𝑛 0)
+evaluation 𝑟𝑡 ≈𝑓 eval (𝜙𝑡 ), where the LLM adaptively weights fea-
+tures based on question type and data characteristics.
+For fallback ranking, we also maintain penalty indicators for
+duplicate or degenerate states:
+Φpen (𝜏)=
+𝑇−1∑︁
+𝑡=0
+𝛾𝑡
+
+𝜆dup1dup (𝑠𝑡+1 ) +𝜆 empty1empty (𝑠𝑡+1 )
+
+,(5)
+where1 dup detects hash-duplicate states (𝛿= 0in Eq. (7)) and1 empty
+flags degenerate tables. These penalties are evaluated lazily and
+used by the fallback scorer described later.
+In effect, TabTracer keeps the planning loop analytically light-
+weight, while embedding execution-aware heuristics exactly where
+they matter, inside the rollout objective, so the scheduler remains
+theoretically clean and practically data-efficient.
+Algorithm 1 summarizes the single-step MCTS loop. Lines 2–3
+initialize the root state and iterate over the simulation budget. Each
+iteration selects a leaf (line 4), expands it with one tool action (line
+5), reflects on the outcome (line 6), and backpropagates the score
+(line 7). If a solution is found, the loop terminates early (lines 8–9),
+the search continues until the budget is exhausted and returns the
+best solution (line 11).
+Selection stage.In Figure 2, selection picks the leaf with the
+highest UCB1 score among current candidates. For this query, that
+leaf typically retains theaveragecolumn, so subsequent actions can
+compute the standard deviation. The selection procedure uses a
+lightweight UCB1 score that retains the simplicity of UCB1 while
+incorporating execution-aware guards:
+UCB1(𝑐)=𝑐.𝑣𝑎𝑙𝑢𝑒+𝐶
+√︂
+log(𝑛.𝑣𝑖𝑠𝑖𝑡𝑠+1)
+𝑐.𝑣𝑖𝑠𝑖𝑡𝑠+𝜖 ,(6)
+where 𝑐 is a child of 𝑛 (the parent), 𝐶 is the exploration constant,
+and 𝜖 avoids division by zero. Children with zero visits receive
+effectively infinite priority, so the search quickly touches unex-
+plored branches before refining high-value ones. Selection itera-
+tively descends from the root by choosing the child with the highest
+UCB1 score among eligible nodes and stops at the first unvisited
+node. After this scoring step, TabTracer applies execution-aware
+guards—hash-based duplicate detection, empty-table rollback, and
+monotonicity gates—to ensure only genuinely informative states
+remain on the frontier.
+Expansion stage.For each selected leaf, For each selected leaf
+node, which represents the current table snapshot, the expansion
+procedure (Algorithm 2) uses the LLM to propose an ordered list of
+candidate tool actions, applies deterministic validity filters (column
+existence, argument validity, cached bad state–action signatures,
+duplicate/ineffective actions, and tool guards), and executes the
+first valid action to create a child node. We define the semantic
+state change indicator. In Figure 2, the planner proposes multiple
+candidate actions, then filters invalid or low-quality ones before
+executing the first valid tool call, such asSelectColumnsto keep
+{rank, player, county, average}. After execution, the resulting sub-
+table is saved as a new snapshot, which becomes the child node for
+the next stage.
+𝛿(𝐷, 𝐷 ′)=
+(
+1if𝜒(𝐷 ′)≠𝜒(𝐷)
+0otherwise (7)
+where 𝜒 denotes the content hash. The shrinkage proxy then tracks
+data reduction:
+𝜌(𝐷, 𝑎)=𝛿(𝐷, 𝐷 ′) ·𝜙 rows(𝐷, 𝐷 ′) ·𝜙 cols (𝐷, 𝐷 ′),(8)
+where 𝜙rows(𝐷, 𝐷 ′)=rows(𝐷 ′)/rows(𝐷) and 𝜙cols (𝐷, 𝐷 ′)=
+cols(𝐷 ′)/cols(𝐷) denote relative dimension changes. The imple-
+mentation uses 𝛿 as a hard monotonicity gate: child nodes are
+created only when 𝛿= 1, ensuring that every expansion alters the
+table state. Dimension ratios are tracked as metadata and provided
+to the reflection module for quality assessment.
+Because the executor only materialises child nodes when the
+semantic hash changes, every accepted expansion corresponds to
+a semantically updated table state. This monotonicity helps the
+planner avoid redundant revisits. If an action leaves the table un-
+changed (𝛿= 0, hence 𝜌= 0), it is immediately discarded. We still
+impose fixed depth and simulation budgets as hard safeguards, but
+the shrinkage signal gives us a direct, execution-time measurement
+for ranking expansions by how much evidence they retain.
+Algorithm 2 details this step. It first asks the LLM to propose
+a small ordered set of candidate actions for the current state (line
+2). Each candidate is normalized into a concrete tool call (line 4),
+filtered by validity checks and cached bad signatures (lines 5–8), and
+the first candidate that passes these checks is executed to produce
+a new snapshot and child node (lines 9–11). Candidates that fail
+validation are skipped.
+Candidate selection follows ordered proposals with explicit va-
+lidity gates:
+Acand =[𝑎 1, . . . , 𝑎𝑘 ] ∼𝑝 𝜃 (· |𝑠 𝑡 ),(9)
+Avalid (𝑠𝑡 )={𝑎∈ A cand :V alid(𝑎, 𝑠𝑡 )},(10)
+𝑖∗ =min{𝑖∈ {1, . . . , 𝑘}:𝑎 𝑖 ∈ A valid (𝑠𝑡 )}, 𝑎 𝑡 =𝑎 𝑖∗ .(11)
+where the LLM proposal order provides the implicit priority, and de-
+terministic filters enforce executability. This realizes a constrained
+first-valid selection rule consistent with the implementation. Here
+𝑝𝜃 (· |𝑠 𝑡 ) denotes the LLM-induced proposal distribution condi-
+tioned on state𝑠𝑡 , andV alid(𝑎, 𝑠𝑡 ) denotes deterministic executabil-
+ity checks including column existence, argument validity, bad-pair
+filtering, duplicate/ineffective filtering, and tool guards.
+5
+=== PAGE 6 ===
+Luo et al.
+Algorithm 2ExpandNode
+Require:node𝑛, blacklistK, candidate budget𝑘
+1:A cand ←LLMPropose(𝑛.𝑠𝑡𝑎𝑡𝑒, 𝑘){ordered candidates}
+2:for𝑎inA cand do
+3:(𝑡𝑜𝑜𝑙, 𝑎𝑟𝑔𝑠) ←NormalizeAndCoerce(𝑎)
+4:if𝑡𝑜𝑜𝑙=∅then
+5:continue
+6:end if
+7:ifColumnOrArgInvalid(tool, args, n)then
+8:continue
+9:end if
+10:if(𝑛.ℎ𝑎𝑠ℎ, 𝑡𝑜𝑜𝑙, 𝑎𝑟𝑔𝑠) ∈ Kthen
+11:continue
+12:end if
+13:ifDuplicateOrIneffective(n, tool, args)then
+14:continue
+15:end if
+16:ifViolatesToolGuards(tool, args, n)then
+17:continue
+18:end if
+19:𝑠 ′ ← T (𝑛.𝑠𝑡𝑎𝑡𝑒, 𝑡𝑜𝑜𝑙, 𝑎𝑟𝑔𝑠)
+20:𝑐ℎ𝑖𝑙𝑑←NewNode(𝑠 ′,metadata)
+21:Append𝑐ℎ𝑖𝑙𝑑to𝑛.𝑐ℎ𝑖𝑙𝑑𝑟𝑒𝑛
+22:return(𝑐ℎ𝑖𝑙𝑑, 𝑡𝑜𝑜𝑙, 𝑠 ′,metadata)
+23:end for
+24:return(⊥,∅,∅,1)
+Reflection stage.For the hurling query, reflection verifies that
+the new snapshot still contains theaveragecolumn and is suitable
+for computing its standard deviation, then assigns a score. Can-
+didates that drop required columns or yield unusable tables are
+recorded as bad state–action pairs. The reflective evaluator con-
+sumes (𝑠, 𝑎, 𝑠′) plus row/column diffs and previews, returning only
+a normalised scalar score 𝑟∈ [ 0, 1], a boolean solved flag, and
+the free-form critique stored in each node. This dense reward is
+immediately backpropagated, so the online MCTS loop maintains
+exactly the statistics described in Algorithm 3. Execution metadata
+(hashes, row counts, tool names) is cached alongside the reflection
+so that the fallback scorer can later recover richer signals without
+perturbing the online propagation. When the tree needs to surface
+a final answer, we therefore assemble a lazily evaluated feature
+vector from the cached metadata and reflections: When ranking
+frontier nodes, the system constructs a feature vector:
+𝒛𝑡 =[𝑟 𝑡, 𝛿 𝑡 , 𝜙 row
+𝑡 , 𝜙 col
+𝑡 ,1 solve ]⊤,(12)
+comprising normalized reflection score 𝑟𝑡 , state change indicator
+𝛿𝑡 , dimension changes, and solution status. These components are
+provided to the reflection module via structured prompts (including
+tool outputs and metadata), enabling integrated quality assessment.
+The accumulated node value𝑉𝑛, obtained through backpropagation
+(Eq. 14), represents this integrated score. Fallback selection then
+uses:
+𝑛∗ =arg max
+𝑛∈ Nfrontier
+𝑉𝑛 −𝛽 pen ·1 degenerate (𝑛),(13)
+where Nfrontier denotes the current frontier node set, and the penalty
+term suppresses empty or duplicate states.
+Algorithm 3Reflect
+Require:state𝑠, action𝑎, successor𝑠 ′
+1:𝑝𝑟𝑜𝑚𝑝𝑡←ComposePrompt(𝑠, 𝑎, 𝑠 ′)
+2:𝑟𝑒𝑠𝑝← ReflectOperator(𝑝𝑟𝑜𝑚𝑝𝑡) {Structured output: reflec-
+tions, score, flag}
+3:if𝑟𝑒𝑠𝑝=∅then
+4:return(0,False,“Reflection unavailable. ”)
+5:end if
+6:𝑠𝑐𝑜𝑟𝑒←clip(𝑟𝑒𝑠𝑝.𝑠𝑐𝑜𝑟𝑒/10,0,1)
+7:𝑠𝑜𝑙𝑣𝑒𝑑←𝑟𝑒𝑠𝑝.𝑓 𝑜𝑢𝑛𝑑_𝑠𝑜𝑙𝑢𝑡𝑖𝑜𝑛
+8:return(𝑠𝑐𝑜𝑟𝑒, 𝑠𝑜𝑙𝑣𝑒𝑑, 𝑟𝑒𝑠𝑝.𝑟𝑒 𝑓 𝑙𝑒𝑐𝑡𝑖𝑜𝑛𝑠)
+Algorithm 3 makes this process explicit: it builds a structured
+prompt from (𝑠, 𝑎, 𝑠′), calls the reflection operator, and returns the
+score, solved flag, and critique used for backpropagation.
+Reflection, therefore, produces only a normalised score, a boolean
+flag, and the critique attached to each node. Degeneracy checks
+(hash-duplicate pruning, empty-table rollback, tool guards) run
+before reflection, and richer heuristics such as shrinkage or solution-
+confidence cues are read off the cached metadata during fallback.
+Backup stage.Backup propagates the reflection score and
+solved flag upward to update node values and visit counts for
+UCB1 selection and enable early termination. The backpropagated
+score updates the node value (an incremental mean of reflection
+scores) and visit count along the root path, which raises the UCB1
+score for branches whose snapshots retain the evidence needed for
+the query (e.g., theaveragecolumn). This makes later selections
+more likely to revisit those branches, where the next expansion can
+invokeGenExeCodeto compute the final statistic and start a new
+iteration of the cycle. The backpropagation procedure propagates
+rewards upwards using incremental means: Starting from the
+expanded node, we update its visit count and value using the
+incremental mean in Eq. (14), then repeat this update along the
+parent chain until reaching the root. If the reflection marks the
+node as solved, we propagate the solved flag upward, which can
+trigger early termination.
+𝑉𝑛 ←𝑉 𝑛 + 𝑅child −𝑉 𝑛
+𝑁𝑛
+,(14)
+where 𝑅child is the normalized reflection reward returned by the
+expanded child and𝑁 𝑛 is the updated visit count of node𝑛.
+Each node also stores lightweight execution metadata (last tool
+type, output rows, hashes) that the fallback scorer later consumes
+when ranking leaves: the enhanced heuristic combines these cached
+counters with the final reflections to recover shrinkage, relevance,
+and solution-confidence terms even though the online backpropa-
+gation keeps only (𝑣𝑎𝑙𝑢𝑒, 𝑣𝑖𝑠𝑖𝑡𝑠) . The search depth is bounded by
+the explicit depth cap and the shrinkage rate,
+𝑡≤min
+
+𝑑max,log 1/𝜂
+ min(𝑅 0, 𝐶0)
+,(15)
+and admissible trajectories are those that pass step-level tool guards,
+1adm (𝜏)=
+𝑇−1Ö
+𝑡=0
+1
+
+Guards(𝑠𝑡 , 𝑎𝑡 )=True
+
+,(16)
+so invalid actions are filtered immediately, while hash gating pre-
+vents revisiting identical table states.
+6
+=== PAGE 7 ===
+TabTracer: MCTS for Complex Table Reasoning with LLMs
+3.1.3Answer Selection and Termination.The reasoning loop
+terminates either when the root is marked solved (a child has found
+a certificate) or when the simulation budget is exhausted. In both
+cases, Eq. (12) provides a lazily evaluated feature vector that ranks
+frontier nodes by accumulated reflection scores, shrinkage, and
+degeneracy penalties while suppressing state–action signatures
+already blacklisted. The heavy lifting—storing hashes, metadata,
+and penalty weights—is handled by the storage layer (Section 3.3);
+the reasoning layer simply queries this cache to obtain (𝒛𝑡 , 𝑠fb
+𝑡 ) and
+selects the highest-ranked node for answer extraction.
+3.2 Execution Layer
+This layer corresponds to the middle block in Figure 2: every
+action chosen by the planner is grounded in one of three typed
+dataframe operators whose outputs are machine-checkable tuples
+(table_uri,hash,rows,cols,preview,status) . The goal is to
+turn abstract instructions into deterministic table manipulations
+while streaming back the metadata that drives shrinkage signals
+and reflection prompts. Our tool design focuses on progressively
+shrinking the table while retaining key evidence, so we use column
+selection and row filtering as the primary reduction steps. The re-
+maining fine-grained format handling and numerical computation
+are consolidated into code generation, which keeps the tool set
+minimal while still supporting complex calculations with verifiable,
+traceable outputs.
+3.2.1Deterministic dataframe operators.The execution layer
+grounds reasoning in concrete table transformations rather than
+language-only guesses. A compact motivation is that deterministic
+transformations do not increase information about the answer,
+𝐼(𝐴;𝐷 ′ |𝑄) ≤𝐼(𝐴;𝐷|𝑄),(17)
+and retaining both snapshots preserves information,
+𝐻(𝐴|𝐷, 𝐷 ′, 𝑄)=𝐻(𝐴|𝐷, 𝑄).(18)
+Here, 𝐴 is the answer, 𝑄 the question, 𝐷 the current table, and
+𝐷 ′ the table after a deterministic transformation. The three tools
+in Figure 2 implement these maps:SelectColumnsprojects the
+schema to a minimal column set,FilterRowsevaluates guarded
+predicates, andGenExeCoderuns sandboxed Python for bespoke
+statistics. Each tool emits the tuple mentioned above so the planner
+sees the updated snapshot and preview.
+3.2.2Typed interfaces and validation.LLM proposals are first
+normalised by a tool-call normalizer that coerces JSON payloads
+and fills in missing IDs. Each deterministic tool then applies
+schema-aware guards—checking column existence, predicate
+validity, type/format coercion, and sandbox constraints—before
+execution, and emits explicit status codes and diagnostics. Rich
+execution metadata (row/column counts, hashes, previews) returns
+with every call so the reasoning layer can compute shrinkage, detect
+degeneracy, and compose reflection prompts, while the same tuple
+feeds the storage layer for versioning. Thebad state–action pair
+panel in Figure 2 visualises how signatures are logged whenever
+validation fails. For compactness, Algorithm 4 summarises these
+contracts end-to-end. SelectColumns performs case-insensitive col-
+umn matching and returns a versioned snapshot with row/column
+counts and a preview. FilterRows normalises predicates and
+Algorithm 4Typed tool contracts. Each call consumes a validated
+snapshot and emits a versioned successor.
+1:SelectColumns(𝑡𝑎𝑏𝑙𝑒_𝑢𝑟𝑖, 𝑐𝑜𝑙𝑢𝑚𝑛𝑠[ ])
+2:𝐷←LoadDF(𝑡𝑎𝑏𝑙𝑒_𝑢𝑟𝑖)
+3:𝑐𝑜𝑙𝑢𝑚𝑛𝑠 actual ←GuardColumns(𝐷, 𝑐𝑜𝑙𝑢𝑚𝑛𝑠)
+4:𝐷 ′ ←𝐷[𝑐𝑜𝑙𝑢𝑚𝑛𝑠 actual]
+5:return(𝑢𝑟𝑖 ′, ℎ𝑎𝑠ℎ′, 𝑟𝑜𝑤𝑠(𝐷 ′), 𝑐𝑜𝑙𝑠(𝐷 ′), 𝑝𝑟𝑒𝑣𝑖𝑒𝑤, 𝑠𝑡𝑎𝑡𝑢𝑠)
+6:
+7:FilterRows(𝑡𝑎𝑏𝑙𝑒_𝑢𝑟𝑖, 𝑐𝑜𝑛𝑑𝑖𝑡𝑖𝑜𝑛)
+8:𝐷←LoadDF(𝑡𝑎𝑏𝑙𝑒_𝑢𝑟𝑖)
+9:𝐷 safe ←TypeNormalise(𝐷)
+10:𝐷 ′ ←EvaluatePredicate(𝐷 safe, 𝑐𝑜𝑛𝑑𝑖𝑡𝑖𝑜𝑛)
+11:return(𝑢𝑟𝑖 ′, ℎ𝑎𝑠ℎ′, 𝑟𝑜𝑤𝑠(𝐷 ′), 𝑐𝑜𝑙𝑠(𝐷 ′), 𝑝𝑟𝑒𝑣𝑖𝑒𝑤, 𝑠𝑡𝑎𝑡𝑢𝑠)
+12:
+13:GenExeCode(𝑡𝑎𝑏𝑙𝑒_𝑢𝑟𝑖, 𝑖𝑛𝑠𝑡𝑟𝑢𝑐𝑡𝑖𝑜𝑛, 𝑐𝑜𝑛𝑡𝑒𝑥𝑡)
+14:𝐷←LoadDF(𝑡𝑎𝑏𝑙𝑒_𝑢𝑟𝑖)
+15:𝑐𝑜𝑑𝑒←LLMGenerate(𝑖𝑛𝑠𝑡𝑟𝑢𝑐𝑡𝑖𝑜𝑛, 𝑐𝑜𝑛𝑡𝑒𝑥𝑡, 𝐷)
+16:𝐷 ′ ←SandboxExecute(𝑐𝑜𝑑𝑒, 𝐷)
+17:QualityGuards(𝐷 ′)
+18: return (𝑢𝑟𝑖 ′, ℎ𝑎𝑠ℎ′, 𝑟𝑜𝑤𝑠(𝐷 ′), 𝑐𝑜𝑙𝑠(𝐷 ′), 𝑝𝑟𝑒𝑣𝑖𝑒𝑤, 𝑐𝑜𝑑𝑒, 𝑠𝑡𝑎𝑡𝑢𝑠)
+types before applying the query, then emits the filtered snapshot
+and metadata. GenExeCode generates and executes Python for
+aggregations or multi-step arithmetic when selection and filtering
+are insufficient, returning the result snapshot with execution
+metadata.
+3.2.3Execute-and-reflect convergence.Because each simu-
+lation executes exactly one deterministic tool call followed by
+the reflection operator, the per-iteration cost is dominated by the
+execution-layer operations described in Section 3.2. Under the stan-
+dard UCB assumptions (bounded rewards and persistent explo-
+ration) and consistent reflection scores, TabTracer’s selection rule
+satisfies
+lim
+𝑡→∞
+𝑃(𝜋 𝑡 =𝜋 ∗)=1,(19)
+E
+h
+𝑉 𝜋 ∗
+(𝑠0) −𝑉 𝜋𝑡 (𝑠0)
+i
+=𝑂
+ √︂
+log𝑡
+𝑡
+!
+.
+The classic UCB1 confidence radius directly applies here. Immedi-
+ate reflection yields unbiased value estimates conditioned on ob-
+served transitions (due to Eq. (3)), and single-step expansions avoid
+simulation bias. Plugging these elements into the standard UCB1
+regret decomposition establishes the bound.This result indicates
+that TabTracer’s single-step execute-and-reflect loop approaches
+high-quality policies while keeping runtime predictable, meaning
+the execution layer (deterministic tool + reflection) preserves the
+exploration–exploitation trade-off implied by Eq. (19).
+3.3 Storage Layer
+This layer matches the rightmost block in Figure 2: every tuple
+returned by the execution layer is materialised as a versioned snap-
+shot and hash-indexed cache entry, with penalties recorded for in-
+effective state–action pairs. Its role is twofold—reuse past evidence
+via cached snapshots and suppress redundant or low-quality expan-
+sions via deduplication and blacklists. We next describe evidence
+caching and reuse, followed by memory/penalty management.
+7
+=== PAGE 8 ===
+Luo et al.
+3.3.1Evidence cache and reuse.Each snapshot is materialised
+as the tuple 𝑣𝑖 =(uri 𝑖,hash 𝑖, 𝜇𝑖 ), where 𝜇𝑖 tracks row/column
+counts and execution metadata. Rather than storing full trajectories,
+TabTracer maintains a hash-indexed cache: every semantic hash
+points to its Parquet URI, the accompanying metadata, and two
+signature-based filters. First, anaction deduplicationset suppresses
+semantically equivalent tool calls from the same state (avoid re-
+expanding duplicate actions). Second, ablackliststores state–action
+signatures that previously yielded low reflection scores or invalid
+outputs; these pairs are penalised and skipped in later rollouts.
+Penalty scores assigned to (ℎ, 𝑎) pairs that repeatedly failed act as
+soft constraints in subsequent rollouts, while the cached URI lets
+fallback routines dereference 𝑣𝑖 without re-running the tool chain.
+Let H𝑡 denote the hash-indexed cache up to time 𝑡, where ℎ
+denotes a semantic table-state hash. Whenever TabTracer executes
+(ℎ, 𝑎) and the reflection score remains below tolerance, the pair is
+recorded with a penalty weight𝜋(ℎ, 𝑎):
+H𝑡+1 =H 𝑡 ∪
+
+(ℎ, 𝑎, 𝜋(ℎ, 𝑎)):𝜋(ℎ, 𝑎)<0
+	
+.(20)
+Revisiting the same ℎ first queries H𝑡 : signatures with accumulated
+penalties are skipped, whereas unexplored signatures can reuse
+the stored snapshot. The hash-aware pruning, therefore, prevents
+repeated low-quality expansions and concentrates budget on novel,
+higher-utility actions.
+In addition to pruning, the cache exposes previously solved URIs
+for fallback routines. Figure 2 depicts this behaviour: red crosses
+mark signatures that have accumulated penalties (hence future
+rollouts skip them), whereas green check marks indicate snapshots
+that can be dereferenced without re-running tools. Because each
+entry retains the Parquet pointer and table metadata, rereading
+a hash only requires dereferencing 𝑣𝑖 rather than replaying the
+entire tool chain. The storage layer thus remains lightweight: it
+stores snapshots, penalties, and re-usable URIs, but no full reward
+histories or posterior parameters.
+3.3.2Memory Management.Only well-typed actions (indicator
+1typed (𝑎, 𝐷)= 1) are dispatched, and any failure signature (ℎ𝑡 , 𝑎) is
+appended to the blacklist K so subsequent attempts are dropped
+without re-running tools (here ℎ𝑡 is the current state’s semantic
+hash). The storage layer combines lazy loading and hash-based
+caching—if two nodes share the same semantic hash, only pointers
+are retained. Incremental statistics such as the mean value in Eq.(14)
+avoid storing full reward histories. Low-utility branches are pruned
+when their UCB1 score drops below
+𝜉𝑡 =max
+𝑛∈frontier
+UCB1(𝑛, 𝑡) −𝜅,(21)
+with𝜅calibrated to keep the tree within a fixed memory budget.
+4 EXPERIMENTS
+In this section, we present the experimental evaluation of TabTracer.
+We first introduce the datasets, baselines, and evaluation metrics
+used in our experiments. We then report results on overall effec-
+tiveness and cost-efficiency against strong baselines. We addition-
+ally analyze numerical robustness on arithmetic-heavy workloads,
+conduct tool-level ablations, and further examine scalability with
+respect to table size and search depth.
+Table 1: Datasets used in the experiments. “Numeric” denotes
+the percentage of questions whose gold answers contain nu-
+meric values. Table (S/M/L) corresponds to table size <500,
+500–1500, and >1500 tokens.
+Dataset # Queries Numeric Answer Type Table (S/M/L)
+TabFact 2,024 – Yes / No 1188 / 813 / 23
+WikiTQ 4,344 51.3% String / Number / Date 2006 / 1867 / 471
+CRT 728 28.0% Free-form (text + numeric) 499 / 221 / 8
+4.1 Experimental Setup
+4.1.1 Datasets.We evaluate TabTracer on the official test sets of
+TabFact, WikiTQ, and CRT. Table 1 shows the statistical results of
+the datasets we used. TabFact contains 2,024 table-claim pairs, each
+pair answered with a binary label (Yes/No). WikiTQ covers 4,344
+open-domain questions whose answers can be strings, numbers,
+or dates. CRT comprises 728 open-ended tasks spanning factual
+and analytical queries, where 204 of them (28.0%) require explicit
+numerical computation.
+4.1.2 System Configuration.
+Experimental Environment.Experiments run on a Linux 6.6.80
+host with a 16-core Intel Xeon Gold 6133 CPU and 31 GiB RAM.
+Qwen2.5-72B-Instruct [39] is served via vLLM [24] on 8 NVIDIA
+V100 GPUs (CUDA 12.1). Qwen3-32B [ 40] leverages 8 NVIDIA
+L40 GPUs (CUDA 12.1). Qwen3-32B-Direct disables the provider-
+sidethinkingpattern, thus acting as a pure instruction-following
+model without auxiliary reasoning tokens. GPT-4.1-mini [ 28] is
+accessed through the OpenAI API. The implementation relies on
+PyTorch 2.1 [32], langgraph 0.5.0, langchain 0.3.26, and pandas 2.3.0.
+TabTracer Implementation.We generate three candidate expan-
+sions per node, cap the search depth at5, set the simulation budget
+to15, and apply a LangGraph recursion limit of50. Hash-based state
+caching and rollback are enabled by default. The base temperature
+is set to0.1for candidate generation and reflection.
+Metrics.We report Exact Match (EM), token input/output counts,
+tool Success Rate (SR), tool adoption rate (AR, i.e., the fraction of
+tool invocations whose outputs remain on retained branch), state
+reuse rate, and average simulation count. We follow the Table-
+Critic protocol to normalise punctuation, formats, and timestamps
+before comparison. For WikiTQ and CRT, we compare answers
+after normalization, whereas TabFact directly uses EM.
+4.1.3 Baselines.We chose a comprehensive set of nine baseline
+models for comparison. All baselines are evaluated under the same
+experimental conditions (model version, hardware, and evaluation
+metrics) to ensure a fair comparison. Hyperparameters are tuned on
+validation sets with systematic grid search to optimize performance
+while maintaining comparable computational budgets.
+Prompt-Based Reasoning Methods:
+• End-to-End QA: Direct question-answering without inter-
+mediate steps, using standard few-shot prompting with 0
+exemplar per dataset.
+• Few-Shot QA: Enhanced few-shot prompting with 3-5
+carefully selected exemplars covering different question
+types and table structures.
+8
+=== PAGE 9 ===
+TabTracer: MCTS for Complex Table Reasoning with LLMs
+• Chain-of-Thought (CoT)[ 45]: Standard CoT prompting
+with step-by-step reasoning for table reasoning tasks.
+• CoT-Consistent[ 43]: Self-consistency CoT with 𝑘= 5
+samples and majority voting for final answer selection.
+• Lotus[ 33]: Semantic operator framework with declara-
+tive DataFrame operations and statistical accuracy guaran-
+tees. We implement the core semantic operators (sem_filter,
+sem_join, sem_topk) and integrate domain-specific con-
+straints for financial and scientific schemas.
+Agent-Based Reasoning Systems:
+• Chain-of-Table[ 44]: Deterministic transformation pro-
+grams with operation classifiers retrained on our datasets.
+Maximum program length capped at 12 operations to pre-
+vent infinite loops.
+• Reactable[53]: ReAct-style agent with iterative reasoning-
+action loops. Configuration includes full tool suite (filter,
+sort, aggregate, join) with beam search (beam size = 4) for
+action selection.
+• MACT[ 58]: Multi-agent collaborative framework with
+planner, executor, and verifier agents. We employ the rec-
+ommended two-round deliberation protocol and share our
+tool adapters across all agents for consistency.
+• Table-Critic[ 50]: Iterative self-critique system with three
+critique-refinement loops. It uses the same operator set as
+Chain-of-Table for tool execution.
+4.2 Comparison with Baselines
+We compare TabTracer with various baselines across three table
+reasoning datasets (TabFact, WikiTQ, CRT), demonstrating its ef-
+fectiveness and efficiency.
+4.2.1 Effectiveness evaluation.Table 2 demonstrates that TabTracer
+significantly outperforms SOTA baselines, achieving consistently
+high and stable EM across various datasets and backbones, and
+ranks at the top in nearly all configurations. Specifically, on the
+complex CRT dataset, TabTracer achieves significant improvement,
+up to 7.4% over Table-Critic (Qwen3-32B-Direct), with consistent
+improvements across other LLM backbones. Even on the simpler
+fact-verification dataset (TabFact), TabTracer achieves 0.2–1.7%
+improvement, demonstrating the stable performance of TabTracer.
+Prompt-based baselines remain competitive on some settings,
+especially on fact-style queries. CoT-Consist is the strongest prompt-
+based baseline in Table 2. It inherits a clear chain-of-thought rea-
+soning path and adds voting across multiple chains, improving
+robustness. However, it still relies on language-only checks, which
+hurts numerical tasks. Agent-based methods invoke tools to re-
+duce model-only hallucinations, and Table-Critic is the strongest
+agent-based baseline. However, most agents still follow linear tra-
+jectories or weak step validation, so errors can propagate, and re-
+sults vary more across backbones. TabTracer is best or second-best
+across datasets and backbones. It performs well because schema-
+aware subtable slicing reduces distractors, step-level verification
+catches intermediate errors, and MCTS pruning removes redundant
+branches while keeping the search focused.
+To investigate the impact of reasoning LLMs on table reasoning,
+we compare representative reasoning LLMs in Table 2. It can be seen
+that existing prompt-based and agent-based methods exhibit strong
+sensitivity to the LLM backbones. For instance, compared with
+Qwen3-32B, CoT-Consist and Chain-of-Table degrade substantially
+on Qwen3-32B-Direct, highlighting their dependence on model-
+level reasoning capabilities. In contrast, TabTracer remains robust
+across model types, consistently achieving the best or second-best
+performance.
+4.2.2 Efficiency evaluation.Table 3 compares token consumption
+across methods. Prompt-based systems are the most efficient be-
+cause they run in a single pass or a small number of samples without
+repeated tool calls. Tool-intensive agents are the most expensive
+group because iterative tool execution repeatedly reintroduces large
+table context. Tree-based agents sit between these extremes. Their
+multi-round critique improves accuracy but adds extra calls and
+repeated context. MACT is a special case with low input but high
+output. The multi-agent dialogue inflates output tokens even when
+inputs are small. TabTracer is the most cost-effective among agent
+systems. Subtable slicing shrinks context early, MCTS pruning re-
+moves redundant branches, and the single-step execute-and-reflect
+loop keeps budgets controlled while preserving accuracy.
+Cross-backbone stability analysis shows that token usage can
+vary widely across LLMs for tool-based agents. The clearest con-
+trast appears between Qwen3-32B and Qwen3-32B-Direct, where
+the thinking mode produces much longer outputs. Methods that
+generate long reasoning text at each step amplify this gap because
+every tool call includes extra model output. TabTracer shows a
+smaller variance across backbones. It limits the number of tool calls
+per query and keeps step outputs short and structured, so backbone
+verbosity has less room to expand. This indicates that the stability
+we observe is driven by the method design rather than a specific
+backbone.
+4.3 Numerical Robustness
+Numerical robustness is critical for table reasoning: arithmetic
+hallucinations easily propagate across chained operations and flip
+final decisions. Overall TabFact performance already reflects gains
+in factual faithfulness, and to isolate numerical hallucinations, we
+extract arithmetic-heavy subsets from WikiTQ and CRT for focused
+analysis. Table 4 evaluates TabTracer’s ability to suppress numerical
+hallucinations on arithmetic-intensive subsets of WikiTQ and CRT.
+We analyze TabTracer’s performance across three dimensions: task-
+specific accuracy gains, cross-model stability, and comparison with
+baseline approaches.
+Baselines show clear limitations in numerical reasoning. Prompt-
+based approaches plateau at 45% on CRT, indicating that longer
+textual chains still struggle with exact computation. Agent systems
+without iterative refinement (e.g., Chain-of-Table, MACT) remain
+below 47% on CRT, while Table-Critic is the strongest baseline with
+41–47% on CRT and around 76–84% on WikiTQ arithmetic subsets.
+TabTracer substantially outperforms these baselines. On CRT arith-
+metic queries, it reaches 53–57% across backbones and improves
+over Table-Critic by 8.9–12.4 percentage points. On WikiTQ arith-
+metic subsets, the gains are smaller but consistent at 0.3–2.5 points.
+These results directly address numerical hallucination. By isolating
+arithmetic-heavy subsets, we show that TabTracer reduces numeric
+hallucinations rather than only improving overall EM. The gains
+come from execution-grounded refinement. The tool–reflection
+9
+=== PAGE 10 ===
+Luo et al.
+Table 2: Experimental Results on Table QA Datasets, where results show Exact Match accuracy. Bold numbers denote the best
+results. Underline numbers imply the second-best results.
+Method Qwen3-32B-Direct Qwen2.5-72B Qwen3-32B GPT-4.1-Mini
+TabFact WikiTQ CRT TabFact WikiTQ CRT TabFact WikiTQ CRT TabFact WikiTQ CRT
+Prompt-Based Reasoning
+End-to-End QA 0.7915 0.5615 0.4904 0.8557 0.6271 0.5275 0.9407 0.7585 0.6093 0.8597 0.6634 0.5508
+Few-Shot QA 0.8187 0.5930 0.5137 0.8439 0.5907 0.4835 0.9303 0.7742 0.6058 0.8295 0.5654 0.4629
+Chain-of-Thought 0.9185 0.5413 0.4698 0.9175 0.7671 0.6181 0.9298 0.7546 0.6202 0.9437 0.7581 0.5865
+CoT-Consist 0.9338 0.5927 0.4959 0.9358 0.7828 0.6305 0.9447 0.7789 0.6168 0.94910.7726 0.6016
+Lotus 0.8434 0.5750 0.4533 0.8869 0.6722 0.5659 0.9224 0.7516 0.6140 0.8908 0.7319 0.5659
+Agent-Based Systems
+Chain-of-Table 0.8864 0.4918 0.4317 0.9077 0.7231 0.5604 0.9030 0.7540 0.4684 0.8664 0.6237 0.5483
+Reactable 0.8063 0.6001 0.5618 0.6764 0.5320 0.3571 0.8167 0.5992 0.5591 0.6809 0.4936 0.2816
+MACT 0.8706 0.7120 0.5824 0.8923 0.7306 0.5934 0.9422 0.7957 0.6621 0.8923 0.6685 0.5797
+Table-Critic 0.9430 0.8301 0.6414 0.9260 0.7770 0.6250 0.9417 0.8285 0.6428 0.9402 0.8128 0.6634
+TabTracer (Ours) 0.9447 0.8503 0.7157 0.9373 0.8126 0.7047 0.9486 0.8384 0.7074 0.9452 0.8357 0.7143
+Table 3: Token usage across datasets (Input / Output tokens).
+Method
+Qwen3-32B-Direct Qwen2.5-72B
+TabFact WikiTQ CRT TabFact WikiTQ CRT
+Input Output Input Output Input Output Input Output Input Output Input Output
+CoT-Consist 3634.02 919.18 4966.36 832.27 3494.43 1410.83 3624.04839.23 4928.08 876.33 3474.43 1535.82
+Chain-of-Table 15212.50 1160.23 9010.26 550.63 9587.52386.70 12656.28 907.94 8665.55447.27 7701.82370.02
+Reactable 7250.02 680.63 19091.73 663.83 8633.00 1022.57 21530.03 864.07 21530.03 864.07 12832.69 1337.33
+MACT 1140.782232.01 2307.441391.60 2177.002188.53 1136.781708.78 2303.431371.15 2173.002044.58
+Table-Critic 9531.60 366.20 12032.00528.70 13337.60 796.30 23559.30 1713.30 29660.70 1653.10 26571.20 1151.90
+TabTracer (Ours) 1983.00 251.40 6650.40 685.80 4373.80 533.40 2913.50 911.70 7759.60 757.30 4926.10 940.10
+Method
+Qwen3-32B GPT-4.1-Mini
+TabFact WikiTQ CRT TabFact WikiTQ CRT
+Input Output Input Output Input Output Input Output Input Output Input Output
+CoT-Consist 3715.40954.12 4918.51 2323.75 3464.43 3992.56 3157.56 710.49 4298.59 773.76 3072.58 1357.60
+Chain-of-Table 11677.74 8976.12 5559.84 2338.02 7546.68 6655.20 12880.67 1169.83 12170.07 924.73 10806.01581.89
+Reactable 7537.09 3849.19 19142.75 3939.10 8761.14 4321.98 8696.00 2184.04 29323.53 2153.97 13997.54 2323.82
+MACT 1136.784510.92 2303.403947.27 2173.006346.85 1028.513784.13 1995.811176.87 1418.051392.37
+Table-Critic 10337.80 1255.80 13123.00 2609.30 15495.50 2702.60 18378.20609.00 22407.10 819.80 23457.30 1055.10
+TabTracer (Ours) 1984.40 1752.20 6581.001390.40 4635.701365.50 1959.30 911.20 6831.80720.00 5274.50 1182.90
+Table 4: Numerical reasoning accuracy on WikiTQ and CRT
+(Exact Match). Sample counts: WikiTQ = 2229, CRT = 204.
+Method Qwen3-32B-DirectQwen2.5-72BQwen3-32BGPT-4.1-Mini
+WikiTQ CRT WikiTQ CRTWikiTQ CRTWikiTQ CRT
+Prompt-Based Reasoning
+End-to-End QA0.5034 0.2108 0.5509 0.25000.7856 0.40690.5998 0.2921
+Few-Shot QA 0.5334 0.2206 0.5352 0.19610.7878 0.38240.4773 0.1881
+Chain-of-Thought0.6123 0.2549 0.7511 0.38730.8054 0.45100.7984 0.4406
+CoT-Consist 0.6831 0.2843 0.77120.40200.8228 0.44120.8153 0.4505
+Lotus 0.5379 0.2451 0.6326 0.30920.7672 0.39210.6376 0.3333
+Agent-Based Systems
+Chain-of-Table0.5283 0.3465 0.6659 0.35290.7798 0.41180.5422 0.2637
+Reactable 0.5362 0.3333 0.4613 0.11760.5344 0.36270.4694 0.1485
+MACT 0.6754 0.3235 0.7001 0.31860.8032 0.46080.6404 0.3366
+Table-Critic 0.8362 0.4604 0.7649 0.41490.83850.44060.82050.4656
+TabTracer (Ours)0.8398 0.5743 0.7873 0.53470.82770.56440.8250 0.5545
+loop corrects intermediate arithmetic errors and forces computa-
+tions to align with table schemas, which is hard to achieve with
+language-only reasoning or single-pass execution. TabTracer also
+shows stronger cross-model stability. Its CRT accuracy stays within
+a 4% band (53.5–57.4%), whereas Table-Critic varies more and stays
+lower (41.5–46.6%). This stability indicates that TabTracer’s im-
+provements are driven by the method design rather than a specific
+backbone.
+4.4 Scalability Experiment
+This section examines how TabTracer scales with table sizes. Table 5
+stratifies queries by table size (small/medium/large) and uses a three-
+level green gradient to highlight scaling trends across datasets.
+On small tables, TabTracer achieves 94-95% accuracy on Tab-
+Fact, reaches 86% on WikiTQ (matching the leading baseline Table-
+Critic), and maintains 3-6% advantages on CRT. This shows that
+TabTracer preserves strong accuracy when tables are compact and
+the evidence is easy to isolate.
+As complexity increases to medium tables, TabTracer maintains
+stable performance around 84% on WikiTQ while competing meth-
+ods suffer substantial degradation (CoT-Consist drops 15 points,
+MACT falls from 82% to 67%); on CRT, TabTracer sustains 67-
+70% accuracy while Chain-of-Table experiences 12% drops. This
+10
+=== PAGE 11 ===
+TabTracer: MCTS for Complex Table Reasoning with LLMs
+Table 5: Small/Medium/Large accuracy comparison across datasets and model configurations (Exact Match), and T. denotes
+TabFact, W. refers to WikiTQ, and C. signifies CRT.
+Method
+Qwen3-32B-Direct Qwen2.5-72B
+Small Medium Large Small Medium Large
+T. W. C. T. W. C. T. W. C. T. W. C. T. W. C. T. W. C.
+End-to-End QA 0.81 0.62 0.51 0.76 0.52 0.45 0.83 0.45 0.25 0.86 0.68 0.57 0.84 0.60 0.45 0.83 0.49 0.25
+Chain-of-Thought0.93 0.60 0.50 0.88 0.51 0.42 0.91 0.37 0.62 0.93 0.81 0.66 0.91 0.76 0.55 0.96 0.61 0.50
+CoT-Consist 0.94 0.65 0.53 0.92 0.57 0.43 0.96 0.42 0.62 0.94 0.82 0.66 0.93 0.78 0.58 1.00 0.65 0.50
+Chain-of-Table 0.90 0.53 0.55 0.86 0.52 0.45 1.00 0.45 0.25 0.91 0.76 0.60 0.89 0.70 0.48 1.00 0.56 0.38
+MACT 0.88 0.76 0.61 0.85 0.69 0.53 0.96 0.61 0.50 0.91 0.78 0.62 0.87 0.70 0.54 0.87 0.63 0.50
+Table-Critic 0.94 0.86 0.68 0.95 0.84 0.56 0.96 0.68 0.50 0.93 0.82 0.66 0.93 0.76 0.54 0.96 0.64 0.50
+TabTracer (Ours)0.94 0.87 0.72 0.94 0.84 0.70 1.00 0.79 0.62 0.94 0.84 0.72 0.93 0.81 0.67 1.00 0.73 0.62
+Method
+Qwen3-32B GPT-4.1-Mini
+Small Medium Large Small Medium Large
+T. W. C. T. W. C. T. W. C. T. W. C. T. W. C. T. W. C.
+End-to-End QA 0.95 0.81 0.62 0.93 0.75 0.57 0.96 0.61 0.62 0.87 0.72 0.57 0.84 0.64 0.52 0.87 0.51 0.38
+Chain-of-Thought0.93 0.78 0.64 0.93 0.76 0.57 1.00 0.61 0.75 0.94 0.79 0.63 0.94 0.75 0.53 1.00 0.62 0.62
+CoT-Consist 0.94 0.80 0.63 0.95 0.79 0.58 1.00 0.64 0.75 0.95 0.80 0.63 0.95 0.78 0.54 1.00 0.63 0.62
+Chain-of-Table 0.92 0.77 0.64 0.89 0.76 0.57 0.91 0.64 0.50 0.87 0.65 0.59 0.86 0.61 0.45 0.95 0.56 0.62
+MACT 0.93 0.82 0.68 0.96 0.79 0.61 0.96 0.67 0.62 0.90 0.72 0.61 0.87 0.64 0.51 1.00 0.57 0.50
+Table-Critic 0.94 0.86 0.67 0.94 0.84 0.60 0.96 0.69 0.50 0.94 0.84 0.70 0.94 0.82 0.57 1.00 0.68 0.62
+TabTracer (Ours)0.95 0.86 0.72 0.94 0.83 0.67 1.00 0.77 0.50 0.94 0.86 0.73 0.95 0.83 0.68 1.00 0.75 0.50
+demonstrates TabTracer’s superior resilience compared to single-
+trajectory approaches, as the tree search mechanism enables ex-
+ploring multiple paths to handle increased complexity.
+On the large tables, TabTracer maintains 73-79% accuracy on
+WikiTQ, preserving 7-12 point leads over Table-Critic’s 64-68%,
+and sustains 12% advantages on CRT across open-weight models.
+Despite natural performance degradation, TabTracer’s tree search
+and reflection mechanisms demonstrate significant advantages in
+high-complexity scenarios.
+Table 5 uses a three-level green gradient, where darker cells
+indicate better accuracy on smaller tables and lighter cells indicate
+worse accuracy on larger tables. The color trend shows a consistent
+downward shift from small to large tables across methods, con-
+firming that larger tables are harder. The decline is most visible on
+WikiTQ and CRT, while TabFact shows a milder pattern because
+it is a binary verification task. We also note that the large-table
+subsets for TabFact and CRT are relatively small, so their large-size
+results can be noisier. Compared with baselines, TabTracer shows a
+smaller drop from small to large tables on WikiTQ and CRT, while
+prompt-based and single-trajectory agents degrade more sharply.
+This indicates stronger scalability for TabTracer under increasing
+table size.
+4.5 Ablation Study
+We validate the necessity of each tool through single-component
+ablation experiments on CRT, measuring both accuracy and token
+efficiency impacts as shown in Figure 3. Removing any tool reduces
+exact-match accuracy. Token usage also rises when the planner can-
+not delegate. The largest increase appears without SelectColumns,
+and dropping GenExecCode adds around1k tokens despite lower
+accuracy.
+Removing SelectColumns causes the most severe degradation:
+exact-match accuracy plummets from70 .5%to52–53%(a17–19
+0.68
+0.71
+0.74
+(a) CRT
+Qwen2.5-72B
+GPT-4.1-Mini
+Ours
+w/o GenExecw/o FilterRowsw/o SelectColumns
+0.51
+0.52
+0.53Exact Match
+Ours
+w/o GenExecw/o FilterRowsw/o SelectColumns
+0
+2000
+4000
+6000
+8000
+10000Tokens per sample
+(b) Token usage (input + output)
+Qwen Input
+Qwen Output
+GPT Input
+GPT Output
+Figure 3: Tool ablation on CRT. We report exact-match accu-
+racy and token usage when removing each operator.
+percentage point drop), representing the largest accuracy impact
+among all three tools. Simultaneously, input token consumption
+surges from4 .9𝑘 to9 .0𝑘 tokens for Qwen2.5-72B, nearly dou-
+bling the computational budget. This dual impact stems from
+SelectColumns’ role in table width reduction—without column
+pruning, every subsequent tool invocation carries the full table
+width, inflating context length while forcing the model to reason
+over irrelevant columns. SelectColumns thus emerges as the critical
+component for both accuracy and efficiency.
+Removing FilterRows reduces accuracy by2–4percentage
+points while increasing token consumption by approximately600
+tokens. FilterRows enables row-level filtering to eliminate distractor
+information, and its absence forces the system to search through
+larger row spaces, increasing reasoning difficulty. Although the
+individual impact is smaller than SelectColumns, the cumulative
+effect across multi-step reasoning chains remains significant.
+11
+=== PAGE 12 ===
+Luo et al.
+Removing GenExecCode decreases accuracy by2–4percentage
+points, yet paradoxically increases token consumption by approx-
+imately1 𝑘 tokens. This counterintuitive pattern arises because,
+without code generation capabilities, the system resorts to lengthier
+natural language descriptions and multiple tool invocations to ac-
+complish complex computations, resulting in token inflation despite
+reduced accuracy. GenExecCode therefore provides a concise and
+efficient computational pathway that outperforms natural-language
+alternatives.
+The complete toolset achieves optimal performance in both ac-
+curacy and efficiency dimensions. Any single tool’s removal either
+degrades accuracy or increases token consumption, validating the
+necessity of each tool in the architecture.
+4.6 Component Analysis
+This analysis probes step-level reliability and search behavior,
+where error propagation can arise without intermediate verifi-
+cation. Therefore, we report tool success/adoption and search
+diagnostics.
+Figure 4-5-6 underpin this component analysis: we first examine
+operational stability (tool success and adoption), then inspect search
+behaviour (state reuse and simulation counts).
+Figure 4 shows that every tool clears the first-attempt success
+rate above99 .7%across models. FilterRows and SelectColumns hit
+99.9–100%, indicating that even complex filters execute determinis-
+tically, while GenExecCode maintains99 .7–100%despite synthesis-
+ing bespoke Python code.
+First-attempt adoption mirrors task difficulty. FilterRows retains
+77.5%of outputs on WikiTQ with Qwen3-32B-Direct and70 .2%on
+CRT, but drops to27.6%on WikiTQ with Qwen2.5-72B as the model
+explores broader branches. Subsequent attempts are essential: the
+second invocation recovers an additional 8.8% of answers and the
+third a further 14.7%. Conversely, GPT-4.1-mini starts higher on
+CRT (65.2%) and leverages a strong second attempt (53.7%) to close
+residual gaps. SelectColumns remains nearly perfect (≥98.9% first-
+attempt adoption), confirming column selection as a solved subtask.
+Our proposed MCTS-based architecture demonstrates strong op-
+erational efficiency, validating the choice of tree-guided exploration
+over exhaustive reasoning. Figure 5 demonstrates that TabTracer
+maintains modest simulation counts (2.83–3.86 per query) while
+reusing up to 47.7% of cached states, providing evidence that the
+caching strategy effectively amortizes search cost. As shown in Fig-
+ure 6, 64–88% of queries converge within three simulations, while
+extensive searches (>6 expansions) remain below 11%, illustrat-
+ing well-controlled exploration. These results validate that search
+architecture achieves a balance between exploration depth and
+computational efficiency. This happens because reflection-based
+scores guide selection and hash-based filtering removes repeated
+state-action pairs, which prunes redundant branches early.
+5 CONCLUSION
+In this paper, we introduce TabTracer, a MCTS agent that restores
+discipline to complex table reasoning. We first decouple planning
+from execution: an information-augmented UCB1 policy expands
+tool calls only when an intermediate question promises new evi-
+dence, while immediate reflection scores each branch without long
+rollouts. We then ground reasoning in deterministic dataframe
+tools, yielding auditable operations that suppress hallucinations.
+Finally, TabTracer persists versioned table states to enable low-cost
+backtracking and state reuse, keeping exploration budget in check.

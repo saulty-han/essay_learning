@@ -1,0 +1,963 @@
+
+
+=== Page 1 ===
+
+Proceedings of the 2025 Conference of the Nations of the Americas Chapter of the Association for Computational Linguistics: Human Language Technologies
+(V olume 1: Long Papers), pages 9409–9426
+April 29 - May 4, 2025 ©2025 Association for Computational Linguistics
+MASTER: A Multi-Agent System with LLM Specialized MCTS
+Bingzheng Gan1, Yufan Zhao1, Tianyi Zhang1, Jing Huang1, Yusu Li1
+Shu Xian Teo1, Changwang Zhang1, Wei Shi1
+1Huawei Technologies, Co., Ltd.
+{gan.bingzheng,zhao.yufan1,zhang.tianyi,huangjing114,liyusu,
+teo.shu.xian,zhangchangwang,w.shi}@huawei.com
+Abstract
+Large Language Models (LLM) are increas-
+ingly being explored for problem-solving tasks.
+However, their strategic planning capability is
+often viewed with skepticism. Recent studies
+have incorporated the Monte Carlo Tree Search
+(MCTS) algorithm to augment the planning ca-
+pacity of LLM. Despite its potential, MCTS
+relies on extensive sampling simulations to ap-
+proximate the true reward distribution, which
+leads to two primary issues. Firstly, MCTS is
+effective for tasks like the Game of Go, where
+simulation results can yield objective rewards
+(e.g., 1 for a win and 0 for a loss). However,
+for tasks such as question answering, the result
+of a simulation is the answer to the question,
+which cannot yield an objective reward without
+the ground truth. Secondly, obtaining statisti-
+cally significant reward estimations typically re-
+quires a sample size exceeding 30 simulations,
+resulting in excessive token usage and time
+consumption. To address these challenges, we
+present the Multi-Agent System with Tactical
+Execution and Reasoning using LLM Special-
+ized MCTS ( MASTER), a novel framework
+that coordinates agent recruitment and commu-
+nication through LLM specialized MCTS. This
+system autonomously adjusts the number of
+agents based on task complexity and ensures
+focused communication among them. Com-
+prehensive experiments across various tasks
+demonstrate the effectiveness of the proposed
+framework. It achieves 76% accuracy on Hot-
+potQA and 80% on WebShop, setting new state-
+of-the-art performance on these datasets.
+1 Introduction
+LLM represent a significant milestone in artifi-
+cial intelligence and are increasingly employed
+in problem-solving tasks (Xi et al., 2023). How-
+ever, their application to complex problems is often
+limited due to concerns about their planning capa-
+bilities. LLM generate text based on "next token
+probability" conditioned on the context (Vaswani
+et al., 2017; Huang et al., 2023), but effective rea-
+soning requires rigorous deduction rooted in the
+first principles of logic, grounded in data and reality
+(Valmeekam et al., 2023).
+To enhance the planning capabilities of LLM,
+recent studies have incorporated the MCTS algo-
+rithm (Hao et al., 2023; Zhou et al., 2024; Wang
+et al., 2024). MCTS uses simulations to evaluate
+the long-term consequences of actions, backpropa-
+gating aggregated rewards up the tree. This allows
+for backtracking to previous states based on esti-
+mated future potential, striking a balance between
+exploitation and exploration. However, the use of
+MCTS in existing works presents two significant
+challenges:
+1. It relies on objective criteria from the ex-
+ternal environment to obtain simulation re-
+wards, which are not always available (e.g.,
+in question-answering tasks where the cor-
+rectness of an answer cannot be determined
+without ground truth);
+2. It requires numerous simulations to obtain sta-
+tistically significant rewards, which can be
+unsustainable due to the time and token costs.
+To tackle the first challenge, certain approach
+compares the outcomes of simulations with the
+ground truth to derive objective rewards (Zhou
+et al., 2024) which is flawed because revealing
+the ground truth during problem-solving is inap-
+propriate. In addressing the second challenge, they
+limit the number of simulations (Hao et al., 2023)
+or terminate the process once a correct answer is
+identified (Zhou et al., 2024). Yet, this early termi-
+nation approach is not feasible if the ground truth
+remains undisclosed.
+These issues highlight a critical step of MCTS:
+simulation. Due to these limitations, MCTS is con-
+strained to a narrow scope of application and is not
+9409
+
+=== Page 2 ===
+
+fully compatible with LLM. Consequently, we pro-
+pose an adaptation of MCTS tailored to LLM sce-
+narios. Instead of performing limited simulations
+with uncertain rewards, we eliminate the simula-
+tion process, relying on the LLM’s self-evaluation
+capabilities to allocate rewards. Additionally, we
+propose several methods to enhance the objectivity
+of rewards: 1). An additional step is introduced
+for the LLM to provide more context before self-
+evaluation; 2). The LLM’s confidence is incor-
+porated as a weight for the reward to regulate its
+influence; 3). The backpropagation mechanism is
+retained, allowing for rewards updates if initially
+misallocated. While traditional MCTS focuses re-
+sources on simulations for an approximate reflec-
+tion of reality, our approach distributes resources
+across multiple steps to jointly ensure the accuracy
+and objectivity of rewards. This is why we named
+our project MASTER, as it replaces simulation, the
+core procedure of MCTS, by mastering a series of
+refined designs.
+Another contribution of this paper is the introduc-
+tion of a novel multi-agent system. Current multi-
+agent systems feature two prominent frameworks:
+the first allows agents to be independently created
+and to share ideas freely. While versatile, this open
+communication can lead to off-topic discussions
+due to hallucinations (Lin et al., 2024; Hong et al.,
+2023; Xi et al., 2023; Zhang et al., 2024a), divert-
+ing focus from the main task and depleting the
+token window length for extended conversation his-
+tory. The second approach involves human-created
+agents, where communication is predefined. Al-
+though more controlled, this approach lacks code
+reusability (Chu et al., 2023). Additionally, since
+the procedures are established, it cannot adapt to
+tasks of varying difficulty. It struggles with unan-
+ticipated complex tasks on the one hand and spends
+unnecessary resources on easy tasks on the other.
+Our system, MASTER, addresses these limita-
+tions by employing LLM-specialized MCTS to
+guide the creation and interaction of agents. In
+this system, child agents respond to and build upon
+the outputs of the parent agent, making recruit-
+ment and communication more manageable and
+efficient. The system dynamically scales the num-
+ber of agents based on task complexity, ensuring
+flexibility. Although the agents share similar pro-
+files, they assume different roles by taking distinct
+actions. Unlike the nodes in LATS (Zhou et al.,
+2024) and RAP (Hao et al., 2023), which represent
+states on a reasoning tree and are closely tied to
+specific tasks, our agents are task-agnostic and do
+not require reconfiguration when the task changes.
+In summary, our key contributions are:
+1. We propose a novel Multi-Agent System
+with Tactical Execution and Reasoning us-
+ing LLM Specialized MCTS (MASTER), a
+novel multi-agent framework that employs a
+new agent recruitment process and communi-
+cation protocol based on the MCTS algorithm.
+The system autonomously adjusts the number
+of agents according to task complexity and
+mitigates distractions and shortage of token
+window during agent communication.
+2. We introduce a modified version of MCTS tai-
+lored to LLM. This adaptation is suitable for
+tasks where the environment does not provide
+objective feedback, addressing a limitation of
+the original MCTS. This revised MCTS is im-
+plemented within our MASTER framework.
+3. We conduct comprehensive experiments ac-
+cross diverse tasks, including Question An-
+swering (HotpotQA), Decision Making (Web-
+Shop), and Programming (MBPP). It achieves
+76% accuracy on HotpotQA and 80% on Web-
+Shop, setting new SOTA on these datasets.
+2 Related Work
+Many studies have been done to enhance the plan-
+ning capabilities of LLM. Among these efforts,
+two primary planning approaches have emerged for
+agents: Single-Path Planning and Tree-Based Plan-
+ning. In the context of multi-agent systems, current
+frameworks predominantly employ either Prede-
+fined Frameworks or Open Frameworks depending
+on their agent communication patterns. We discuss
+some of the relevant works in this section.
+2.1 Planning Processes
+2.1.1 Single-Path Planning
+In single-path planning, the LLM follows one tra-
+jectory at a time, without branching into multiple
+possibilities. Early examples include Few-Shot
+Prompting (Brown et al., 2020), where the LLM
+is guided by examples of completed tasks, and
+Chain of Thought approaches (Wei et al., 2022;
+Kojima et al., 2023; Ning et al., 2024), which re-
+quire the LLM to reason step-by-step, maintaining
+a linear trajectory throughout the process. Zhang et
+al. introduce a structured meta-prompt with place-
+holders for the LLM to complete (Zhang et al.,
+9410
+
+=== Page 3 ===
+
+Regular Agent
+Terminal Agent 
+failed Evaluation
+Regular Agent 
+selected at this step
+Regular Agent 
+expanded at this step
+Backpropagate:
+Update the value and 
+visits of agents on route 
+to the terminal agent.
+Thought
+Action
+Use the LLM for reasoning    
+and action selection 
+ObservationExecute an action with 
+tools and observe output
+Validation
+Assessment
+Use the LLM to validate 
+facts in the solution
+Use the LLM to estimate the 
+initial reward for the solution
+Evaluation
+Use the LLM to evaluate the 
+answer (Terminal Agent)
+Solution
+Context
+Parent Agent
+Child Agent
+Expansion from 
+Selected Agent
+Agent2
+UCT: 0.674
+Agent5
+UCT: 0.8
+Agent6
+UCT: 0.9
+Agent0
+UCT: 0.3
+Agent1
+UCT: 0.7 → 0.529
+Agent3
+UCT: 0.174
+Agent4
+UCT: 0.484
+Terminal Agent 
+passed Evaluation
+Expansion Backpropagation
+Figure 1: Reasoning Tree of MASTER. Starting from Agent0, Agent1 and Agent2 are created in the first expansion.
+Then the system first selects Agent1 for expansion due to its higher UCT. Its child agent Agent3 is a terminal agent
+that failed evaluation which triggers a backpropagation and lowers the UCT of Agent1. Now Agent2 has the highest
+UCT and is selected for next expansion. Its child agent, Agent6 is a terminal agent and passes evaluation. The
+answer in it is the final answer.
+2024c) while Suzgun and Kala provide task-related
+information to guide the model’s path (Suzgun and
+Kalai, 2024). Single-path planning also benefits
+from external feedback to refine solutions. ReAct
+(Yao et al., 2023b) integrates feedback from the
+environment, and Reflexion (Shinn et al., 2023)
+supplements this with verbal reasoning based on
+the received feedback. Chen et al. use outputs and
+error messages from a code interpreter to assist
+the LLM in debugging (Chen et al., 2024c), while
+Qiu et al. leverage outputs from a symbolic inter-
+preter to enhance the LLM’s inductive reasoning
+capabilities (Qiu et al., 2024).
+2.1.2 Tree-Based Planning
+In complex problem-solving, it is often benefi-
+cial to explore multiple thought trajectories and
+backtrack as needed. Tree-based planning or-
+ganizes these thoughts into a tree structure, on
+which a search algorithm is applied. For exam-
+ple, BFS/DFS is employed in the Tree of Thoughts
+(Yao et al., 2023a). RAP (Hao et al., 2023) and
+LATS (Zhou et al., 2024) utilize MCTS to approxi-
+mate reality and support the LLM’s reasoning pro-
+cesses. However, how much the simulation process
+contributes to their success remains uncertain due
+to those two issues mentioned in Introduction sec-
+tion. To address the first challenge, RAP prompts
+the LLM with "Is this reasoning step correct?" and
+uses the next-word probability of "yes" as a reward,
+thus leveraging the LLM’s evaluation capabilities
+without relying on external criteria. For the second
+challenge, RAP reduces costs by performing only
+one simulation. From a mathematical perspective,
+it is questionable that one simulation can accurately
+approximate the real reward. Some methods stop
+simulations once a correct answer is found. How-
+ever, this early termination mechanism is unavail-
+able if the ground truth is not revealed.
+2.2 Multi-Agent Systems
+2.2.1 Predefined Framework
+In predefined frameworks, the recruitment and com-
+munication of agents are structured in advance. For
+instance, ChatDev (Qian et al., 2023) and MetaGPT
+(Hong et al., 2023), both tailored for software devel-
+opment, rely on predefined workflows. Similarly,
+AutoAgents (Chen et al., 2024a), a framework de-
+signed for automatic agent generation, follows a
+predefined structure. These frameworks have been
+criticized for their heavy dependence on upfront
+planning and their lack of flexibility in responding
+to changing requirements (Pargaonkar, 2023).
+2.2.2 Open Framework
+Conversely, open frameworks offer greater flexibil-
+ity, allowing agents to interact more dynamically.
+For example, AgentVerse (Chen et al., 2024b) re-
+9411
+
+=== Page 4 ===
+
+cruits agents with the freedom to communicate
+openly, while CAMEL (Li et al., 2023) explores
+a two-agent system. Additionally, AutoGen (Wu
+et al., 2023) facilitates next-generation LLM ap-
+plications by enabling multi-agent conversations,
+allowing for adaptive and context-aware interac-
+tions. As noted by Wei et al., effective multi-agent
+collaboration in these open frameworks requires
+autonomous systems to regulate communication,
+ensuring that agents know when and with whom to
+interact to avoid the exchange of irrelevant infor-
+mation which is challenging for these frameworks
+(Wei et al., 2023).
+3 Methodology
+3.1 Preliminaries
+Before introducing our framework, we present
+MCTS to clarify the motivation behind our work.
+MCTS (Coulom, 2006) is a widely used planning
+algorithm and famously employed in AlphaGo (Sil-
+ver et al., 2016). Taking the Game of Go as an
+example, the algorithm assists in selecting the best
+possible action in the current state of the board
+based on their average rewards. These rewards are
+obtained through numerous simulations. For in-
+stance, consider the current state where action a1
+is chosen as the next move. The game then pro-
+ceeds to completion, with all subsequent actions,
+whether by our side or the opponent, determined
+by a policy model rather than a real player. The
+entire game sequence constitutes one simulation of
+actiona1. If we win, the reward is 1; otherwise, it
+is 0. Specifically, if we simulate 10 games from
+the current state with actiona1 and win 9 of them,
+the average reward fora1 would be 0.9. However,
+due to the vast action space in the Game of Go,
+it is impractical to simulate every possible action.
+The Upper Confidence Bound 1 applied to Trees
+(UCT) identifies actions with higher potential to
+win, allocating more simulations to these actions
+rather than distributing simulations equally among
+all actions. Once an action is decided based on this
+process and physically executed, leading to a new
+game state, the same procedure is then applied to
+select actions from this new state, and the planning
+continues until the actual end of the Game of Go.
+MCTS typically involves four key procedures:
+Selection: Traverse the current reasoning tree to se-
+lect the node with the highest UCT for simulation.
+Expansion: Extend the reasoning tree by adding
+new child nodes from the selected node. Simula-
+tion: Continue expanding from a child node until
+the task is completed. Backpropagation: After
+each simulation, update the average reward of cor-
+responding node with the newly obtained simula-
+tion reward.
+3.2 Framework of MASTER
+In our framework, MASTER, the concepts of rea-
+soning tree, selection, expansion, and backpropa-
+gation are analogous to those used in MCTS. How-
+ever, we eliminate the simulation step due to those
+two issues highlighted in the Introduction section.
+Instead, our framework incorporates three special
+mechanisms to derive rewards: providing more con-
+text before self-evaluation, incorporating LLM’s
+confidence in our novel UCT formula, and updat-
+ing rewards in backpropagation. The details of
+our framework are demonstrated in Figure 1 and
+further explained in following paragraphs.
+When our framework is presented with a task,
+it initializes a root agent with the problem. This
+agent then prompts the LLM to generate text that re-
+flects on the current reasoning trace (Thought) and
+proposes an action to solve the problem (Action).
+The model uses a temperature of 0.6 to encourage
+more diverse thoughts and actions in the reason-
+ing tree. The agent then executes this action using
+tools that interact with the external environment,
+producing feedback (Observation). The texts, in-
+cluding Thought, Action, and Observation, form
+the agent’sSolution, as illustrated in Figure 1. Sub-
+sequently, the agent prompts the LLM to generate
+a textual output that verifies key facts in the current
+Solution (Validation). Finally, based on the Solu-
+tion and Validation, the agent prompts the LLM to
+evaluate progress toward solving the problem, gen-
+erating both a score and the LLM’s confidence in
+this score (Assessment). These two values (score
+and confidence) are then extracted. The model uses
+a temperature of 0.0 for Validation and Assessment
+to ensure more stable decisions. All texts (Solution,
+Validation, and Assessment) form the agent’sCon-
+text and are stored in its memory (Figure 1). The
+score serves as the agent’s initial reward.
+The previous paragraph describes the generation
+of a single agent in our system. After the root agent
+is generated, child agents are created following the
+same procedure, with the root agent’s Context ap-
+pended to the prompts of these child agents, as
+they need to continue solving the problem. As
+illustrated in Figure 1, two child agents ( Agent1
+and Agent2) are generated using exactly the same
+9412
+
+=== Page 5 ===
+
+procedure and prompt to explore diverse reasoning
+paths from the same state (parent agent). The num-
+ber of child agents is a hyperparameter, Number of
+Branches, which varies depending on the task. The
+creation of these child agents is termed Expansion
+from the parent agent.
+Further expansion can be carried out from any
+existing agent using the same procedure. The UCT
+of each agent is calculated, and the agent with the
+highest UCT is selected for further expansion. An-
+other hyperparameter, Maximum of Expansion, rep-
+resents the approximate number of steps required
+to solve the problem, allowing users to set it based
+on their understanding of the task. If this limit is
+reached without finding a satisfactory solution, the
+solution from the terminal agent with the highest
+reward is submitted as the final answer.
+During the expansion of the reasoning tree,
+agents that generate a final answer rather than an
+intermediate step in their Solution, are called Ter-
+minal Agents. For instance, in the HotpotQA task,
+if an agent’s Action is ’Finish[]’, it is identified as
+a terminal agent, as this Action indicates a final
+answer. Similar indicators exist in the Solution
+of other tasks. During the Evaluation (Figure 1)
+which applies only to Terminal Agents, the LLM
+assesses the correctness of the Solution. If the so-
+lution is deemed correct, it is submitted as the final
+answer, concluding the task. If not, Backprop-
+agation is triggered, using the reward from this
+terminal agent to update the rewards of all agents
+on the path up to the root agent. Pseudo-code can
+be found in Appendix A.
+3.3 Formula of Modified UCT
+Recent works RAP and LATS directly apply the
+original UCT formula. To better suit our design,
+we propose a modified UCT formula.
+The original UCT formula is derived from Ho-
+effding’s Inequality (Lattimore T, 2020) which can
+be found in Appendix B. It is typically applied in
+the following scenario: Given a node representing
+a state (referred to as nodeh), there are multiple
+subsequent actions to choose from (e.g.,ai,a j,a k).
+To determine the Q value of these actions, multiple
+simulations are conducted, and UCT is employed
+to decide which action should be simulated. In-
+stead of simply selecting the node with the highest
+Q value (pure exploitation, the first term in Eqn
+1), UCT balances exploitation and exploration by
+incorporating an exploration term (the second term
+in Eqn 1) that favors nodes with fewer simulations.
+The nodei, representing the state resulting from ac-
+tionai, is one of the child nodes of nodeh. The
+UCT formula for nodei is:
+UCT =Qi +
+√
+ln (Ni)
+2ni
+(1)
+Qi =
+∑ni
+n=1rn
+ni
+(2)
+Whereni is the number of backpropagations ap-
+plied to the nodei. rn is the reward of the n-th
+backpropagation. Qi is the estimation of Q value
+calculated by Eqn 2. It represents the average re-
+ward from simulations. Ni is the total number of
+simulations by the parent node of the current nodei
+which is nodeh. In other words, Ni is the sum of
+ni,nj andnk in above example although nj and
+nk are not explicitly shown in the UCT formula.
+In our system,Qi, as the estimation of Q value,
+consists of two components: Initial Reward is
+extracted from Assessment when this agent is gen-
+erated. Updating Reward is the mean of rewards
+from backpropagation, similar toQi in Eqn 2. In-
+spired by the research on auxiliary information
+about rewards in the form of control variables
+(Verma and Hanawal, 2021), we modify the reward
+estimation in our system as shown in Eqn 3:
+Qi =c0·r0 + (1−c0)·
+∑ni
+n=1rn
+ni
+(3)
+Wherer0 is the initial reward given by LLM.c0
+is the confidence of the LLM to this initial reward.
+rn andni are the same with Eqn 2.
+The original MCTS relies heavily on numerous
+simulations to make this estimation accurate. Con-
+sequently, it becomes unreliable when the number
+ofni is small. On the other hand, our Q value has
+an extra component (initial reward), as our Q value
+is the weighted sum of initial reward and updating
+reward with the confidence as weight. When LLM
+has high confidence to the initial reward it assigns,
+the influence of rewards from backpropagation (up-
+dating reward) is reduced due to its lower weight
+(1−c0). Conversely, when the LLM has low con-
+fidence, updating reward is required to dominate
+the Q value estimation while the weight of updat-
+ing reward (1−c0) is higher. Notably, the number
+of backpropagationni is automatically adapted to
+each question rather than being manually set by
+users. For complex tasks, the model requires more
+attempts to obtain an acceptable answer, with each
+9413
+
+=== Page 6 ===
+
+failed attempt triggering a backpropagation. For
+simple question, the model may produce an ac-
+ceptable result in their first attempt, eliminating
+the need for backpropagation. This early termina-
+tion mechanism completes the task while reducing
+token consumption.
+In the formula used by RAP and LATS, an ex-
+ploration constantλreplaces the fixed 1/
+√
+2 as the
+weight of the exploration term as following:
+UCT =Qi +λ·
+√
+ln (Ni)
+ni
+(4)
+In our approach, we use 1/
+(
+10
+√
+2c0
+)
+as the ex-
+ploration weight. The significance of this adjust-
+ment is twofold: 1). The exploration term reflects
+the uncertainty associated with this agent. When
+the LLM has low confidence in the initial reward,
+the agent’s uncertainty is relatively high, necessi-
+tating more exploration. In such cases, a higher ex-
+ploration weight increases the UCT, guiding the al-
+gorithm to select this agent for further exploration;
+2).The number of backpropagations in our system
+is significantly lower than in the original MCTS
+while the slope of the logarithmic function is rela-
+tively steep when the variable is small, so the value
+of the exploration term tends to play a dominant
+role. Therefore, this exploration weight should be
+used to control the influence of this term. More-
+over, when the minimum confidence of 0.1 is used,
+the exploration weight equals 1/
+√
+2, the same as
+the weight in Eqn 1.
+In summary, the revised formula in our system
+is:
+UCT =
+
+
+
+r0 ifni = 0
+c0·r0 +(1−c0)·
+ni∑
+n=1
+rn
+ni
++ 1
+10
+√
+2c0
+·
+√ lnNi
+ni
+otherwise
+(5)
+Whenni is 0, indicating that no backpropagation
+has been applied to the node, the UCT of this node
+is set to be its initial rewardr0.
+3.4 Strategies of Reward Assignment
+To conclude, the three special mechanisms we im-
+plement to ensure the reliability of rewards in our
+framework are:
+1. Before assigning a reward in the Assessment
+phase, an additional Validation step is con-
+ducted, where the LLM comments on the cor-
+rectness of the facts in the current solution.
+These comments are added to the prompt for
+the Assessment step, guiding the LLM toward
+a more reliable reward. This design is mo-
+tivated by the observation that the LLM per-
+forms better when it is asked to address one
+problem at a time. Separately verifying cor-
+rectness and progress can lead to stable and
+reliable scoring.
+2. In the Assessment phase, the LLM is asked to
+provide both a score and its confidence in that
+score, rather than just the score alone. The
+confidence value plays two roles in our mod-
+ified UCT formula, which is detailed in the
+Formula of Modified UCT subsection. If the
+LLM has low confidence in the score it pro-
+vides, the influence of this score is reduced
+and the likelihood to select this agent for fur-
+ther exploration is increased.
+3. Backpropagation occurs after each simula-
+tion in the original MCTS. Although we have
+removed simulations, backpropagation is re-
+tained in our framework. It is triggered when-
+ever a terminal agent produces a Solution that
+fails Evaluation. A failed Evaluation indicates
+that the reasoning steps leading to this termi-
+nal agent may be flawed, and their Q value
+should be reduced accordingly. This mecha-
+nism allows for the adjustment of rewards if
+they are inaccurate at the outset.
+4 Experiment Setup
+To demonstrate the generalizability of our frame-
+work, we conduct experiments across a diverse set
+of tasks, including question answering (HotpotQA),
+decision making (WebShop), and coding (MBPP).
+These datasets are widely recognized benchmarks
+in their respective domains.
+In addition to assessing effectiveness and effi-
+ciency, we also performed ablation and parame-
+ter studies to investigate the contributions of each
+mechanism in our framework and the impact of
+hyperparameters.
+4.1 Datasets
+HotpotQA: (Yang et al., 2018) tests multi-hop
+reasoning in LLM, requiring models to parse and
+reason across multiple paragraphs. We used the
+Distractor setting, where the task is to answer the
+9414
+
+=== Page 7 ===
+
+question with a mix of relevant and irrelevant para-
+graphs context. WebShop: (Yao et al., 2022) simu-
+lates an e-commerce environment to test decision-
+making abilities. The task involves navigating a
+virtual store to find products that best match a
+given instruction, with success measured by how
+closely the selected product matches the require-
+ment. MBPP: (Austin et al., 2021)) assesses cod-
+ing abilities. Each task includes a problem descrip-
+tion and test cases for validation. In our system,
+agents generate and test complete code, with child
+agents iteratively improving on errors identified by
+their parent agents. A task is considered solved
+when the generated code passes all test cases.
+4.2 Baselines
+Since we use GPT-4, a highly capable LLM, as
+the base model, we take GPT-4 itself without any
+agent, as a baseline. It is prompted with the task de-
+scription and the same examples as our framework
+to solve tasks in a single call (Few-shot Chain-of-
+Thought). Notably, in this setting, GPT-4 cannot
+solve HotpotQA and WebShop problems because
+these tasks require multiple interactions with the
+environment. For HotpotQA, the model must gen-
+erate search keywords, receive the retrieved context
+from the environment, and decide whether to search
+for additional context or answer the question. For
+WebShop, the model must purchase a target item on
+a mock website through multiple search and click
+actions. Expecting GPT-4 to perform these actions
+without environment feedback in a single call is
+impractical. When incorporating external environ-
+ment feedback to enable multi-turn interactions,
+the setup becomes identical to the experimental
+conditions of ReAct. In other words, ReAct’s per-
+formance in Table 1 serves as an indicator of the
+base model’s capacity in these two tasks.
+ReAct and Reflexion are well-known methods
+in the planning domain, and our work integrates
+some of their ideas. LATS, like our approach, is
+a tree-based method and demonstrates strong per-
+formance. Therefore, we compare against these
+baselines across all three datasets. MetaGPT and
+AgentVerse, two representative multi-agent sys-
+tems, serve as our benchmarks in the multi-agent
+setting. We evaluate them only on MBPP because
+MetaGPT is specifically designed for programming
+tasks, while AgentVerse requires execution tools,
+and only the tool for programming tasks is avail-
+able.
+Additionally, we benchmark our framework
+against the current state-of-the-art (SOTA) for each
+dataset: Beam Retrieval for HotpotQA, AgentKit
+for WebShop, and AgentCoder for MBPP. How-
+ever, AgentKit is evaluated on two datasets in its
+original paper (Crafter and WebShop), while its
+GitHub repository provides code only for Crafter.
+Moreover, the available code for Crafter cannot be
+adapted to WebShop due to insufficient implemen-
+tation details. Consequently, we rely on the original
+performance claims from their paper. Nevertheless,
+given the substantial performance gap between our
+results and theirs, we believe our SOTA claims
+remain highly plausible.
+4.3 Implementation Details
+Given the high cost of GPT-4, we randomly select
+a sample of 100 questions from each dataset, fol-
+lowing the approach used in Reflexion (Shinn et al.,
+2023) and LATS (Zhou et al., 2024). To ensure
+fairness, the same random seed is used across all
+three datasets to select these 100 questions.
+To mitigate the effect of LLM randomness on
+accuracy, we repeat each experiment three times on
+the same samples and report the mean accuracy in
+Table 1. Our framework effectively controls LLM
+randomness through the strategies outlined in the
+Methodology section, where multiple steps support
+and verify each other.
+5 Results and Analysis
+5.1 Effectiveness Analysis
+We reproduce all baseline approaches, except for
+AgentKit due to insufficient information, with GPT-
+4 as base model on the same 100 questions and
+record the results. Additionally, we compare these
+results with those reported in the respective pa-
+pers. The better result is used as the final value for
+each baseline in Table 1. This method favors base-
+line approaches and ensures that our framework
+demonstrates superior performance across various
+standards.
+MASTER sets new SOTA performance across
+multiple tasks: 1). 76.0% Exact Match accuracy
+on HotpotQA, surpassing Beam Retrieval’s 73.3%
+(Zhang et al., 2024b); 2). 80.0% accuracy on
+WebShop, exceeding AgentKit’s 70.2% (Wu et al.,
+2024). On MBPP, it closely matches AgentCoder’s
+91.8% pass@1 accuracy with 91.0% (Huang et al.,
+2024), showing competitive performance in pro-
+gramming task.
+9415
+
+=== Page 8 ===
+
+HotpotQA WebShop MBPP
+GPT-4 (CoT) - - 0.683
+ReAct 0.420 0.320 0.710
+Reflexion 0.510 0.350 0.771
+LATS 0.710 0.380 0.811
+MetaGPT - - 0.877
+AgentVerse - - 0.890
+Beam Retrieval 0.733 - -
+AgentKit - 0.702 -
+AgentCoder - - 0.918
+Ours 0.760 0.800 0.910
+Table 1: Effectiveness comparison with accuracy.
+5.2 Efficiency Analysis
+As a tree-based method, token consumption is a
+concern due to the diverse reasoning trajectories.
+However, by removing the simulation step and
+introducing an early termination mechanism, our
+framework achieves higher efficiency compared to
+other tree-based methods using MCTS. We bench-
+mark our efficiency against LATS because: 1).
+LATS is a typical tree-based approach with supe-
+rior performance compared to similar frameworks;
+2). LATS reports the lowest token consumption
+when compared with ToT (Yao et al., 2023a) and
+RAP (Hao et al., 2023) in their paper.
+We measure token consumption for LATS (n =
+5, k = 50) and MASTER ( number of branches =
+2, maximum of expansion = 3) on the same 100
+HotpotQA questions, using the same hyperparam-
+eter settings as those in the effectiveness analysis
+experiments. The average cost per question was
+185,392 tokens for LATS and 10,937 tokens for
+MASTER. Our approach uses only about 6% of
+the tokens compared to LATS while delivering bet-
+ter performance (Table 1).
+LATS (Zhou et al., 2024) reports an average cost
+of 173,290 tokens per question, lower than our re-
+produced results. This discrepancy may be due to
+the fact that their tests were conducted on correctly
+answered questions, while our tests included some
+incorrectly answered questions, which tend to con-
+sume more tokens as the algorithm continues until
+reaching the maximum trial limit.
+5.3 Ablation Study
+5.3.1 UCT Modification
+In MCTS, the UCT formula balances exploration
+and exploitation. One of our main contributions is
+adapting this formula to better accommodate LLM.
+We evaluate the impact of removing components
+of our modified UCT formula, considering the fol-
+lowing cases (Table 2):
+1. Our full modified formula, incorporating the
+weighted sum of initial and updating rewards,
+and exploration weight influenced by the
+LLM’s confidence (Eqn 5).
+2. A variant with the weighted sum of rewards
+and a fixed exploration weight (Eqn 6). This
+differs from the full formula by not incorporat-
+ing the LLM’s confidence in the exploration
+term.
+UCT =c0·r0 + (1−c0)·
+∑ni
+n=1rn
+ni
++
+√
+ln (Ni)
+ni
+(6)
+3. A variant using only the weighted sum of
+rewards (Eqn 7), removing the entire explo-
+ration term.
+UCT =c0·r0 + (1−c0)·
+∑ni
+n=1rn
+ni
+(7)
+4. A variant using only the initial reward for ex-
+ploitation (Eqn 8), excluding exploration term
+and updating reward from backpropagation.
+UCT =r0 (8)
+When using UCT with a fixed exploration weight
+(case 2), performance declines on two out of three
+datasets, even worse than the variant without the en-
+tire exploration term. As discussed in the Methodol-
+ogy section, the exploration term plays a dominant
+role and should be modulated by the exploration
+weight. This result supports that hypothesis, as
+the system sometimes over-explores without pro-
+gressing toward task completion when using this
+formula. Omitting a dynamic exploration weight
+based on confidence is harmful to the system.
+Using the weighted sum of initial and updating
+rewards (case 3) performs better than using the
+initial reward alone (case 4), likely because the up-
+dating reward incorporates additional information
+from deeper in the reasoning tree.
+The MBPP results indicate that different UCT
+variants have no significant effect on this dataset.
+This outcome likely arises because the Observa-
+tion, represented by the test case results, is objec-
+tive. The Observation is appended to the prompt
+9416
+
+=== Page 9 ===
+
+HotpotQA WebShop MBPP
+Full modified UCT 0.760 0.800 0.910
+Fixed Exploration Weight0.700 0.677 0.910
+w/o Exploration Term0.737 0.750 0.910
+Only Initial Reward 0.723 0.703 0.910
+Table 2: Ablation study with removing different compo-
+nents of our modified UCT formula.
+HotpotQA WebShop MBPP
+Full setting 0.760 0.800 0.910
+w/o Validation 0.623 0.563 0.863
+w/o Assessment 0.233 0.157 0.743
+Table 3: Ablation study with removing validation or
+assessment of our agent.
+of the Assessment, allowing the LLM to assign re-
+wards with high confidence. Whenc0 is 1, all UCT
+variants reduce to case 4 or very close to it. There-
+fore, all settings yield identical or nearly identical
+outcomes.
+5.3.2 Agent Design
+The validation step before assessment is another
+key feature of our framework. We conduct ad-
+ditional ablation studies, removing the validation
+and assessment steps individually. Since the ini-
+tial reward is derived from the assessment and the
+algorithm cannot function without it, we assign
+random initial rewards when the assessment step is
+removed (Table 3).
+Performance drops significantly when the vali-
+dation or assessment step is removed, even for the
+MBPP dataset, as validation greatly impacts reward
+allocation, the core component of the MCTS. Ad-
+ditionally, with random rewards assigned when the
+assessment step is removed, performance essen-
+tially relies on the LLM alone, or worse.
+5.4 Parameter Study
+We conduct parameter studies to determine optimal
+values for two key hyperparameters: Number of
+Branches (Table 4) and Maximum of Expansion
+(Table 5), across all three datasets.
+The Number of Branches has little effect on per-
+formance in WebShop and MBPP. However, on
+HotpotQA, performance drops by nearly 3% when
+reducing it from 2 to 1. This reduction may hinder
+the system, as multiple reasoning trajectories help
+prevent getting stuck in incorrect states. Although
+WebShop faces similar challenges, the agent can
+use the dataset in-built action ’prev’ to mitigate,
+though not completely avoid, this problem. To
+Number of BranchesHotpotQA WebShop MBPP
+1 0.733 0.797 0.903
+2 (All datasets used)0.760 0.800 0.910
+3 0.763 0.797 0.910
+Table 4: Parameter study on Number of Branches.
+Maximum of ExpansionHotpotQA WebShop MBPP
+1 0.000 0.000 0.747
+3 (HotpotQA & MBPP)0.760 0.013 0.910
+8 (WebShop) 0.770 0.800 0.910
+Table 5: Parameter study on Maximum of Expansion.
+balance performance and cost, we use 2 for all
+datasets.
+We select 1, 3, 8 for the Maximum of Expansion
+here because in our other experiments, 3 is used in
+HotpotQA and MBPP while 8 is used for WebShop.
+Normally, questions in HotpotQA and WebShop
+require multiple steps to solve so their performance
+drops dramatically when the Maximum of Expan-
+sion is lower than the steps needed to solve the
+problem, as they are forced to stop before getting
+an answer.
+6 Conclusion
+This paper introduces MASTER, a novel multi-
+agent system framework that leverages a special-
+ized MCTS to enhance the planning capabilities of
+LLM. Our LLM-optimized MCTS broadens the ap-
+plicability of MCTS to a wider range of tasks with
+reduced costs. Besides, we employ this algorithm
+to guide agent recruitment and communication pro-
+tocols, thereby introducing an innovative form of
+multi-agent system. Extensive experiments across
+various datasets demonstrate MASTER’s effective-
+ness and efficiency over existing frameworks.
+7 Limitations
+There are some limitations in our framework.
+Firstly, it relies heavily on the LLM’s ability to pro-
+vide accurate scores and confidence assessments of
+the current reasoning state. While GPT-4 performs
+this task effectively, smaller open-source models
+may encounter challenges at this step. Additionally,
+users must configure certain hyperparameters for
+the system, including the Maximum of Expansion
+and the Number of Branches. The optimal values
+for these parameters may vary depending on the
+specific task.
+9417
+
+=== Page 10 ===
+

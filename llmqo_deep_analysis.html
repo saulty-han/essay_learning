@@ -1,0 +1,1331 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>深度解读 — LLM-QO: Can Large Language Models Be Query Optimizer?</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{font-family:'Noto Sans SC',system-ui,-apple-system,sans-serif;background:#0d1117;color:#c9d1d9;line-height:1.8;font-size:16px;min-height:100vh;}
+.container{max-width:1400px;margin:0 auto;padding:0 24px;background:#0d1117;position:relative;}
+.back-btn{position:fixed;top:16px;left:16px;z-index:9999;background:rgba(20,20,35,.75);color:#c9d1d9;border:1px solid rgba(255,255,255,.15);border-radius:10px;padding:8px 16px;font-size:14px;cursor:pointer;backdrop-filter:blur(6px);transition:all .3s;text-decoration:none;display:flex;align-items:center;gap:6px;}
+.back-btn:hover{background:rgba(30,30,55,.9);border-color:rgba(255,255,255,.3);}
+.hero{padding:80px 0 40px;text-align:center;}
+.hero-title{font-size:2.2rem;font-weight:700;background:linear-gradient(135deg,#6dd5ed,#2193b0);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:12px;line-height:1.3;}
+.hero-sub{font-size:1.1rem;color:#8b949e;margin-bottom:8px;}
+.venue{font-size:.95rem;color:#8b949e;margin-top:8px;}
+.venue a{color:#6dd5ed;text-decoration:none;}
+.venue a:hover{text-decoration:underline;}
+.tag-row{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:16px;}
+.tag{display:inline-block;padding:4px 14px;border-radius:20px;font-size:.85rem;border:1px solid rgba(109,213,237,.3);color:#6dd5ed;background:rgba(109,213,237,.06);}
+.divider{border:none;border-top:1px solid rgba(255,255,255,.08);margin:48px 0;}
+.section{margin:40px 0;}
+.section-title{font-size:1.75rem;font-weight:700;margin-bottom:20px;color:#e6edf3;display:flex;align-items:center;gap:10px;}
+.section-title .num{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#6dd5ed,#2193b0);color:#0d1117;font-size:1rem;font-weight:700;flex-shrink:0;}
+.section-desc{font-size:16px;line-height:1.9;color:#c9d1d9;margin-bottom:16px;}
+.toc{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:28px 36px;margin:30px 0;}
+.toc h3{font-size:1.2rem;color:#e6edf3;margin-bottom:14px;}
+.toc ol{list-style:none;counter-reset:toc;padding:0;}
+.toc li{counter-increment:toc;margin:8px 0;}
+.toc li::before{content:counter(toc) ".";color:#6dd5ed;font-weight:600;margin-right:8px;}
+.toc a{color:#8b949e;text-decoration:none;transition:color .2s;}
+.toc a:hover{color:#6dd5ed;}
+.module-card{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:24px;margin:18px 0;transition:all .3s;}
+.module-card:hover{border-color:rgba(109,213,237,.3);transform:translateY(-2px);}
+.module-card h3{font-size:1.15rem;font-weight:600;margin-bottom:10px;color:#6dd5ed;}
+.module-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.arch-card{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:22px;margin:14px 0;transition:all .3s;}
+.arch-card:hover{border-color:rgba(109,213,237,.25);}
+.arch-card h4{font-size:1.05rem;font-weight:600;color:#2193b0;margin-bottom:8px;}
+.arch-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.step-flow{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:22px;margin:14px 0;}
+.step-flow h4{font-size:1.05rem;font-weight:600;color:#2193b0;margin-bottom:8px;}
+.step-flow p{font-size:15px;line-height:1.8;color:#8b949e;}
+.data-table{width:100%;border-collapse:collapse;margin:18px 0;background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;overflow:hidden;font-size:14px;}
+.data-table th{background:rgba(109,213,237,.08);color:#6dd5ed;padding:12px 14px;text-align:left;font-weight:600;border-bottom:1px solid rgba(255,255,255,.1);}
+.data-table td{padding:10px 14px;border-bottom:1px solid rgba(255,255,255,.06);color:#c9d1d9;}
+.data-table tr:hover td{background:rgba(109,213,237,.03);}
+.formula-box{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:20px 24px;margin:16px 0;font-size:18px;color:#e6edf3;text-align:center;font-family:'JetBrains Mono',monospace;}
+.code-block{background:rgba(20,20,35,.8);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:20px 24px;margin:16px 0;overflow-x:auto;}
+.code-block pre{font-family:'JetBrains Mono',monospace;font-size:14px;color:#c9d1d9;line-height:1.7;}
+.ck{color:#6dd5ed;}.cs{color:#a5d6a7;}.cf{color:#2193b0;}.cg{color:#8b949e;}.cv{color:#ef9a9a;}.cn{color:#ce93d8;}
+.qa-card{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:24px;margin:16px 0;transition:all .3s;}
+.qa-card:hover{border-color:rgba(109,213,237,.3);}
+.qa-q{font-size:1.05rem;font-weight:600;color:#6dd5ed;margin-bottom:10px;}
+.qa-a{font-size:15px;line-height:1.9;color:#c9d1d9;}
+.fc{font-size:14px;color:#8b949e;margin-top:8px;line-height:1.6;text-align:center;}
+.paper-figure{background:rgba(20,20,35,.4);border:1px solid rgba(255,255,255,.06);border-radius:14px;padding:16px;margin:16px 0;text-align:center;}
+.paper-figure img{max-width:100%;border-radius:12px;margin:8px 0;}
+.highlight-box{background:rgba(109,213,237,.06);border:1px solid rgba(109,213,237,.2);border-radius:14px;padding:20px 24px;margin:16px 0;}
+.highlight-box h4{color:#6dd5ed;margin-bottom:8px;font-size:1.05rem;}
+.highlight-box p{color:#c9d1d9;line-height:1.8;font-size:15px;}
+.info-box{background:rgba(109,213,237,.04);border:1px solid rgba(109,213,237,.15);border-radius:14px;padding:20px 24px;margin:16px 0;}
+.info-box h4{color:#2193b0;margin-bottom:8px;font-size:1.05rem;}
+.info-box p{color:#c9d1d9;line-height:1.8;font-size:15px;}
+.warn-box{background:rgba(255,193,7,.06);border:1px solid rgba(255,193,7,.2);border-radius:14px;padding:20px 24px;margin:16px 0;}
+.warn-box h4{color:#ffc107;margin-bottom:8px;font-size:1.05rem;}
+.warn-box p{color:#c9d1d9;line-height:1.8;font-size:15px;}
+.insight-box{background:rgba(109,213,237,.06);border:1px solid rgba(109,213,237,.2);border-radius:14px;padding:20px 24px;margin:16px 0;}
+.insight-box h4{color:#6dd5ed;margin-bottom:8px;font-size:1.05rem;}
+.insight-box p{color:#c9d1d9;line-height:1.8;font-size:15px;}
+.limit-box{background:rgba(255,193,7,.06);border:1px solid rgba(255,193,7,.2);border-radius:14px;padding:20px 24px;margin:16px 0;}
+.limit-box h4{color:#ffc107;margin-bottom:8px;font-size:1.05rem;}
+.limit-box p{color:#c9d1d9;line-height:1.8;font-size:15px;}
+.svg-wrap{background:rgba(20,20,35,.4);border-radius:16px;padding:20px;margin:16px 0;}
+.kv-row{display:flex;border-bottom:1px solid rgba(255,255,255,.06);padding:8px 0;}
+.kv-key{width:180px;color:#8b949e;font-size:14px;flex-shrink:0;}
+.kv-val{color:#e6edf3;font-size:14px;flex:1;}
+.footer{text-align:center;padding:40px 0 30px;color:#8b949e;font-size:.9rem;}
+.prompt-box{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:20px;margin:16px 0;position:relative;}
+.prompt-label{position:absolute;top:-10px;left:16px;background:#1a2340;padding:2px 12px;border-radius:8px;font-size:.8rem;color:#6dd5ed;border:1px solid rgba(109,213,237,.3);}
+.prompt-box pre{font-family:'JetBrains Mono',monospace;font-size:14px;color:#c9d1d9;line-height:1.7;white-space:pre-wrap;}
+.translation h3{font-size:1.3rem;color:#2193b0;margin:26px 0 12px;font-weight:700;}
+.translation h4{font-size:1.1rem;color:#6dd5ed;margin:18px 0 8px;font-weight:600;}
+.translation p{font-size:15.5px;line-height:1.95;color:#c9d1d9;margin-bottom:12px;}
+.fig-note{background:rgba(109,213,237,.07);border-left:3px solid #6dd5ed;border-radius:8px;padding:12px 18px;margin:14px 0;font-size:14.5px;color:#a7d3cc;line-height:1.8;}
+.fig-note b{color:#6dd5ed;}
+@media(max-width:768px){.container{padding:0 12px;}.hero-title{font-size:1.5rem;}.section-title{font-size:1.3rem;}.data-table{font-size:12px;}.kv-row{flex-direction:column;}.kv-key{width:100%;}}
+</style>
+</head>
+<body>
+<a class="back-btn" href="index.html">← 返回主页</a>
+
+<a href="llmqo_full_translation.html" style="display:block;max-width:860px;margin:18px auto 0;padding:13px 22px;background:linear-gradient(90deg,rgba(31,111,235,.16),rgba(137,87,227,.16));border:1px solid rgba(137,87,227,.5);border-radius:12px;color:#e6edf3;text-decoration:none;font-weight:500;font-size:15px;text-align:center;box-shadow:0 2px 14px rgba(0,0,0,.35);">阅读本文逐段完整中文翻译（Full Translation）</a>
+<div class="container">
+
+<!-- ====== HERO ====== -->
+<div class="hero">
+  <h1 class="hero-title">LLM-QO: Can Large Language Models Be Query Optimizer?</h1>
+  <p class="hero-sub">让大模型直接"写"出执行计划 — 把查询优化从"枚举搜索"变成"自回归生成"</p>
+  <p class="venue">
+    <span>📄 PVLDB Vol.17 No.10 / VLDB 2024</span> &nbsp;|&nbsp;
+    <a href="https://arxiv.org/abs/2502.05562" target="_blank">arXiv: 2502.05562</a> &nbsp;|&nbsp;
+    <a href="https://github.com/Candice1995/LLM-QO" target="_blank">GitHub: Candice1995/LLM-QO</a>
+  </p>
+  <div class="tag-row">
+    <span class="tag">VLDB 2024</span>
+    <span class="tag">Query Optimization</span>
+    <span class="tag">LLM Fine-tuning</span>
+    <span class="tag">DPO</span>
+    <span class="tag">PostgreSQL</span>
+  </div>
+</div>
+
+<!-- ====== ARCHITECTURE OVERVIEW ====== -->
+<div class="section">
+  <h2 class="section-title"><span class="num">★</span> 整体架构总览</h2>
+  <p class="section-desc">
+    传统数据库查询优化器（如 PostgreSQL）依赖<strong>启发式规则 + 成本模型</strong>，通过动态规划在巨大的执行计划空间中"<u>枚举—估算—选择最优</u>"。LLM-QO 提出一个根本性改造：把查询优化重新建模为<strong>自回归生成任务</strong>——给 LLM 输入"SQL 查询 + schema + 统计信息"，让它<u>直接吐出</u>一个可执行计划，跳过显式枚举。论文通过 <strong>QInstruct 数据配方</strong> + <strong>两阶段微调（Qit + Qdpo）</strong>，将通用 LLaMa-3-8B 蒸馏成一个超越 PostgreSQL/Oracle/Bao/HybridQO 的查询优化器。
+  </p>
+
+  <!-- SVG 整体架构 -->
+  <div class="svg-wrap">
+  <svg viewBox="0 0 1200 540" xmlns="http://www.w3.org/2000/svg" style="width:100%;font-family:'Noto Sans SC',system-ui,sans-serif;">
+    <defs>
+      <linearGradient id="oceanGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#6dd5ed"/><stop offset="100%" stop-color="#2193b0"/>
+      </linearGradient>
+      <marker id="arrO" markerWidth="8" markerHeight="8" refX="8" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="#2193b0"/></marker>
+    </defs>
+
+    <text x="600" y="28" text-anchor="middle" fill="#6dd5ed" font-size="16" font-weight="700">LLM-QO 架构总览：三大 Pipeline</text>
+
+    <!-- Pipeline 1: Data Preparation -->
+    <rect x="20" y="50" width="370" height="470" rx="16" fill="#1a2340" stroke="#6dd5ed" stroke-opacity=".3" stroke-width="1.5"/>
+    <text x="205" y="78" text-anchor="middle" fill="#6dd5ed" font-size="14" font-weight="700">① 数据准备 Pipeline</text>
+    <text x="205" y="98" text-anchor="middle" fill="#8b949e" font-size="11">QInstruct 数据配方</text>
+
+    <!-- 多优化器收集 -->
+    <rect x="40" y="115" width="330" height="80" rx="10" fill="#252a3a" stroke="#2193b0" stroke-opacity=".4"/>
+    <text x="205" y="138" text-anchor="middle" fill="#2193b0" font-size="12" font-weight="600">多优化器并行执行</text>
+    <text x="60" y="158" fill="#8b949e" font-size="11">PostgreSQL → Plan_1</text>
+    <text x="60" y="174" fill="#8b949e" font-size="11">Oracle → Plan_2</text>
+    <text x="60" y="190" fill="#8b949e" font-size="11">DB2 → Plan_3 (可选)</text>
+
+    <!-- 五元素 -->
+    <rect x="40" y="210" width="330" height="170" rx="10" fill="#252a3a" stroke="#6dd5ed" stroke-opacity=".4"/>
+    <text x="205" y="233" text-anchor="middle" fill="#6dd5ed" font-size="12" font-weight="600">QInstruct 五元素</text>
+    <text x="60" y="255" fill="#6dd5ed" font-size="11">▸ Query (SQL)</text>
+    <text x="60" y="275" fill="#6dd5ed" font-size="11">▸ Instruction (DBA 角色)</text>
+    <text x="60" y="295" fill="#6dd5ed" font-size="11">▸ Auxiliary Info (schema + stats)</text>
+    <text x="60" y="315" fill="#6dd5ed" font-size="11">▸ High-quality Plans (多优化器)</text>
+    <text x="60" y="335" fill="#6dd5ed" font-size="11">▸ Planning Demonstration (one-shot)</text>
+    <text x="205" y="365" text-anchor="middle" fill="#8b949e" font-size="10" font-style="italic">→ 序列化为文本 prompt</text>
+
+    <!-- 输出 D_sft / D_dpo -->
+    <rect x="40" y="395" width="155" height="55" rx="10" fill="#1e3020" stroke="#a5d6a7" stroke-opacity=".5"/>
+    <text x="117" y="418" text-anchor="middle" fill="#a5d6a7" font-size="11" font-weight="600">D_sft</text>
+    <text x="117" y="435" text-anchor="middle" fill="#8b949e" font-size="10">(x_q, y_p*) 单计划</text>
+
+    <rect x="215" y="395" width="155" height="55" rx="10" fill="#2a1a3a" stroke="#ce93d8" stroke-opacity=".5"/>
+    <text x="292" y="418" text-anchor="middle" fill="#ce93d8" font-size="11" font-weight="600">D_dpo</text>
+    <text x="292" y="435" text-anchor="middle" fill="#8b949e" font-size="10">(x_q, y_w, y_l) 偏好对</text>
+
+    <text x="205" y="478" text-anchor="middle" fill="#8b949e" font-size="11">阈值 r₀=0.95 过滤偏好对</text>
+    <text x="205" y="498" text-anchor="middle" fill="#8b949e" font-size="11">t*/tᵢ &lt; r₀ 时 (yᵢ作 y_l)</text>
+
+    <!-- 箭头 → Pipeline 2 -->
+    <line x1="390" y1="285" x2="420" y2="285" stroke="#2193b0" stroke-width="2" marker-end="url(#arrO)"/>
+
+    <!-- Pipeline 2: Training -->
+    <rect x="420" y="50" width="370" height="470" rx="16" fill="#1a2340" stroke="#6dd5ed" stroke-opacity=".3" stroke-width="1.5"/>
+    <text x="605" y="78" text-anchor="middle" fill="#6dd5ed" font-size="14" font-weight="700">② 训练 Pipeline</text>
+    <text x="605" y="98" text-anchor="middle" fill="#8b949e" font-size="11">两阶段微调流程</text>
+
+    <!-- Base LLM -->
+    <rect x="440" y="115" width="330" height="55" rx="10" fill="#252a3a" stroke="#2193b0" stroke-opacity=".4"/>
+    <text x="605" y="138" text-anchor="middle" fill="#2193b0" font-size="12" font-weight="600">π_base: LLaMa-3-8B</text>
+    <text x="605" y="156" text-anchor="middle" fill="#8b949e" font-size="11">通用预训练大模型</text>
+
+    <!-- Stage 1: QIT -->
+    <rect x="440" y="190" width="330" height="100" rx="10" fill="#10201a" stroke="#a5d6a7" stroke-opacity=".5" stroke-width="2"/>
+    <text x="605" y="215" text-anchor="middle" fill="#a5d6a7" font-size="12" font-weight="700">Stage 1: Qit</text>
+    <text x="605" y="233" text-anchor="middle" fill="#a5d6a7" font-size="11">Query Instruction Tuning (SFT)</text>
+    <text x="605" y="252" text-anchor="middle" fill="#8b949e" font-size="11">L_sft = -log π(y|x)</text>
+    <text x="605" y="270" text-anchor="middle" fill="#8b949e" font-size="11">D_sft · LoRA · 600 步 · lr=2e-4</text>
+    <text x="605" y="284" text-anchor="middle" fill="#8b949e" font-size="10" font-style="italic">"先学会模仿专家优化器"</text>
+
+    <line x1="605" y1="290" x2="605" y2="315" stroke="#2193b0" stroke-width="2" marker-end="url(#arrO)"/>
+
+    <!-- π_sft -->
+    <rect x="490" y="320" width="230" height="40" rx="10" fill="#252a3a" stroke="#a5d6a7" stroke-opacity=".5"/>
+    <text x="605" y="346" text-anchor="middle" fill="#a5d6a7" font-size="12" font-weight="600">π_sft (能生成有效计划)</text>
+
+    <!-- Stage 2: QDPO -->
+    <rect x="440" y="380" width="330" height="100" rx="10" fill="#2a1a3a" stroke="#ce93d8" stroke-opacity=".5" stroke-width="2"/>
+    <text x="605" y="405" text-anchor="middle" fill="#ce93d8" font-size="12" font-weight="700">Stage 2: Qdpo</text>
+    <text x="605" y="422" text-anchor="middle" fill="#ce93d8" font-size="11">Direct Preference Optimization</text>
+    <text x="605" y="442" text-anchor="middle" fill="#8b949e" font-size="11">L_dpo = -log σ(u(x, y_w, y_l))</text>
+    <text x="605" y="460" text-anchor="middle" fill="#8b949e" font-size="11">D_dpo · β=0.1 · 200 步 · lr=5e-6</text>
+    <text x="605" y="475" text-anchor="middle" fill="#8b949e" font-size="10" font-style="italic">"再学会区分优劣计划"</text>
+
+    <line x1="605" y1="480" x2="605" y2="500" stroke="#ce93d8" stroke-width="2" marker-end="url(#arrO)"/>
+    <text x="605" y="515" text-anchor="middle" fill="#ce93d8" font-size="11" font-weight="600">π_dpo: 最终对齐模型</text>
+
+    <!-- 箭头 → Pipeline 3 -->
+    <line x1="790" y1="285" x2="820" y2="285" stroke="#2193b0" stroke-width="2" marker-end="url(#arrO)"/>
+
+    <!-- Pipeline 3: Inference -->
+    <rect x="820" y="50" width="360" height="470" rx="16" fill="#1a2340" stroke="#6dd5ed" stroke-opacity=".3" stroke-width="1.5"/>
+    <text x="1000" y="78" text-anchor="middle" fill="#6dd5ed" font-size="14" font-weight="700">③ 推理 Pipeline</text>
+    <text x="1000" y="98" text-anchor="middle" fill="#8b949e" font-size="11">在线优化新查询</text>
+
+    <!-- 测试查询输入 -->
+    <rect x="840" y="115" width="320" height="65" rx="10" fill="#252a3a" stroke="#2193b0" stroke-opacity=".4"/>
+    <text x="1000" y="138" text-anchor="middle" fill="#2193b0" font-size="12" font-weight="600">📥 测试查询 + 辅助信息</text>
+    <text x="1000" y="158" text-anchor="middle" fill="#8b949e" font-size="11">SQL + Statistics + Demo</text>
+    <text x="1000" y="172" text-anchor="middle" fill="#8b949e" font-size="10">→ 嵌入 prompt 模板</text>
+
+    <line x1="1000" y1="180" x2="1000" y2="200" stroke="#2193b0" stroke-width="2" marker-end="url(#arrO)"/>
+
+    <!-- π_dpo 推理 -->
+    <rect x="840" y="205" width="320" height="65" rx="10" fill="#2a1a3a" stroke="#ce93d8" stroke-opacity=".5"/>
+    <text x="1000" y="228" text-anchor="middle" fill="#ce93d8" font-size="12" font-weight="600">π_dpo 自回归生成</text>
+    <text x="1000" y="248" text-anchor="middle" fill="#8b949e" font-size="11">逐 token 输出 Planning Path</text>
+    <text x="1000" y="262" text-anchor="middle" fill="#8b949e" font-size="10">+ Bracket Sequence</text>
+
+    <line x1="1000" y1="270" x2="1000" y2="290" stroke="#ce93d8" stroke-width="2" marker-end="url(#arrO)"/>
+
+    <!-- 文本→物理计划 -->
+    <rect x="840" y="295" width="320" height="65" rx="10" fill="#252a3a" stroke="#6dd5ed" stroke-opacity=".4"/>
+    <text x="1000" y="318" text-anchor="middle" fill="#6dd5ed" font-size="12" font-weight="600">文本 → 物理计划</text>
+    <text x="1000" y="338" text-anchor="middle" fill="#8b949e" font-size="11">解析括号/路径表示</text>
+    <text x="1000" y="352" text-anchor="middle" fill="#8b949e" font-size="10">恢复为 PostgreSQL 可执行树</text>
+
+    <line x1="1000" y1="360" x2="1000" y2="380" stroke="#6dd5ed" stroke-width="2" marker-end="url(#arrO)"/>
+
+    <!-- PostgreSQL 执行 -->
+    <rect x="840" y="385" width="320" height="60" rx="10" fill="#252a3a" stroke="#a5d6a7" stroke-opacity=".5"/>
+    <text x="1000" y="408" text-anchor="middle" fill="#a5d6a7" font-size="12" font-weight="600">PostgreSQL 执行引擎</text>
+    <text x="1000" y="428" text-anchor="middle" fill="#8b949e" font-size="10">通过 pg_hint_plan 注入计划</text>
+
+    <line x1="1000" y1="445" x2="1000" y2="465" stroke="#a5d6a7" stroke-width="2" marker-end="url(#arrO)"/>
+
+    <!-- 输出 -->
+    <rect x="870" y="470" width="260" height="40" rx="10" fill="#1a2b30" stroke="#6dd5ed" stroke-width="2"/>
+    <text x="1000" y="496" text-anchor="middle" fill="#6dd5ed" font-size="12" font-weight="700">⚡ 加速后的查询结果</text>
+  </svg>
+  </div>
+  <p class="fc">▲ LLM-QO 三大 Pipeline：① 数据准备生成 D_sft + D_dpo；② 两阶段训练 Qit→Qdpo；③ 推理时让 π_dpo 自回归生成执行计划</p>
+
+  <!-- 论文原图 - Framework Overview -->
+  <div class="paper-figure">
+    <img src="images/llmqo_framework_overview.png" alt="LLM-QO Framework Overview"
+         style="max-width:100%;border-radius:12px;margin:16px 0;background:#fff;padding:10px">
+    <p class="fc">📄 论文原图 — Figure 2: LLM-QO 完整框架，包含 (a) QInstruct 与数据准备 pipeline，(b) 训练 pipeline (Qit + Qdpo)，(c) 推理 pipeline。注意右下角的"Output Sequence"展示了 Planning Path 的两步输出格式：每一步包含 [opd1, opd2, opt]。</p>
+  </div>
+
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(380px,1fr));gap:18px;margin-top:24px;">
+    <div class="arch-card">
+      <h4>① QInstruct — 数据配方</h4>
+      <p>论文提出的核心数据收集方法。从多个商用优化器（PostgreSQL/Oracle/DB2）并行收集计划，序列化为文本格式，构造两类训练数据：D_sft（每查询一个最优计划）和 D_dpo（偏好对）。</p>
+    </div>
+    <div class="arch-card">
+      <h4>② Qit + Qdpo — 两阶段微调</h4>
+      <p>Qit 是 SFT，让 LLM "学会模仿"专家优化器输出有效计划；Qdpo 是 DPO，让 LLM "学会偏好"——在两个候选计划之间能识别哪个执行时间更短。两阶段缺一不可。</p>
+    </div>
+    <div class="arch-card">
+      <h4>③ 双重 Plan 表示</h4>
+      <p>每个 plan 用两种文本表示：Planning Path（n-1 步后序遍历）激发 CoT 多步推理；Bracket Sequence（嵌套括号）作为最终答案。这是 DPO 阶段细粒度区分计划质量的关键设计。</p>
+    </div>
+  </div>
+</div>
+
+<!-- ====== TABLE OF CONTENTS ====== -->
+<div class="section">
+  <div class="toc">
+    <h3>📑 文档目录</h3>
+    <ol>
+      <li><a href="#s0">核心问题与研究动机</a></li>
+      <li><a href="#s1">前置工作与关键术语</a></li>
+      <li><a href="#s2">方法论：QInstruct 数据配方详解</a></li>
+      <li><a href="#s3">核心创新：双重 Plan 表示与训练算法</a></li>
+      <li><a href="#s4">数据流解析：训练流与推理流</a></li>
+      <li><a href="#s5">关键技术细节</a></li>
+      <li><a href="#s6">实验结果与消融分析</a></li>
+      <li><a href="#s7">设计精妙之处与局限性</a></li>
+      <li><a href="#s8">Q&A 深度解析</a></li>
+      <li><a href="#s9">代码使用与实战</a></li>
+      <li><a href="#sec-11">全文中文翻译（对应嵌入图片）</a></li>
+    </ol>
+  </div>
+</div>
+
+<!-- ====== Section 0: Motivation ====== -->
+<div class="section" id="s0">
+  <h2 class="section-title"><span class="num">0</span> 核心问题与研究动机</h2>
+  <p class="section-desc">
+    查询优化是数据库管理系统中最古老也最核心的问题之一。给定一条 SQL（如三表 join），优化器需要在<strong>指数级增长的执行计划空间</strong>中找到一个执行时间最短的物理计划——决定 join 顺序（先 A⋈B 还是先 B⋈C）、决定每个 join 的物理算子（HashJoin / NestLoopJoin / MergeJoin）、决定每张表的访问方法（顺序扫描 / 索引扫描）。这个空间随表数量呈阶乘增长，10 张表的 join 就有数十亿种可能计划。
+  </p>
+
+  <!-- 论文原图 - Figure 1 (Motivation Overview) -->
+  <div class="paper-figure">
+    <img src="images/llmqo_overview_motivation.png" alt="LLM-QO Motivation"
+         style="max-width:100%;border-radius:12px;margin:16px 0;background:#fff;padding:10px">
+    <p class="fc">📄 论文原图 — Figure 1: (a) LLM-QO 概览：把传统优化器的"枚举+成本估计"流程换成 LLM 的自回归生成；(b) 在 DSB 工作负载上的执行时间对比，LLM-QO 显著优于 PostgreSQL/Oracle/Bao/HybridQO 等基线。</p>
+  </div>
+
+  <div class="highlight-box">
+    <h4>🔑 传统优化器的根本局限</h4>
+    <p>① <strong>成本模型不准</strong>：PostgreSQL 等优化器靠"基数估计 + 启发式公式"估算每个候选计划的代价，但基数估计众所周知地不准（误差可能 100×~1000×）。② <strong>计划空间被人为裁剪</strong>：动态规划只能在预先枚举的有限候选集中选最优，<u>真正的最优计划可能根本不在候选集里</u>。③ <strong>无法跨工作负载学习</strong>：传统优化器对每条查询都"重新算一遍"，不会从"过去优化过的相似查询"中学到经验。</p>
+  </div>
+
+  <p class="section-desc">
+    与此同时，大语言模型（LLM）在 <strong>复杂规划与决策任务</strong> 上展现了惊人能力——数学推理、代码生成、多步符号计算。研究者自然会问：<strong>查询优化本质上是不是也是一种"规划任务"？能不能让 LLM 直接做？</strong>论文的回答是肯定的：把"查询 + schema + stats" 输入 LLM，让它按 token 自回归生成执行计划——跳过显式枚举，跳过成本模型，直接产出最终答案。
+  </p>
+
+  <div class="info-box">
+    <h4>💡 研究动机的三个层次</h4>
+    <p>
+      <b>表层动机</b>：传统优化器用了 50 年的"枚举 + 成本估计"范式可能存在天花板，需要试一种新范式。<br>
+      <b>中层动机</b>：LLM 已在数学/代码/规划任务上表现优异，查询优化的"决策树搜索本质"和这些任务相似。<br>
+      <b>深层动机</b>：能否把"过去千万次查询优化的经验"压缩进一个可推理、可泛化、可适应的模型里？这就是 LLM 作为"优化经验载体"的潜力。
+    </p>
+  </div>
+
+  <p class="section-desc">
+    论文给出的回答是：<strong>"是的，但还需要研究努力"</strong>。LLM-QO 在 IMDB / JOB-light / DSB 三个 OLAP 工作负载上一致地超越了 PostgreSQL、Oracle、Bao、HybridQO，但同时也暴露了三个开放问题：<strong>泛化性</strong>（能否在未见过的 schema 上仍有效？）、<strong>效率</strong>（LLM 推理的延迟能否压到毫秒级？）、<strong>适应性</strong>（数据库 schema 变了能否快速适配？）。这些是论文留给社区的三个研究方向。
+  </p>
+</div>
+
+<!-- ====== Section 1: Background ====== -->
+<div class="section" id="s1">
+  <h2 class="section-title"><span class="num">1</span> 前置工作与关键术语</h2>
+  <p class="section-desc">
+    LLM-QO 是数据库 + 机器学习 + LLM 三个领域的交叉工作。理解它需要先弄清楚几个关键概念。这些术语并非通用基础（如 Transformer），而是<strong>论文涉及的特定领域知识</strong>，对它们的理解直接影响对 LLM-QO 设计动机的把握。
+  </p>
+
+  <div class="module-card">
+    <h3>查询优化的"计划空间"是什么</h3>
+    <p>给定 SQL "<code>SELECT * FROM A, B, C WHERE A.x = B.x AND B.y = C.y</code>"，物理执行计划要决定：(1) <strong>join 顺序</strong>—— 先 A⋈B 再 ⋈C ？还是先 B⋈C 再 ⋈A ？(2) <strong>每个 join 的物理算子</strong>—— HashJoin（建哈希表）/ NestLoopJoin（嵌套循环）/ MergeJoin（排序后归并）？(3) <strong>每张表的访问方式</strong>—— 顺序扫描 SeqScan / 索引扫描 IndexScan ？三者组合后的可能计划数随表数量阶乘增长，对 10 表 join 是 ~ 10! × 3⁹ ≈ 10¹⁰ 量级——这就是"指数级计划空间"。</p>
+  </div>
+
+  <div class="module-card">
+    <h3>SPJ 查询 — 论文支持的查询类型</h3>
+    <p>SPJ = <strong>Selection + Projection + Join</strong>（选择 + 投影 + 连接）。这是数据库中最常见的查询类型——挑出符合条件的行（Selection 即 WHERE）、投影出某些列（SELECT 列）、连接多张表（FROM 多表）。论文当前阶段只处理 SPJ 查询，每个 join 条件连接两张表。<u>不支持</u>聚合（GROUP BY）、嵌套子查询、窗口函数等更复杂的查询结构。这是工程上的简化，但已覆盖了 OLAP 大部分场景。</p>
+  </div>
+
+  <div class="module-card">
+    <h3>学习型优化器（Learned Optimizer）— 论文要击败的对手</h3>
+    <p>2018 年起出现了用机器学习改造查询优化的一系列工作，分两类：</p>
+    <p>① <strong>De novo（从零学习）</strong>：完全替换传统动态规划。<u>Neo</u>（VLDB'19）用 Tree Convolution 估计延迟 + best-first search 自底向上构建计划；<u>Balsa</u>（SIGMOD'22）改进了 Neo，用纯逻辑成本模型 bootstrap，跳过专家优化器。</p>
+    <p>② <strong>Steered（引导式）</strong>：让 ML 模型给传统优化器"加 hint"，引导它选好的候选。<u>Bao</u>（SIGMOD'21）用多臂老虎机算法选择查询级 hint（如"禁止 NestLoopJoin"），训一个 Tree Convolution 当价值函数；<u>HybridQO</u>（VLDB'22）把 hint 解释为前缀树（部分 join 顺序），引导预测最终顺序；<u>Lero</u>（VLDB'23）用 learning-to-rank 决定计划偏好。</p>
+    <p><b>LLM-QO 的关键差别</b>：以上方法都还需要传统优化器作为底座（生成候选/估算成本），而 LLM-QO <u>完全跳过了候选枚举</u>——LLM 直接生成最终计划。这是方法论上的根本不同。</p>
+  </div>
+
+  <div class="module-card">
+    <h3>SFT、DPO 与 RLHF —— 大模型对齐的三种工具</h3>
+    <p>这是 LLM 训练领域的关键术语，论文使用了其中两种：</p>
+    <p>• <strong>SFT (Supervised Fine-Tuning，监督微调)</strong>：给 LLM "标准答案"对 (x, y)，让它学会模仿 y。损失函数是负对数似然 L = -log π(y|x)。Qit 阶段就是 SFT，让 LLM "模仿专家优化器"产出最优计划。</p>
+    <p>• <strong>RLHF (Reinforcement Learning from Human Feedback)</strong>：用人类偏好反馈训练奖励模型，再用 PPO 等 RL 算法优化 LLM。复杂、不稳定。</p>
+    <p>• <strong>DPO (Direct Preference Optimization)</strong>：2023 年 Stanford 的工作（NeurIPS'23）。<u>跳过 RLHF 的奖励模型 + RL 复杂流程</u>，直接给 LLM 偏好对 (x, y_w, y_l)，用一个简单的对比损失训练。论文 Qdpo 就是 DPO，让 LLM 在两个候选计划中识别"哪个执行更快"。</p>
+  </div>
+
+  <div class="module-card">
+    <h3>LoRA 与 Unsloth —— 参数高效微调</h3>
+    <p>LLaMa-3-8B 有 80 亿参数，全量微调需要数百 GB 显存。<strong>LoRA (Low-Rank Adaptation)</strong> 只在 attention 层旁边训练两个低秩矩阵（如 r=8 的 8×8000 矩阵），冻结原模型参数——可训练参数缩到 0.5% 以下。<strong>Unsloth</strong> 是 LoRA 的高度优化实现，在单张 A100 上训 LLaMa-3-8B 只需几小时。论文用 LoRA + Unsloth 让两阶段训练在单 A100 80GB 上跑完成为可能。</p>
+  </div>
+
+  <div class="module-card">
+    <h3>Chain-of-Thought (CoT) 与 In-Context Learning (ICL)</h3>
+    <p>这两个是 LLM prompt 工程的关键技巧，<u>不是论文创新点，但论文借用了它们的思路</u>：</p>
+    <p>• <strong>CoT</strong>：在 prompt 里加一句 "Let's think step by step"，让 LLM 把思考过程显式拆成中间步骤。在数学/逻辑任务上能大幅提升准确率。<u>论文的 Planning Path（n-1 步后序遍历）就是为 CoT 服务的</u>—— 让 LLM 一步步"想清楚"先 join 谁、再 join 谁。</p>
+    <p>• <strong>ICL</strong>：在 prompt 里塞一两个"示范例子"（exemplar），让 LLM 通过例子推断任务模式。<u>论文的 Planning Demonstration 就是 ICL</u>—— 给 LLM 看一个"类似查询的最优计划长啥样"，让它在结构上模仿。</p>
+  </div>
+</div>
+
+<!-- ====== Section 2: QInstruct ====== -->
+<div class="section" id="s2">
+  <h2 class="section-title"><span class="num">2</span> 方法论：QInstruct 数据配方详解</h2>
+  <p class="section-desc">
+    QInstruct 是论文最重要的工程贡献之一。它回答的问题是：<strong>怎么把"查询优化"这个数据库问题，翻译成 LLM 能学习的"文本到文本"问题？</strong>核心难点在于：执行计划是<u>树结构</u>，schema 信息是<u>表格结构</u>，统计信息是<u>键值对</u>——这些都不是天然的文本。QInstruct 给出了完整的<strong>序列化协议</strong>，把异构信息全部"压扁"成 LLM 能消化的 prompt。
+  </p>
+
+  <!-- 论文原图 - QInstruct Format -->
+  <div class="paper-figure">
+    <img src="images/llmqo_qinstruct_format.png" alt="QInstruct Format"
+         style="max-width:100%;border-radius:12px;margin:16px 0;background:#fff;padding:10px">
+    <p class="fc">📄 论文原图 — Figure 4: QInstruct 的完整 prompt 格式。包含五大组件：&lt;Instruction&gt;（角色 + 任务说明）、&lt;Demonstration&gt;（示范例子）、&lt;SQL&gt;（目标查询）、&lt;Statistics&gt;（统计信息）、&lt;Response&gt;（输出计划）。</p>
+  </div>
+
+  <h3 style="color:#6dd5ed;margin:24px 0 12px;font-size:1.2rem;">📋 QInstruct 的五大元素</h3>
+  <p class="section-desc">论文将 prompt 拆解为 5 个不可或缺的组件，每个组件解决一个特定问题：</p>
+
+  <div class="step-flow">
+    <h4>① Query (SQL 查询本身)</h4>
+    <p>最简单的部分——把目标 SQL 直接放入 prompt。注意论文限定<u>SPJ 查询</u>，即 SELECT-PROJECT-JOIN，不含 GROUP BY/嵌套子查询等复杂结构。</p>
+    <p style="color:#6dd5ed;font-size:14px;margin-top:6px;"><b>示例：</b><code>SELECT * FROM movie_companies, title, movie_info_idx WHERE ...</code></p>
+  </div>
+
+  <div class="step-flow">
+    <h4>② Instruction (任务指令)</h4>
+    <p>告诉 LLM "你是一个 SQL 查询优化器，请输出最优计划"。包含<strong>角色设定</strong>（DBA expert）、<strong>支持的算子集合</strong>（HashJoin/NestLoopJoin/MergeJoin/SeqScan）、<strong>输出格式约束</strong>。这部分非常关键——通用 LLM 没有"我是查询优化器"的先验，必须显式告诉它。</p>
+    <p style="color:#6dd5ed;font-size:14px;margin-top:6px;"><b>关键句式：</b>"You are a SQL query optimizer. Generate an execution plan using only HashJoin, NestLoopJoin, MergeJoin, SeqScan operators. Think step by step."</p>
+  </div>
+
+  <div class="step-flow">
+    <h4>③ Auxiliary Information (辅助信息：schema + statistics)</h4>
+    <p>这是<strong>查询优化能否做对</strong>的关键。优化器选择 join 顺序时严重依赖<u>每张表的大小、每列的基数（distinct count）、值的范围</u>等统计信息。论文用一种紧凑格式表达：</p>
+    <div class="code-block"><pre><span class="cg"># Statistics 格式：表名 (列名: [min, max, distinct_count])</span>
+title (movie_id: <span class="cv">[0, 2527968, 2527969]</span>,
+       kind_id: <span class="cv">[-1, 7, 7]</span>,
+       production_year: <span class="cv">[-1, 2019, 134]</span>,
+       imdb_id: <span class="cv">[-1, 2012, 10]</span>)
+movie_companies (movie_id: <span class="cv">[-1, 2525401, 1087136]</span>,
+                 company_id: <span class="cv">[1, 234997, 234997]</span>,
+                 ...)</pre></div>
+    <p style="color:#6dd5ed;font-size:14px;margin-top:6px;"><b>为什么这样设计？</b>每列只用 3 个数字 <code>[min, max, ndv]</code>，而不是完整直方图（histogram）。原因：① <strong>token 预算紧张</strong>，完整直方图可能爆炸 prompt；② <strong>三元组已能区分大小表</strong>—— ndv 接近行数 ⇒ 唯一键，可建哈希；ndv 极小 ⇒ 选择性低。</p>
+  </div>
+
+  <div class="step-flow">
+    <h4>④ High-quality Plans (从多优化器收集的高质量计划)</h4>
+    <p>训练数据的来源。论文不是让 LLM "凭空想出"最优计划，而是让它<u>蒸馏多个商用优化器的智慧</u>——同一条 SQL 让 PostgreSQL、Oracle（甚至 DB2）各自生成一个计划，<strong>实测每个计划的执行时间</strong>，挑最快的作为"标准答案" y_p*。</p>
+    <p style="color:#6dd5ed;font-size:14px;margin-top:6px;"><b>关键洞察：</b>不同优化器擅长不同查询。Oracle 在某些 schema 上更优，PostgreSQL 在另一些上更优——LLM-QO 通过实际执行<u>客观挑选</u>，等于自动获得"多优化器集成"的能力。</p>
+  </div>
+
+  <div class="step-flow">
+    <h4>⑤ Planning Demonstration (one-shot 示范例子)</h4>
+    <p>这是论文为缓解 LLM "幻觉"专门设计的组件。LLM 拿到陌生表名 / 列名时容易生成无效计划（引用不存在的列、用错算子）。论文在 prompt 里塞一个<strong>同模板查询的范例</strong>——"看，类似的查询长这样，对应计划长这样"，让 LLM 在结构上模仿。</p>
+    <p style="color:#6dd5ed;font-size:14px;margin-top:6px;"><b>关键设计：</b>选择 demonstration 时，<u>必须和目标查询用相同的表集合 + 相同的 join 条件结构</u>（同 query template）。Demo 的计划<u>不需要是最优的</u>——LLM 只是从中学"哪些表会出现、列名怎么写"，结构提示作用足矣。</p>
+  </div>
+
+  <h3 style="color:#6dd5ed;margin:24px 0 12px;font-size:1.2rem;">🔄 完整的 QInstruct Prompt 模板</h3>
+  <div class="prompt-box">
+<span class="prompt-label">QInstruct Prompt 完整结构</span>
+&lt;Instruction&gt;: You are an experienced SQL query optimizer. Given a SQL query
+and database statistics, generate an optimal execution plan using HashJoin,
+NestLoopJoin, MergeJoin (for joins) and SeqScan (for table access).
+Think step by step. Output the plan as a planning path followed by a bracket
+sequence.
+
+&lt;Demonstration&gt;:
+  &lt;SQL&gt;: SELECT * FROM A, B, C WHERE A.x=B.x AND B.y=C.y
+  &lt;Statistics&gt;: A (x: [0, 1000, 950]), B (x: [...], y: [...]), C (y: [...])
+  &lt;Response&gt;:
+    Step1: [A, B, HashJoin]
+    Step2: [HashJoin(A,B), C, NestLoopJoin]
+    Final: NestLoopJoin(HashJoin(A,B), C)
+
+&lt;SQL&gt;: SELECT * FROM movie_companies, title, movie_info_idx WHERE ...
+&lt;Statistics&gt;: title (movie_id: [0,2527968,2527969], ...), movie_companies (...)
+&lt;Response&gt;:                            ⬅ LLM 在这里开始自回归生成
+  </div>
+
+  <div class="info-box">
+    <h4>💡 五元素的协同关系</h4>
+    <p>① Query 是<u>问题</u>；② Instruction 是<u>任务规则</u>；③ Auxiliary Info 是<u>决策依据</u>（让 LLM 知道哪些表大、哪些列适合做哈希键）；④ High-quality Plans 是<u>训练监督信号</u>；⑤ Demonstration 是<u>结构性提示</u>（防止幻觉）。<b>缺一不可</b>——消融实验显示去掉 statistics 或 demonstration，性能都会显著下降（见第 6 节）。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ====== Section 3: Core Innovations ====== -->
+<div class="section" id="s3">
+  <h2 class="section-title"><span class="num">3</span> 核心创新：双重 Plan 表示与训练算法</h2>
+  <p class="section-desc">
+    本节深入两个最具创新性的设计：<strong>双重 Plan 文本表示</strong>（Planning Path + Bracket Sequence）和<strong>两阶段训练算法</strong>（Qit + Qdpo）。理解这两个设计是理解 LLM-QO 全部价值的钥匙。
+  </p>
+
+  <h3 style="color:#6dd5ed;margin:24px 0 12px;font-size:1.2rem;">3.1 双重 Plan 表示——为什么需要两种格式？</h3>
+  <p class="section-desc">
+    一个执行计划本质是一棵<strong>二叉树</strong>（每个 join 节点有两个子节点）。把树序列化成文本有多种方式，论文选择了"<u>两种并存</u>"的设计，每种解决不同问题。
+  </p>
+
+  <!-- SVG: 双重Plan表示对比 -->
+  <div class="svg-wrap">
+  <svg viewBox="0 0 1200 480" xmlns="http://www.w3.org/2000/svg" style="width:100%;font-family:'Noto Sans SC',system-ui,sans-serif;">
+    <defs><marker id="arrR" markerWidth="8" markerHeight="8" refX="8" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="#2193b0"/></marker></defs>
+    <text x="600" y="28" text-anchor="middle" fill="#6dd5ed" font-size="15" font-weight="700">同一个执行计划的三种视角</text>
+
+    <!-- (a) 物理计划树 -->
+    <rect x="20" y="50" width="380" height="400" rx="14" fill="#1a2340" stroke="#6dd5ed" stroke-opacity=".3"/>
+    <text x="210" y="75" text-anchor="middle" fill="#6dd5ed" font-size="13" font-weight="700">(a) 物理计划树（数据库内部）</text>
+
+    <!-- 根 NestLoopJoin -->
+    <rect x="155" y="105" width="110" height="40" rx="8" fill="#252a3a" stroke="#2193b0" stroke-width="2"/>
+    <text x="210" y="130" text-anchor="middle" fill="#2193b0" font-size="12" font-weight="600">NestLoopJoin</text>
+
+    <!-- 左子: HashJoin -->
+    <rect x="60" y="180" width="110" height="40" rx="8" fill="#252a3a" stroke="#6dd5ed" stroke-opacity=".5"/>
+    <text x="115" y="205" text-anchor="middle" fill="#6dd5ed" font-size="11" font-weight="600">HashJoin</text>
+
+    <!-- 右子: movie_info_idx -->
+    <rect x="240" y="180" width="140" height="40" rx="8" fill="#252a3a" stroke="#a5d6a7" stroke-opacity=".5"/>
+    <text x="310" y="205" text-anchor="middle" fill="#a5d6a7" font-size="10" font-weight="600">movie_info_idx</text>
+
+    <!-- 左左: movie_companies -->
+    <rect x="20" y="255" width="130" height="40" rx="8" fill="#252a3a" stroke="#a5d6a7" stroke-opacity=".5"/>
+    <text x="85" y="280" text-anchor="middle" fill="#a5d6a7" font-size="10" font-weight="600">movie_companies</text>
+
+    <!-- 左右: title -->
+    <rect x="160" y="255" width="80" height="40" rx="8" fill="#252a3a" stroke="#a5d6a7" stroke-opacity=".5"/>
+    <text x="200" y="280" text-anchor="middle" fill="#a5d6a7" font-size="11" font-weight="600">title</text>
+
+    <!-- 树的边 -->
+    <line x1="190" y1="145" x2="115" y2="180" stroke="#6dd5ed" stroke-width="1.5"/>
+    <line x1="230" y1="145" x2="305" y2="180" stroke="#6dd5ed" stroke-width="1.5"/>
+    <line x1="100" y1="220" x2="80" y2="255" stroke="#6dd5ed" stroke-width="1.5"/>
+    <line x1="135" y1="220" x2="190" y2="255" stroke="#6dd5ed" stroke-width="1.5"/>
+
+    <text x="210" y="345" text-anchor="middle" fill="#8b949e" font-size="11">树结构 = 有向、有层次</text>
+    <text x="210" y="365" text-anchor="middle" fill="#8b949e" font-size="11">但 LLM 只能输出"序列"</text>
+    <text x="210" y="395" text-anchor="middle" fill="#ffc107" font-size="11" font-weight="600">⚠️ 必须文本化</text>
+    <text x="210" y="425" text-anchor="middle" fill="#8b949e" font-size="10">→ 两种表示法 (b)(c) 各有所长</text>
+
+    <!-- (b) Planning Path -->
+    <rect x="420" y="50" width="380" height="400" rx="14" fill="#10201a" stroke="#a5d6a7" stroke-opacity=".4" stroke-width="1.5"/>
+    <text x="610" y="75" text-anchor="middle" fill="#a5d6a7" font-size="13" font-weight="700">(b) Planning Path（多步推理友好）</text>
+
+    <rect x="440" y="100" width="340" height="60" rx="10" fill="#252a3a" stroke="#a5d6a7" stroke-opacity=".4"/>
+    <text x="610" y="123" text-anchor="middle" fill="#a5d6a7" font-size="12" font-weight="600">Step1: [movie_companies, title, HashJoin]</text>
+    <text x="610" y="143" text-anchor="middle" fill="#8b949e" font-size="11">先 join 这两表</text>
+
+    <rect x="440" y="175" width="340" height="60" rx="10" fill="#252a3a" stroke="#a5d6a7" stroke-opacity=".4"/>
+    <text x="610" y="198" text-anchor="middle" fill="#a5d6a7" font-size="11" font-weight="600">Step2: [HashJoin(...), movie_info_idx,</text>
+    <text x="610" y="218" text-anchor="middle" fill="#a5d6a7" font-size="11" font-weight="600">         NestLoopJoin]</text>
+
+    <rect x="440" y="255" width="340" height="60" rx="10" fill="#1e3020" stroke="#a5d6a7" stroke-opacity=".5"/>
+    <text x="610" y="280" text-anchor="middle" fill="#a5d6a7" font-size="12" font-weight="600">📐 形式化</text>
+    <text x="610" y="300" text-anchor="middle" fill="#8b949e" font-size="10">n-1 个步骤，每步 [opd1, opd2, opt]</text>
+
+    <text x="610" y="345" text-anchor="middle" fill="#a5d6a7" font-size="12" font-weight="600">✓ 优势：CoT 推理</text>
+    <text x="610" y="365" text-anchor="middle" fill="#8b949e" font-size="11">每步独立显示，激发"先想再答"</text>
+    <text x="610" y="385" text-anchor="middle" fill="#8b949e" font-size="11">DPO 阶段细粒度对比关键</text>
+    <text x="610" y="420" text-anchor="middle" fill="#ffc107" font-size="10">✗ 劣势：token 多</text>
+
+    <!-- (c) Bracket Sequence -->
+    <rect x="820" y="50" width="360" height="400" rx="14" fill="#2a1a3a" stroke="#ce93d8" stroke-opacity=".4" stroke-width="1.5"/>
+    <text x="1000" y="75" text-anchor="middle" fill="#ce93d8" font-size="13" font-weight="700">(c) Bracket Sequence（紧凑）</text>
+
+    <rect x="840" y="105" width="320" height="80" rx="10" fill="#252a3a" stroke="#ce93d8" stroke-opacity=".4"/>
+    <text x="1000" y="135" text-anchor="middle" fill="#ce93d8" font-size="11" font-weight="600">NestLoopJoin(</text>
+    <text x="1000" y="153" text-anchor="middle" fill="#ce93d8" font-size="11" font-weight="600">  HashJoin(movie_companies, title),</text>
+    <text x="1000" y="171" text-anchor="middle" fill="#ce93d8" font-size="11" font-weight="600">  movie_info_idx)</text>
+
+    <rect x="840" y="200" width="320" height="50" rx="10" fill="#221828" stroke="#ce93d8" stroke-opacity=".5"/>
+    <text x="1000" y="222" text-anchor="middle" fill="#ce93d8" font-size="12" font-weight="600">📐 形式化</text>
+    <text x="1000" y="240" text-anchor="middle" fill="#8b949e" font-size="10">opt(opd1, opd2)，递归嵌套</text>
+
+    <text x="1000" y="280" text-anchor="middle" fill="#ce93d8" font-size="12" font-weight="600">✓ 优势：紧凑</text>
+    <text x="1000" y="300" text-anchor="middle" fill="#8b949e" font-size="11">token 少，解析简单</text>
+    <text x="1000" y="320" text-anchor="middle" fill="#8b949e" font-size="11">作为"最终答案"输出</text>
+    <text x="1000" y="355" text-anchor="middle" fill="#ffc107" font-size="11">✗ 劣势：缺乏推理痕迹</text>
+    <text x="1000" y="375" text-anchor="middle" fill="#8b949e" font-size="10">单看括号难判断 join 顺序对错</text>
+    <text x="1000" y="410" text-anchor="middle" fill="#8b949e" font-size="10">DPO 难在细粒度区分质量</text>
+  </svg>
+  </div>
+  <p class="fc">▲ Plan 的三种视角：物理计划树（数据库内部表示）、Planning Path（n-1 步序列，激发 CoT）、Bracket Sequence（嵌套括号，紧凑答案）。论文采用"先 Path 再 Bracket"的双重输出</p>
+
+  <div class="highlight-box">
+    <h4>🎯 双重表示的核心动机：为 DPO 创造"细粒度对比信号"</h4>
+    <p>这是论文最精妙的设计动机。<u>如果只用 Bracket Sequence</u>，DPO 看到的"偏好对" (y_w, y_l) 可能只是括号嵌套结构的微小差异——<strong>损失信号太稀疏</strong>，DPO 难以学到有意义的偏好。<br><br>
+    <u>引入 Planning Path 后</u>，<u>每一步</u>都成为可对比的细粒度单元——好计划在 Step1 选 HashJoin，差计划在 Step1 选 NestLoopJoin，DPO 能精确定位"是哪一步的决策让两个计划性能差距大"。<strong>消融实验验证</strong>：去掉 Planning Path 后，Qit 阶段还能凑合，但 Qdpo 阶段性能显著下降——这正是 Planning Path 在 DPO 阶段不可替代的证据。</p>
+  </div>
+
+  <h3 style="color:#6dd5ed;margin:24px 0 12px;font-size:1.2rem;">3.2 两阶段训练算法</h3>
+
+  <div class="module-card">
+    <h3>Stage 1: Qit (Query Instruction Tuning) — 学会模仿</h3>
+    <p>这一阶段是<strong>监督微调（SFT）</strong>。给 LLM 大量 (x_q, y_p*) 对，其中 y_p* 是多优化器中执行最快的那个计划。损失函数是经典的负对数似然：</p>
+  </div>
+  <div class="formula-box">
+    L<sub>sft</sub>(θ) = E<sub>(x,y) ∼ D<sub>sft</sub></sub> [ -log π<sub>θ</sub>(y | x) ]
+  </div>
+  <p class="section-desc">
+    <b>直觉理解</b>：让模型 π_θ 在看到输入 x 时，输出 y 的概率尽可能高——本质是<u>"模仿专家"</u>。Qit 阶段的目标不是让模型超越专家，而是先<strong>具备"生成有效计划"的基础能力</strong>。论文实验显示，仅经过 Qit 后，模型已经能在 IMDB/JOB-light 上略微超越 PostgreSQL，但提升有限。
+  </p>
+
+  <div class="module-card">
+    <h3>Stage 2: Qdpo (Query Direct Preference Optimization) — 学会偏好</h3>
+    <p>这一阶段是<strong>偏好对齐</strong>。Qit 后的模型 π_sft 虽然能生成有效计划，但还没学会"<u>区分一个好计划和一个稍差的计划</u>"。Qdpo 用 DPO 损失解决这个问题：</p>
+  </div>
+  <div class="formula-box" style="font-size:16px;">
+    L<sub>dpo</sub> = -log σ ( u(x, y<sub>w</sub>, y<sub>l</sub>) )<br>
+    其中 u(x, y<sub>w</sub>, y<sub>l</sub>) = β · log[π<sub>dpo</sub>(y<sub>w</sub>|x) / π<sub>sft</sub>(y<sub>w</sub>|x)] − β · log[π<sub>dpo</sub>(y<sub>l</sub>|x) / π<sub>sft</sub>(y<sub>l</sub>|x)]
+  </div>
+  <p class="section-desc">
+    <b>直觉理解</b>：u(x, y_w, y_l) 是<strong>"奖励差异"</strong>——衡量在新模型 π_dpo 下，"赢家计划 y_w 比输家计划 y_l 多被偏好多少"（相对于参考模型 π_sft）。损失 -log σ(u) 通过 sigmoid 函数把这个差异映射到 [0,1]，要求模型<u>显著拉开两者的概率差距</u>。<br><br>
+    <b>关键超参 β = 0.1</b>：控制 π_dpo 相对于 π_sft 的偏离程度。β 太大 → 偏离太远，可能丢失 Qit 已学到的有效性；β 太小 → 偏好信号太弱，学不到东西。论文消融显示 β=0.1 是甜蜜点。
+  </p>
+
+  <div class="info-box">
+    <h4>💡 为什么必须先 Qit 再 Qdpo？</h4>
+    <p>① <u>跳过 Qit 直接 Qdpo</u>：基础 LLM 连"有效计划"都生成不了，DPO 的偏好对都是"两个无效计划"，毫无意义。<br>② <u>仅 Qit 不 Qdpo</u>：模型只学了"模仿单个最优"，没学过"对比"——遇到边界情况（如新 schema）易选次优。<br>这种"<strong>先模仿后偏好</strong>"的两阶段范式实际上是 InstructGPT/RLHF 流程的精简版（去掉了奖励模型 + RL），用 DPO 的简洁性做了同样的事。</p>
+  </div>
+
+  <h3 style="color:#6dd5ed;margin:24px 0 12px;font-size:1.2rem;">3.3 偏好对的生成算法 — Algorithm 1</h3>
+  <div class="code-block"><pre><span class="cg"># Algorithm 1: Preference Data Generation</span>
+<span class="ck">Input:</span>  query q, optimizers {O_1, ..., O_k}, threshold r_0=0.95
+<span class="ck">Output:</span> instruction sample (x_q, y_p*), preference pairs P_q
+
+<span class="cs">1.</span>  plans ← []
+<span class="cs">2.</span>  <span class="cf">for</span> O_i <span class="cf">in</span> optimizers:
+<span class="cs">3.</span>      p_i ← O_i.generate_plan(q)            <span class="cg"># 多优化器各自生成计划</span>
+<span class="cs">4.</span>      t_i ← execute(p_i)                     <span class="cg"># 实测执行时间</span>
+<span class="cs">5.</span>      plans.append((p_i, t_i))
+
+<span class="cs">6.</span>  p*, t* ← argmin(plans, key=t)              <span class="cg"># 找最快计划作为 y_w</span>
+<span class="cs">7.</span>  D_sft.add((x_q, y_p*))                     <span class="cg"># SFT 训练数据</span>
+
+<span class="cs">8.</span>  P_q ← []
+<span class="cs">9.</span>  <span class="cf">for</span> (p_i, t_i) <span class="cf">in</span> plans:
+<span class="cs">10.</span>     <span class="cf">if</span> t* / t_i &lt; r_0:                      <span class="cg"># 比最快慢"足够多"才作为 loser</span>
+<span class="cs">11.</span>         P_q.append((x_q, y_p*, y_p_i))     <span class="cg"># 偏好对：好计划 vs 差计划</span>
+<span class="cs">12.</span> D_dpo.extend(P_q)</pre></div>
+
+  <div class="info-box">
+    <h4>💡 阈值 r₀ 的精妙作用</h4>
+    <p>r₀ 控制了"差异度多大才算偏好对"。<u>r₀=1.0</u>（取所有非最优）→ y_w 和 y_l 可能性能几乎一样，DPO 学不到偏好；<u>r₀=0.6</u>（要求 y_l 比 y_w 慢至少 40%）→ 偏好对数量太少，训练不充分。<strong>论文实验显示 r₀=0.80 是最优值</strong>—— 既保证偏好对数量充足，又保证质量上有显著差异。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ====== Section 4: Data Flow ====== -->
+<div class="section" id="s4">
+  <h2 class="section-title"><span class="num">4</span> 数据流解析：训练流与推理流</h2>
+  <p class="section-desc">
+    本节用两张 SVG 流程图分别解析<strong>离线训练数据流</strong>（数据如何从 SQL 工作负载流到训练好的 π_dpo）和<strong>在线推理数据流</strong>（一条新查询如何在毫秒级流过 π_dpo 得到执行计划）。
+  </p>
+
+  <h3 style="color:#6dd5ed;margin:24px 0 12px;font-size:1.2rem;">4.1 训练数据流（离线，一次性）</h3>
+  <div class="svg-wrap">
+  <svg viewBox="0 0 1200 480" xmlns="http://www.w3.org/2000/svg" style="width:100%;font-family:'Noto Sans SC',system-ui,sans-serif;">
+    <defs><marker id="arrTr" markerWidth="8" markerHeight="8" refX="8" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="#6dd5ed"/></marker></defs>
+    <text x="600" y="28" text-anchor="middle" fill="#6dd5ed" font-size="15" font-weight="700">训练数据流（离线）</text>
+
+    <!-- Step 1: 工作负载 -->
+    <rect x="30" y="60" width="170" height="80" rx="10" fill="#252a3a" stroke="#6dd5ed" stroke-opacity=".4"/>
+    <text x="115" y="85" text-anchor="middle" fill="#6dd5ed" font-size="11" font-weight="600">📂 训练工作负载</text>
+    <text x="115" y="105" text-anchor="middle" fill="#8b949e" font-size="10">IMDB / JOB-light / DSB</text>
+    <text x="115" y="120" text-anchor="middle" fill="#8b949e" font-size="10">~1000 条 SQL</text>
+
+    <!-- Step 2: 多优化器 -->
+    <rect x="230" y="60" width="200" height="80" rx="10" fill="#252a3a" stroke="#6dd5ed" stroke-opacity=".5" stroke-width="2"/>
+    <text x="330" y="85" text-anchor="middle" fill="#6dd5ed" font-size="11" font-weight="600">🛠️ 多优化器并行</text>
+    <text x="330" y="105" text-anchor="middle" fill="#8b949e" font-size="10">PostgreSQL / Oracle / DB2</text>
+    <text x="330" y="120" text-anchor="middle" fill="#8b949e" font-size="10">每查询生成 k 个计划</text>
+
+    <!-- Step 3: 执行测时 -->
+    <rect x="460" y="60" width="200" height="80" rx="10" fill="#252a3a" stroke="#6dd5ed" stroke-opacity=".5" stroke-width="2"/>
+    <text x="560" y="85" text-anchor="middle" fill="#6dd5ed" font-size="11" font-weight="600">⏱️ 实测执行时间</text>
+    <text x="560" y="105" text-anchor="middle" fill="#8b949e" font-size="10">PostgreSQL 执行引擎</text>
+    <text x="560" y="120" text-anchor="middle" fill="#8b949e" font-size="10">{(p_1, t_1), ..., (p_k, t_k)}</text>
+
+    <!-- Step 4: Algorithm 1 -->
+    <rect x="690" y="60" width="200" height="80" rx="10" fill="#252a3a" stroke="#6dd5ed" stroke-opacity=".5" stroke-width="2"/>
+    <text x="790" y="85" text-anchor="middle" fill="#6dd5ed" font-size="11" font-weight="600">📊 Algorithm 1</text>
+    <text x="790" y="105" text-anchor="middle" fill="#8b949e" font-size="10">挑最快为 y_w</text>
+    <text x="790" y="120" text-anchor="middle" fill="#8b949e" font-size="10">阈值 r₀ 筛 y_l</text>
+
+    <!-- Step 5: 序列化 -->
+    <rect x="920" y="60" width="200" height="80" rx="10" fill="#252a3a" stroke="#6dd5ed" stroke-opacity=".5" stroke-width="2"/>
+    <text x="1020" y="85" text-anchor="middle" fill="#6dd5ed" font-size="11" font-weight="600">📝 QInstruct 序列化</text>
+    <text x="1020" y="105" text-anchor="middle" fill="#8b949e" font-size="10">5 元素 prompt</text>
+    <text x="1020" y="120" text-anchor="middle" fill="#8b949e" font-size="10">Path + Bracket 输出</text>
+
+    <line x1="200" y1="100" x2="230" y2="100" stroke="#6dd5ed" stroke-width="2" marker-end="url(#arrTr)"/>
+    <line x1="430" y1="100" x2="460" y2="100" stroke="#6dd5ed" stroke-width="2" marker-end="url(#arrTr)"/>
+    <line x1="660" y1="100" x2="690" y2="100" stroke="#6dd5ed" stroke-width="2" marker-end="url(#arrTr)"/>
+    <line x1="890" y1="100" x2="920" y2="100" stroke="#6dd5ed" stroke-width="2" marker-end="url(#arrTr)"/>
+
+    <!-- Datasets -->
+    <rect x="280" y="180" width="280" height="70" rx="10" fill="#10201a" stroke="#a5d6a7" stroke-opacity=".5"/>
+    <text x="420" y="205" text-anchor="middle" fill="#a5d6a7" font-size="12" font-weight="600">D_sft：(x_q, y_p*)</text>
+    <text x="420" y="225" text-anchor="middle" fill="#8b949e" font-size="11">每查询一个最优计划</text>
+    <text x="420" y="240" text-anchor="middle" fill="#8b949e" font-size="10">用于 Qit 阶段</text>
+
+    <rect x="600" y="180" width="280" height="70" rx="10" fill="#2a1a3a" stroke="#ce93d8" stroke-opacity=".5"/>
+    <text x="740" y="205" text-anchor="middle" fill="#ce93d8" font-size="12" font-weight="600">D_dpo：(x_q, y_w, y_l)</text>
+    <text x="740" y="225" text-anchor="middle" fill="#8b949e" font-size="11">每查询若干偏好对</text>
+    <text x="740" y="240" text-anchor="middle" fill="#8b949e" font-size="10">用于 Qdpo 阶段</text>
+
+    <line x1="1020" y1="140" x2="1020" y2="160" stroke="#6dd5ed" stroke-width="1.5"/>
+    <line x1="1020" y1="160" x2="420" y2="160" stroke="#6dd5ed" stroke-width="1.5"/>
+    <line x1="420" y1="160" x2="420" y2="180" stroke="#6dd5ed" stroke-width="1.5" marker-end="url(#arrTr)"/>
+    <line x1="740" y1="160" x2="740" y2="180" stroke="#6dd5ed" stroke-width="1.5" marker-end="url(#arrTr)"/>
+
+    <!-- Stage 1: Qit -->
+    <rect x="180" y="290" width="350" height="100" rx="12" fill="#10201a" stroke="#a5d6a7" stroke-width="2"/>
+    <text x="355" y="315" text-anchor="middle" fill="#a5d6a7" font-size="13" font-weight="700">Stage 1: Qit (SFT)</text>
+    <text x="355" y="335" text-anchor="middle" fill="#8b949e" font-size="11">L = -log π(y | x)</text>
+    <text x="355" y="352" text-anchor="middle" fill="#8b949e" font-size="11">LoRA · 600 steps · lr=2e-4</text>
+    <text x="355" y="372" text-anchor="middle" fill="#8b949e" font-size="10">基础 LLaMa-3-8B → π_sft</text>
+
+    <line x1="420" y1="250" x2="355" y2="290" stroke="#a5d6a7" stroke-width="2" marker-end="url(#arrTr)"/>
+
+    <!-- Stage 2: Qdpo -->
+    <rect x="640" y="290" width="350" height="100" rx="12" fill="#2a1a3a" stroke="#ce93d8" stroke-width="2"/>
+    <text x="815" y="315" text-anchor="middle" fill="#ce93d8" font-size="13" font-weight="700">Stage 2: Qdpo (DPO)</text>
+    <text x="815" y="335" text-anchor="middle" fill="#8b949e" font-size="11">L = -log σ(u(x, y_w, y_l))</text>
+    <text x="815" y="352" text-anchor="middle" fill="#8b949e" font-size="11">β=0.1 · 200 steps · lr=5e-6</text>
+    <text x="815" y="372" text-anchor="middle" fill="#8b949e" font-size="10">π_sft → π_dpo (最终模型)</text>
+
+    <line x1="740" y1="250" x2="815" y2="290" stroke="#ce93d8" stroke-width="2" marker-end="url(#arrTr)"/>
+    <line x1="530" y1="340" x2="640" y2="340" stroke="#a5d6a7" stroke-width="2" marker-end="url(#arrTr)"/>
+    <text x="585" y="332" text-anchor="middle" fill="#a5d6a7" font-size="10">π_sft</text>
+
+    <!-- 输出 -->
+    <rect x="450" y="420" width="300" height="40" rx="10" fill="#1a2b30" stroke="#6dd5ed" stroke-width="2"/>
+    <text x="600" y="446" text-anchor="middle" fill="#6dd5ed" font-size="13" font-weight="700">📦 部署：π_dpo (LoRA 权重)</text>
+
+    <line x1="815" y1="390" x2="600" y2="420" stroke="#ce93d8" stroke-width="2" marker-end="url(#arrTr)"/>
+  </svg>
+  </div>
+  <p class="fc">▲ 训练数据流：工作负载 → 多优化器并行执行 → 实测时间 → 算法1 筛选 → QInstruct 序列化 → 两阶段微调 → 部署 π_dpo</p>
+
+  <h3 style="color:#6dd5ed;margin:24px 0 12px;font-size:1.2rem;">4.2 推理数据流（在线，每次查询）</h3>
+  <div class="svg-wrap">
+  <svg viewBox="0 0 1200 380" xmlns="http://www.w3.org/2000/svg" style="width:100%;font-family:'Noto Sans SC',system-ui,sans-serif;">
+    <defs><marker id="arrIn" markerWidth="8" markerHeight="8" refX="8" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="#2193b0"/></marker></defs>
+    <text x="600" y="28" text-anchor="middle" fill="#6dd5ed" font-size="15" font-weight="700">推理数据流（在线，单次查询）</text>
+
+    <!-- 1. 用户 SQL -->
+    <rect x="20" y="60" width="160" height="80" rx="10" fill="#252a3a" stroke="#6dd5ed" stroke-opacity=".4"/>
+    <text x="100" y="85" text-anchor="middle" fill="#6dd5ed" font-size="11" font-weight="600">📥 用户 SQL</text>
+    <text x="100" y="105" text-anchor="middle" fill="#8b949e" font-size="10">SELECT * FROM ...</text>
+    <text x="100" y="120" text-anchor="middle" fill="#8b949e" font-size="10">(SPJ 查询)</text>
+
+    <!-- 2. 取 schema/stats -->
+    <rect x="210" y="60" width="180" height="80" rx="10" fill="#252a3a" stroke="#6dd5ed" stroke-opacity=".5" stroke-width="2"/>
+    <text x="300" y="85" text-anchor="middle" fill="#6dd5ed" font-size="11" font-weight="600">🗂️ 提取 schema + stats</text>
+    <text x="300" y="105" text-anchor="middle" fill="#8b949e" font-size="10">从 PostgreSQL catalog</text>
+    <text x="300" y="120" text-anchor="middle" fill="#8b949e" font-size="10">[min, max, ndv]</text>
+
+    <!-- 3. 检索 demonstration -->
+    <rect x="420" y="60" width="180" height="80" rx="10" fill="#252a3a" stroke="#6dd5ed" stroke-opacity=".5" stroke-width="2"/>
+    <text x="510" y="85" text-anchor="middle" fill="#6dd5ed" font-size="11" font-weight="600">🔍 检索 Demonstration</text>
+    <text x="510" y="105" text-anchor="middle" fill="#8b949e" font-size="10">同模板查询的范例</text>
+    <text x="510" y="120" text-anchor="middle" fill="#8b949e" font-size="10">从 D_sft 中取一个</text>
+
+    <!-- 4. 拼 prompt -->
+    <rect x="630" y="60" width="180" height="80" rx="10" fill="#252a3a" stroke="#6dd5ed" stroke-opacity=".5" stroke-width="2"/>
+    <text x="720" y="85" text-anchor="middle" fill="#6dd5ed" font-size="11" font-weight="600">📝 组装 prompt x_q</text>
+    <text x="720" y="105" text-anchor="middle" fill="#8b949e" font-size="10">5 元素拼接</text>
+    <text x="720" y="120" text-anchor="middle" fill="#8b949e" font-size="10">tokenize 为 token 序列</text>
+
+    <!-- 5. π_dpo 自回归 -->
+    <rect x="840" y="60" width="180" height="80" rx="10" fill="#2a1a3a" stroke="#ce93d8" stroke-width="2"/>
+    <text x="930" y="85" text-anchor="middle" fill="#ce93d8" font-size="11" font-weight="600">🤖 π_dpo 自回归生成</text>
+    <text x="930" y="105" text-anchor="middle" fill="#8b949e" font-size="10">Step1, Step2, ..., Final</text>
+    <text x="930" y="120" text-anchor="middle" fill="#8b949e" font-size="10">~1-2 秒 (A100)</text>
+
+    <line x1="180" y1="100" x2="210" y2="100" stroke="#2193b0" stroke-width="2" marker-end="url(#arrIn)"/>
+    <line x1="390" y1="100" x2="420" y2="100" stroke="#2193b0" stroke-width="2" marker-end="url(#arrIn)"/>
+    <line x1="600" y1="100" x2="630" y2="100" stroke="#2193b0" stroke-width="2" marker-end="url(#arrIn)"/>
+    <line x1="810" y1="100" x2="840" y2="100" stroke="#2193b0" stroke-width="2" marker-end="url(#arrIn)"/>
+
+    <!-- 6. 解析 -->
+    <rect x="100" y="200" width="200" height="80" rx="10" fill="#252a3a" stroke="#6dd5ed" stroke-opacity=".5" stroke-width="2"/>
+    <text x="200" y="225" text-anchor="middle" fill="#6dd5ed" font-size="11" font-weight="600">📐 解析括号序列</text>
+    <text x="200" y="245" text-anchor="middle" fill="#8b949e" font-size="10">opt(opd1, opd2)</text>
+    <text x="200" y="260" text-anchor="middle" fill="#8b949e" font-size="10">→ AST → 物理树</text>
+
+    <line x1="930" y1="140" x2="930" y2="170" stroke="#ce93d8" stroke-width="2"/>
+    <line x1="930" y1="170" x2="200" y2="170" stroke="#ce93d8" stroke-width="2"/>
+    <line x1="200" y1="170" x2="200" y2="200" stroke="#ce93d8" stroke-width="2" marker-end="url(#arrIn)"/>
+
+    <!-- 7. pg_hint_plan 注入 -->
+    <rect x="340" y="200" width="220" height="80" rx="10" fill="#252a3a" stroke="#6dd5ed" stroke-opacity=".5" stroke-width="2"/>
+    <text x="450" y="225" text-anchor="middle" fill="#6dd5ed" font-size="11" font-weight="600">💉 pg_hint_plan 注入</text>
+    <text x="450" y="245" text-anchor="middle" fill="#8b949e" font-size="10">把计划转为 SQL hint</text>
+    <text x="450" y="260" text-anchor="middle" fill="#8b949e" font-size="10">/*+ HashJoin(...) */</text>
+
+    <line x1="300" y1="240" x2="340" y2="240" stroke="#2193b0" stroke-width="2" marker-end="url(#arrIn)"/>
+
+    <!-- 8. PostgreSQL 执行 -->
+    <rect x="600" y="200" width="220" height="80" rx="10" fill="#10201a" stroke="#a5d6a7" stroke-width="2"/>
+    <text x="710" y="225" text-anchor="middle" fill="#a5d6a7" font-size="11" font-weight="600">🚀 PostgreSQL 执行</text>
+    <text x="710" y="245" text-anchor="middle" fill="#8b949e" font-size="10">按 hint 强制走 LLM 计划</text>
+    <text x="710" y="260" text-anchor="middle" fill="#8b949e" font-size="10">不走默认优化器</text>
+
+    <line x1="560" y1="240" x2="600" y2="240" stroke="#2193b0" stroke-width="2" marker-end="url(#arrIn)"/>
+
+    <!-- 9. 返回结果 -->
+    <rect x="860" y="200" width="220" height="80" rx="10" fill="#1a2b30" stroke="#6dd5ed" stroke-width="2"/>
+    <text x="970" y="225" text-anchor="middle" fill="#6dd5ed" font-size="11" font-weight="700">✅ 加速后的查询结果</text>
+    <text x="970" y="245" text-anchor="middle" fill="#8b949e" font-size="10">DSB 平均延迟 ↓ 68.7%</text>
+    <text x="970" y="260" text-anchor="middle" fill="#8b949e" font-size="10">vs PostgreSQL 默认</text>
+
+    <line x1="820" y1="240" x2="860" y2="240" stroke="#2193b0" stroke-width="2" marker-end="url(#arrIn)"/>
+
+    <!-- 关键开销 -->
+    <rect x="100" y="310" width="980" height="50" rx="10" fill="#252a3a" stroke="rgba(255,255,255,.08)"/>
+    <text x="590" y="335" text-anchor="middle" fill="#6dd5ed" font-size="12" font-weight="600">⚠️ 推理延迟现状</text>
+    <text x="590" y="355" text-anchor="middle" fill="#8b949e" font-size="11">A100 上 LLM 生成 ~1-2s | 对长执行查询（&gt;10s）净收益 | 短查询场景需未来研究效率优化</text>
+  </svg>
+  </div>
+  <p class="fc">▲ 推理数据流：用户 SQL → 提取 schema/stats → 检索 demo → 组装 prompt → π_dpo 生成 → 解析 → pg_hint_plan 注入 → PostgreSQL 执行</p>
+
+  <div class="warn-box">
+    <h4>⚠️ 推理延迟的现实考量</h4>
+    <p>LLM 自回归生成不是免费午餐——单次推理在 A100 上需要约 1~2 秒。这意味着 LLM-QO 当前<strong>只对长执行查询有净收益</strong>（如 DSB 中执行时间数十秒的复杂 join），对小查询（毫秒级响应）反而会拖慢整体延迟。这正是论文留下的"<u>效率</u>"开放问题——未来需要小模型蒸馏、推理加速、缓存等手段把 LLM 推理压缩到 100ms 以内。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ====== Section 5: Technical Details ====== -->
+<div class="section" id="s5">
+  <h2 class="section-title"><span class="num">5</span> 关键技术细节</h2>
+  <p class="section-desc">本节深入讲解几个论文中容易被忽略但非常关键的技术细节，理解它们能更好把握论文的工程严谨性。</p>
+
+  <div class="module-card">
+    <h3>5.1 为什么 demonstration 不需要"最优"？</h3>
+    <p>论文有一个很反直觉的设计：<strong>Planning Demonstration 中的 plan 不必是最优的</strong>。直觉上你可能会想——"既然要给 LLM 看示范，应该给个最完美的吧？"但论文实验显示：LLM 看示范时，<u>主要关注的是结构（哪些表、哪些列、操作符的写法）而非内容（具体的 join 顺序）</u>。给一个"长得对"的范例就足够防止幻觉，不需要"最优"。这反而简化了 demo 的检索——只要找到"同模板"查询的任意 plan 即可，无需额外排序。</p>
+  </div>
+
+  <div class="module-card">
+    <h3>5.2 LoRA 的具体配置</h3>
+    <p>论文使用 LoRA 进行参数高效微调，关键超参：</p>
+    <div class="code-block"><pre><span class="ck">LoRA Configuration:</span>
+  rank r          = <span class="cv">16</span>      <span class="cg"># 低秩矩阵的秩</span>
+  lora_alpha      = <span class="cv">32</span>      <span class="cg"># 缩放因子（通常 = 2r）</span>
+  target_modules  = <span class="cs">[q_proj, k_proj, v_proj, o_proj,</span>
+                     <span class="cs">gate_proj, up_proj, down_proj]</span>
+  dropout         = <span class="cv">0.0</span>     <span class="cg"># 不丢弃</span>
+
+<span class="ck">Trainable params:</span> ~<span class="cv">42M</span> / 总 <span class="cv">8B</span> ≈ <span class="cv">0.5%</span></pre></div>
+    <p style="margin-top:8px;"><b>关键观察：</b>LoRA 同时作用在 attention（q/k/v/o）和 MLP（gate/up/down）所有线性层上，最大化适配能力。仅训 0.5% 参数，但能完整改造模型行为，得益于 LoRA 在 Transformer 全部线性层上的"全覆盖"。</p>
+  </div>
+
+  <div class="module-card">
+    <h3>5.3 偏好对的"非对称"采样</h3>
+    <p>论文 Algorithm 1 的第 10 行有个细节：<strong>偏好对总是 (y_p*, y_p_i)，即"最优 vs 次优"</strong>，而不是任意两个 plan 配对。这意味着每条查询的 D_dpo 中，<u>y_w 永远是同一个 plan</u>（实测最快的那个），y_l 是被 r₀ 阈值筛过的若干"明显较差"的 plan。这种"非对称"设计比"两两配对"更高效—— DPO 模型只需学会"识别最优"，而非"对所有 plan 排序"，任务被简化了。</p>
+  </div>
+
+  <div class="module-card">
+    <h3>5.4 训练步数为何如此少？（Qit 600，Qdpo 200）</h3>
+    <p>对比常见 LLM 微调动辄上万步，LLM-QO 的训练步数显得"少得离谱"。原因：</p>
+    <p>① <strong>LoRA 收敛快</strong>：参数量小，损失曲线很快趋于平稳；</p>
+    <p>② <strong>任务结构强</strong>：查询优化是"模板化"任务（输入 SQL → 输出 plan 树），不像创意写作那样开放；</p>
+    <p>③ <strong>过拟合风险</strong>：训练步数太多反而会让 π_dpo 过度偏离 π_sft，导致输出无效计划（消融实验中 Qdpo 在完全 OOD 模板上易产生无效计划，正是这个原因）。</p>
+    <p>这个简洁的训练预算也带来一个工程优势：<u>整个两阶段训练在单 A100 上几小时内完成</u>，对实际部署友好。</p>
+  </div>
+
+  <div class="module-card">
+    <h3>5.5 三种 join 算子的角色分工</h3>
+    <p>论文限定输出只用三种 join 算子，每种的物理特性影响选择：</p>
+    <table class="data-table">
+      <tr><th>算子</th><th>原理</th><th>适用场景</th><th>大小敏感性</th></tr>
+      <tr><td>HashJoin</td><td>对内表建哈希表，外表流式查找</td><td>等值连接、内表能塞进内存</td><td>内表越小越好</td></tr>
+      <tr><td>NestLoopJoin</td><td>外表每行扫一遍内表</td><td>极小内表（如 LIMIT 1）、不等值连接</td><td>外表 × 内表 = 总成本</td></tr>
+      <tr><td>MergeJoin</td><td>两表先按 join 键排序，再归并</td><td>两表已排序、需要排序输出</td><td>排序开销主导</td></tr>
+    </table>
+    <p style="margin-top:8px;">LLM-QO 通过 Statistics（每列 [min, max, ndv]）<u>隐式</u>判断这些条件——大表 + 小表 ⇒ HashJoin；都很小 ⇒ NestLoopJoin。<strong>这种判断完全是模型从数据中学到的，没有显式规则</strong>，这正是 LLM 作为优化器的有趣之处。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ====== Section 6: Experiments ====== -->
+<div class="section" id="s6">
+  <h2 class="section-title"><span class="num">6</span> 实验结果与消融分析</h2>
+  <p class="section-desc">论文的实验非常扎实，覆盖三个工作负载、五种基线、三类 OOD 测试和详尽的消融。本节挑选最关键的结果展开。</p>
+
+  <h3 style="color:#6dd5ed;margin:24px 0 12px;font-size:1.2rem;">6.1 整体性能对比 — Table 1 核心结果</h3>
+  <table class="data-table">
+    <thead>
+      <tr><th>方法</th><th>IMDB (Mean)</th><th>JOB-light (Mean)</th><th>DSB (Mean)</th><th>DSB 95th</th><th>DSB 99th</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>PostgreSQL (基线)</td><td>1.00× (基准)</td><td>1.00× (基准)</td><td>1.00× = 9.64s</td><td>43.91s</td><td>136.27s</td></tr>
+      <tr><td>Oracle</td><td>0.97×</td><td>0.99×</td><td>0.78×</td><td>33.5s</td><td>121s</td></tr>
+      <tr><td>Bao（学习型）</td><td>0.94×</td><td>0.96×</td><td><b>0.32×</b></td><td>11.6s</td><td>12.0s</td></tr>
+      <tr><td>HybridQO（学习型）</td><td>0.95×</td><td>0.96×</td><td>0.55×</td><td>22.0s</td><td>74.0s</td></tr>
+      <tr><td><b>LLM-QO (Qit)</b></td><td><b>0.957×</b></td><td>0.979×</td><td>0.482×</td><td>11.60s</td><td>50.60s</td></tr>
+      <tr><td><b>LLM-QO (Qdpo)</b></td><td><b>0.914×</b> ⚡</td><td><b>0.944×</b> ⚡</td><td><b>0.313×</b> ⚡</td><td><b>11.46s</b> ⚡</td><td><b>11.72s</b> ⚡</td></tr>
+    </tbody>
+  </table>
+
+  <div class="highlight-box">
+    <h4>🎯 关键发现（DSB 长查询场景最显著）</h4>
+    <p>① <strong>LLM-QO (Qdpo) 全面超越所有基线</strong>—— 平均执行时间降到 PostgreSQL 的 31.3%（即<u>加速 3.2×</u>）；<br>② <strong>长尾分位数收益更大</strong>—— 99th 分位从 PostgreSQL 的 136.27s 暴降到 11.72s，<u>降低 91%</u>，意味着最坏情况查询被极大缓解；<br>③ <strong>Qit → Qdpo 的差距不可忽视</strong>—— DSB 上 Qit 的 mean 是 0.482×，Qdpo 是 0.313×，DPO 阶段贡献了约 35% 的额外提升。</p>
+  </div>
+
+  <h3 style="color:#6dd5ed;margin:24px 0 12px;font-size:1.2rem;">6.2 消融研究 — Table 3 (DSB)</h3>
+  <table class="data-table">
+    <thead>
+      <tr><th>消融项</th><th>变体</th><th>Mean</th><th>95th</th><th>99th</th><th>无效计划</th></tr>
+    </thead>
+    <tbody>
+      <tr><td rowspan="2">输入特征</td><td>w/o statistics (Qdpo)</td><td>4.58</td><td>11.63</td><td>50.03</td><td>—</td></tr>
+      <tr><td>w/o demonstration (Qdpo)</td><td>5.09</td><td>11.59</td><td>37.37</td><td>1</td></tr>
+      <tr><td>输出格式</td><td>w/o planning path (Qdpo)</td><td>4.24</td><td>11.60</td><td>47.59</td><td>—</td></tr>
+      <tr><td rowspan="3">Backbone</td><td>CodeLLaMA-7B (Qdpo)</td><td>3.12</td><td>11.61</td><td>11.87</td><td>—</td></tr>
+      <tr><td>LLaMA2-7B (Qdpo)</td><td>3.07</td><td>11.53</td><td>11.69</td><td>—</td></tr>
+      <tr><td>Mistral-7B (Qdpo)</td><td>5.71</td><td>18.92</td><td>59.69</td><td>34 ⚠️</td></tr>
+      <tr><td>—</td><td><b>LLM-QO (Qdpo) 完整版 = LLaMa-3-8B</b></td><td><b>3.02</b></td><td><b>11.46</b></td><td><b>11.72</b></td><td>—</td></tr>
+    </tbody>
+  </table>
+
+  <div class="info-box">
+    <h4>💡 消融实验告诉我们什么</h4>
+    <p><b>① Statistics 不可或缺</b>：去掉后 mean 从 3.02 涨到 4.58（变慢 52%）—— 没有统计信息，LLM 根本无法判断表的大小，只能瞎猜 join 顺序。<br>
+    <b>② Demonstration 主要防幻觉</b>：去掉后产生了 1 个无效计划（在完整版中是 0），但<u>整体性能下降不如去 statistics 严重</u>—— 说明 demo 是"质量保险"而非"性能驱动"。<br>
+    <b>③ Planning Path 是 DPO 阶段的关键</b>：去掉后 99th 从 11.72 涨到 47.59（变慢 4×）—— 没有细粒度推理痕迹，DPO 学不到偏好。<br>
+    <b>④ Backbone 选择有显著影响</b>：Mistral-7B 产生 34 个无效计划，<u>说明 Mistral 的指令跟随能力对结构化输出任务不够稳定</u>。LLaMa-3-8B 是甜蜜点。</p>
+  </div>
+
+  <h3 style="color:#6dd5ed;margin:24px 0 12px;font-size:1.2rem;">6.3 偏好适应性实验</h3>
+  <p class="section-desc">这个实验验证了 Qdpo 阶段的"<u>可适应性</u>"——能否通过新的偏好数据让模型适应新优化器的偏好。论文加入 DB2 优化器作为新的偏好源，构造 D⁺_dpo，得到 LLM-QO (Qdpo)+。</p>
+
+  <div class="paper-figure">
+    <img src="images/llmqo_preference_adaption.png" alt="Preference Adaption Results"
+         style="max-width:100%;border-radius:12px;margin:16px 0;background:#fff;padding:10px">
+    <p class="fc">📄 论文原图 — Figure 5: 在 DSB 10 个模板上的偏好适应实验。注意 <b>tpl027</b>：DB2 显著优于 PostgreSQL/Oracle，LLM-QO (Qdpo)+ 在引入 DB2 偏好后明显提升；<b>tpl091</b>：DB2 也较优但 Qdpo+ 提升不明显，原因是 Qit 阶段已被 Oracle 主导。</p>
+  </div>
+
+  <div class="highlight-box">
+    <h4>🎯 关键洞察：Qdpo 的"偏好可塑性"</h4>
+    <p>这个实验是论文最有意思的发现之一：<strong>LLM-QO 可以通过更新 D_dpo 来"切换偏好源"</strong>，类似于"更新偏好引导"。这开辟了一个新可能——<u>当数据库迁移到新硬件、新版本时，无需重新训练 Qit 阶段，只需用新硬件下的偏好数据重做 Qdpo 即可适配</u>。这远比传统优化器的"重新调参 + 重测成本模型"方便。</p>
+  </div>
+
+  <h3 style="color:#6dd5ed;margin:24px 0 12px;font-size:1.2rem;">6.4 超参数敏感性</h3>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+    <div class="paper-figure">
+      <img src="images/llmqo_ablation_threshold_r0.png" alt="Threshold r0 ablation"
+           style="max-width:100%;border-radius:12px;margin:8px 0;background:#fff;padding:10px">
+      <p class="fc">📄 论文原图 — Fig 6(c): 阈值 r₀ 的影响。0.6~0.8 之间性能最优，0.9/1.0 显著退化（偏好对质量稀释）。最佳值 r₀=0.80。</p>
+    </div>
+    <div class="paper-figure">
+      <img src="images/llmqo_ablation_beta.png" alt="Beta ablation"
+           style="max-width:100%;border-radius:12px;margin:8px 0;background:#fff;padding:10px">
+      <p class="fc">📄 论文原图 — Fig 6(d): DPO 超参 β 的影响。β 太大会让 π_dpo 过度偏离 π_sft 损失有效性，太小则学不到偏好。0.1 是甜蜜点。</p>
+    </div>
+  </div>
+
+  <h3 style="color:#6dd5ed;margin:24px 0 12px;font-size:1.2rem;">6.5 训练数据规模影响</h3>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+    <div class="paper-figure">
+      <img src="images/llmqo_ablation_data_scale_qit.png" alt="Qit data scale"
+           style="max-width:100%;border-radius:12px;margin:8px 0;background:#fff;padding:10px">
+      <p class="fc">📄 论文原图 — Fig 6(a): Qit 阶段训练数据规模影响。<u>不同于 NLP 任务的高数据效率</u>，结构化输出任务需要更多数据，LLM-QO 在 100% 数据时才达到峰值。</p>
+    </div>
+    <div class="paper-figure">
+      <img src="images/llmqo_ablation_data_scale_qdpo.png" alt="Qdpo data scale"
+           style="max-width:100%;border-radius:12px;margin:8px 0;background:#fff;padding:10px">
+      <p class="fc">📄 论文原图 — Fig 6(b): Qdpo 阶段对数据规模不敏感——<strong>仅 25% 偏好数据已能达到接近完整数据的性能</strong>，体现 DPO 的高数据效率。</p>
+    </div>
+  </div>
+
+  <div class="info-box">
+    <h4>💡 一个有趣的对比：Qit 重数据，Qdpo 轻数据</h4>
+    <p>① <b>Qit 阶段需要"满数据"</b>：因为它要学的是"如何为每种查询模板生成正确的 plan 结构"，需要见过大量样本才能覆盖所有模板。<br>② <b>Qdpo 阶段对数据极敏感</b>：因为它只需学"区分相近 plan 的优劣"，少量高质量偏好对就够了。<br>这个发现的实践含义：<strong>采集数据时，应该花大力气保证 D_sft 的多样性，而 D_dpo 只需精心标注少量高质量偏好对即可</strong>。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ====== Section 7: Insights & Limitations ====== -->
+<div class="section" id="s7">
+  <h2 class="section-title"><span class="num">7</span> 设计精妙之处与局限性</h2>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+    <div>
+      <h3 style="color:#2193b0;margin-bottom:14px;font-size:1.15rem;">✨ 设计精妙之处</h3>
+      <div class="insight-box">
+        <h4>1. 范式重塑：从"枚举搜索"到"自回归生成"</h4>
+        <p>这是 50 年来查询优化的根本性范式变化。传统优化器只能在"已枚举的候选集"中选最优，LLM-QO 直接生成<u>不在任何候选集中</u>的全新计划。突破了"动态规划 + 成本模型"框架的天花板。</p>
+      </div>
+      <div class="insight-box">
+        <h4>2. 双重 Plan 表示的动机</h4>
+        <p>Planning Path 激发 CoT 推理，Bracket Sequence 提供紧凑答案——<u>各司其职</u>。更深层动机是为 DPO 创造细粒度对比单元，这是双重表示在 Qdpo 阶段不可替代的根本原因。</p>
+      </div>
+      <div class="insight-box">
+        <h4>3. 多优化器集成的"零成本"实现</h4>
+        <p>通过实测多个商用优化器的执行时间，自动挑最优作 y_w，相当于"免费"获得集成（ensemble）的能力。无需训多个模型，无需复杂投票机制。</p>
+      </div>
+      <div class="insight-box">
+        <h4>4. r₀ 阈值与 β 的"双控制"</h4>
+        <p>r₀ 控制偏好对的"难度"（差距大小），β 控制 DPO 偏离 SFT 的"程度"。两者协同精准调节学习强度，避免过拟合或欠拟合。</p>
+      </div>
+      <div class="insight-box">
+        <h4>5. LoRA + 短训练的工程优雅</h4>
+        <p>仅 0.5% 参数 + 数百步即收敛，整个 pipeline 在单 A100 上几小时跑完。学术原型直接可工业部署，没有"PaperOnly"的距离感。</p>
+      </div>
+    </div>
+
+    <div>
+      <h3 style="color:#ffc107;margin-bottom:14px;font-size:1.15rem;">⚠️ 局限性</h3>
+      <div class="limit-box">
+        <h4>1. 仅支持 SPJ 查询</h4>
+        <p>当前阶段不支持聚合（GROUP BY）、嵌套子查询、窗口函数等复杂结构。这些查询在 OLAP 中也很常见，论文留作未来工作。Plan 树结构会更复杂，对 LLM 的输出长度和准确性都是挑战。</p>
+      </div>
+      <div class="limit-box">
+        <h4>2. 静态数据库假设</h4>
+        <p>论文假设 schema 不变、统计信息相对稳定。<u>动态场景</u>（如 BULK INSERT 改变行数分布、新增列等）下，Statistics 会偏移，模型可能输出过时计划。需要在线学习或定期重训机制。</p>
+      </div>
+      <div class="limit-box">
+        <h4>3. 推理延迟的工程压力</h4>
+        <p>A100 上 LLM 推理 1~2 秒，对短查询（&lt;100ms 期望响应）反而拖慢。需要小模型蒸馏、推理缓存、speculative decoding 等技术压低延迟。这是论文留下的"效率"开放问题。</p>
+      </div>
+      <div class="limit-box">
+        <h4>4. OOD 鲁棒性不足</h4>
+        <p>实验显示在<u>完全未见的查询模板</u>上，LLM-QO (Qdpo) 易产生无效计划。这反映 DPO 阶段的"激进偏好学习"会损害对新模板的鲁棒性。论文建议"平滑 Qit→Qdpo 过渡"，但具体方法未提供。</p>
+      </div>
+      <div class="limit-box">
+        <h4>5. 跨数据库泛化未验证</h4>
+        <p>所有实验都在 PostgreSQL 上完成。同样的模型能否迁移到 MySQL/Oracle？<u>不同 DBMS 的统计信息格式、算子集合、执行引擎都不同</u>，LLM-QO 是否需要为每个 DBMS 单独训练，这是论文未回答的实践问题。</p>
+      </div>
+      <div class="limit-box">
+        <h4>6. 训练数据收集成本</h4>
+        <p>需要在多个商用优化器上各自执行所有训练查询，<u>每条查询要实际跑 k 次</u>（k = 优化器数量）。对于大表 + 复杂 join，单次执行可能需数十秒——总训练数据准备时间随工作负载规模线性增长。</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ====== Section 8: Q&A ====== -->
+<div class="section" id="s8">
+  <h2 class="section-title"><span class="num">8</span> Q&A 深度解析</h2>
+
+  <div class="qa-card">
+    <div class="qa-q">Q1: LLM-QO 真的"跳过"了成本估计吗？还是只是把成本估计内化到了 LLM 里？</div>
+    <div class="qa-a">本质上是<strong>内化</strong>。LLM 在 Qit 阶段学习"专家优化器对每种统计分布会选什么 plan"，相当于把"成本估计 → 计划选择"的整条决策链一次性压缩进了模型权重。表面上 LLM-QO 推理时不再调用基数估计模块，但实际上模型内部隐含了类似的判断（"看到 ndv 高的列，选 HashJoin"等）。<u>关键差别</u>：传统成本模型是<strong>显式公式</strong>（容易出错且僵化），LLM 内化的是<strong>隐式直觉</strong>（更鲁棒但不可解释）。这是优势也是劣势——更鲁棒，但出错时难调试。</div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-q">Q2: 为什么不直接用 GPT-4 等超大模型，而要微调 LLaMa-3-8B？</div>
+    <div class="qa-a">三个原因：① <strong>成本</strong>：每条查询都要调 GPT-4 → API 费用爆炸；② <strong>延迟</strong>：远程 API 延迟难控；③ <strong>定制化</strong>：通用 GPT-4 不"懂"特定数据库的 schema 和统计——需要 in-context 给大量背景，prompt 巨长；微调后的小模型已"消化"了这些知识，prompt 短小高效。论文的关键贡献是证明：<u>8B 量级 + 精心微调，能做到比通用大模型 zero-shot 更好</u>。这也是开源 + 私有部署友好的方向。</div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-q">Q3: 如果数据库表结构变了（加列、删列），LLM-QO 还能用吗？</div>
+    <div class="qa-a"><strong>取决于变化幅度</strong>。① <u>新增列但不影响现有查询的 join 结构</u>：LLM-QO 仍能用，新列不会影响推理；② <u>新增表 + 新查询模板</u>：原模型可能产出无效计划（消融实验中 Mistral-7B 在未见模板上产生 34 个无效计划，是这个问题的体现）；③ <u>schema 大幅重构</u>：必须重新训 Qit。一个折中方案是论文提到的"<u>偏好适应</u>"——只重做 Qdpo 阶段，让模型在保留 Qit 学到的基础能力的前提下适应新 schema。这是 LLM-QO 比传统优化器更灵活的地方。</div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-q">Q4: 双重 Plan 表示（Path + Bracket）会不会让 token 消耗加倍？</div>
+    <div class="qa-a">会，但<strong>这个代价是值得的</strong>。论文消融实验显示，去掉 Planning Path 后 99th 分位从 11.72s 涨到 47.59s（变慢 4×），<u>额外 token 换来的性能提升远大于推理成本</u>。<br>更深层的原因：Path 部分激发了 LLM 的 CoT 推理能力，让模型在<u>生成 Bracket 答案前已经"想清楚"了 join 顺序</u>。这就像人类做数学题——草稿纸上推导虽然慢，但答案准确率远高于"心算"。论文的发现验证了"显式中间推理 &gt; 直接答案"在结构化生成任务上同样成立。</div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-q">Q5: Qdpo 阶段为什么用 DPO 而不用 RLHF？</div>
+    <div class="qa-a">三个原因：① <strong>简单</strong>：DPO 只需"偏好对 + 对比损失"，跳过了 RLHF 的"奖励模型 + PPO"两步式复杂流程；② <strong>稳定</strong>：RLHF 训练以不稳定著称（reward hacking、KL 爆炸等），DPO 是直接在策略空间里做监督学习，损失曲线平滑；③ <strong>合适</strong>：查询优化任务的"奖励"本身就是<u>客观可测的执行时间</u>，无需训练奖励模型来逼近——直接用执行时间排序做偏好对就够了。这种"领域特性 + 训练范式"的精准匹配是论文设计的精髓。</div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-q">Q6: r₀=0.95（默认）与消融实验中找到的最优 r₀=0.80 不一致，应该用哪个？</div>
+    <div class="qa-a">这其实揭示了<strong>不同工作负载的最优 r₀ 不同</strong>。论文默认 r₀=0.95（更宽松，偏好对更多）适合"差异不大"的工作负载（IMDB、JOB-light），而 DSB 这种"模板间差异大"的工作负载用 r₀=0.80 更优（要求差异显著的偏好对）。<br><b>实践建议</b>：可以做一个简单的网格搜索 r₀ ∈ {0.6, 0.7, 0.8, 0.9, 1.0}，挑测试集上 mean 最低的那个。或者更稳妥的做法是<u>分阶段</u>——前期用大 r₀ 让模型先学到大致偏好，后期用小 r₀ 精细化。论文未探索后者，是个有趣的开放方向。</div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-q">Q7: 论文为什么在长尾分位数（95th/99th）上提升特别显著？</div>
+    <div class="qa-a">这是论文的<strong>最大亮点之一</strong>。原因：传统优化器在"罕见 + 复杂"查询上最容易出错——基数估计误差累积、动态规划在大计划空间中难以全面探索。<u>而这些正是 LLM-QO 的强项</u>：<br>
+    ① LLM 不依赖成本模型，不会因基数误差而选错；<br>
+    ② Qdpo 训练让模型"见过"差计划长啥样，知道<u>避开特定的反模式</u>（如对大表用 NestLoopJoin 不加限制）；<br>
+    ③ DSB 99th 从 136s 降到 11.7s（降 91%），意味着<strong>最坏情况查询的"灾难性卡顿"被几乎完全消除</strong>。<br>这对实际生产环境的意义大于平均性能提升——用户体验最敏感的就是"偶尔的极慢查询"。</div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-q">Q8: LLM-QO 与 Bao/HybridQO 等学习型优化器的本质区别？</div>
+    <div class="qa-a"><strong>方法论的根本差别</strong>：<br>
+    • <u>Bao/HybridQO</u>：是"<strong>引导式</strong>"—— 仍然让 PostgreSQL 优化器生成候选 plan，机器学习模型只负责"挑哪个 hint 最好"。本质是给传统优化器"加方向盘"。<br>
+    • <u>LLM-QO</u>：是"<strong>替代式</strong>"—— 直接让 LLM 生成 plan，完全跳过 PostgreSQL 优化器的枚举。本质是<u>"换车"</u>。<br>
+    实验上 LLM-QO 在 IMDB/JOB-light 长尾上明显超越 Bao/HybridQO，原因是 Bao 受限于"hint 是粗粒度的"——只能选"开/关 NestLoopJoin"这种宏观开关，而 LLM-QO 能精确控制"哪一对表用哪种算子"。<u>但 Bao 在 DSB 上表现也很好</u>，因为 DSB 的 76% 计划都受益于"禁 NestLoopJoin"这一个简单 hint，恰好被 Bao 学到。</div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-q">Q9: LLM-QO 的"幻觉"问题如何解决？</div>
+    <div class="qa-a">论文采取了<strong>三层防御</strong>：<br>
+    ① <strong>Demonstration（最强防御）</strong>：one-shot 范例直接告诉 LLM "这种类型查询的 plan 长这样"，让幻觉概率从基础水平大幅降低；<br>
+    ② <strong>Statistics 限定</strong>：只给查询涉及的表/列的统计信息，不给无关信息——防止 LLM 把别的表名"窜进"输出；<br>
+    ③ <strong>解析校验</strong>：推理后会把括号序列解析为 AST 并校验"操作符合法 + 表名在 schema 中存在 + 每个 join 条件可执行"——非法计划会被丢弃。<br>实验显示完整版 LLM-QO 在所有测试查询上都生成了<u>有效计划</u>。但消融中去掉某些组件（如换 backbone 到 Mistral）会出现 34 个无效计划，说明幻觉防御不是"自然涌现"而是<u>每个设计决策的累积效果</u>。</div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-q">Q10: 这种范式未来可能怎么演化？</div>
+    <div class="qa-a">论文留下的研究方向 + 我的预测：<br>
+    ① <strong>更复杂的查询类型</strong>：扩展到 GROUP BY/嵌套查询/窗口函数。需要更复杂的 Plan 表示（不再是简单的二叉树）。<br>
+    ② <strong>实时学习</strong>：用 RAG 把"过去 10 分钟的查询执行情况"作为 in-context 信息，让模型动态适应负载漂移。<br>
+    ③ <strong>多模态优化</strong>：除了执行时间，还考虑内存、CPU、I/O 等多目标，DPO 阶段的偏好可以是 Pareto 前沿。<br>
+    ④ <strong>解释性</strong>：LLM 能在生成 plan 后给出自然语言解释（"为什么选 HashJoin 而非 MergeJoin"），DBA 可以理解和审计。<br>
+    ⑤ <strong>小模型蒸馏</strong>：把 8B 蒸馏到 1B 甚至 100M，用 ONNX 部署到数据库引擎内部，推理延迟压到 10ms。<br>
+    可以期待 2026-2027 年左右出现更成熟的 "LLM-Native Database"。</div>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ====== Section 9: Code & Practice ====== -->
+<div class="section" id="s9">
+  <h2 class="section-title"><span class="num">9</span> 代码使用与实战</h2>
+  <p class="section-desc">论文已开源代码到 GitHub，本节给出从环境准备到训练 + 推理的完整实战指南。</p>
+
+  <div class="module-card">
+    <h3>📦 仓库地址与环境准备</h3>
+    <p>GitHub 仓库：<a href="https://github.com/Candice1995/LLM-QO" target="_blank" style="color:#6dd5ed;">Candice1995/LLM-QO</a></p>
+  </div>
+
+  <div class="code-block"><pre><span class="cg"># 1. 克隆仓库</span>
+<span class="ck">git</span> clone https://github.com/Candice1995/LLM-QO.git
+<span class="ck">cd</span> LLM-QO
+
+<span class="cg"># 2. 创建 Python 环境</span>
+<span class="ck">conda</span> create -n llmqo python=3.10
+<span class="ck">conda</span> activate llmqo
+
+<span class="cg"># 3. 安装依赖（核心：unsloth + PyTorch + 数据库连接器）</span>
+<span class="ck">pip</span> install unsloth         <span class="cg"># LoRA 高效训练框架</span>
+<span class="ck">pip</span> install transformers
+<span class="ck">pip</span> install psycopg2-binary  <span class="cg"># PostgreSQL 连接器</span>
+<span class="ck">pip</span> install datasets
+<span class="ck">pip</span> install peft trl         <span class="cg"># LoRA 和 DPO 训练库</span>
+
+<span class="cg"># 4. 安装 PostgreSQL（v12+）和 pg_hint_plan 扩展</span>
+<span class="ck">sudo</span> apt install postgresql postgresql-contrib
+<span class="ck">cd</span> /tmp && git clone https://github.com/ossc-db/pg_hint_plan.git
+<span class="ck">cd</span> pg_hint_plan && make USE_PGXS=1 && sudo make USE_PGXS=1 install</pre></div>
+
+  <div class="module-card">
+    <h3>📂 仓库目录结构</h3>
+  </div>
+
+  <div class="code-block"><pre><span class="cv">LLM-QO/</span>
+├── <span class="cf">data/</span>                       <span class="cg"># 数据集和预处理脚本</span>
+│   ├── <span class="cf">imdb/</span>                 <span class="cg"># IMDB schema + 查询</span>
+│   ├── <span class="cf">job/</span>                  <span class="cg"># JOB-light 70 模板</span>
+│   └── <span class="cf">dsb/</span>                  <span class="cg"># DSB 10 SPJ 模板</span>
+├── <span class="cf">qinstruct/</span>                 <span class="cg"># QInstruct 数据生成</span>
+│   ├── <span class="cf">collect_plans.py</span>     <span class="cg"># 多优化器并行收集 plan</span>
+│   ├── <span class="cf">execute_and_time.py</span>  <span class="cg"># 实测执行时间</span>
+│   ├── <span class="cf">build_dsft.py</span>        <span class="cg"># 构造 D_sft</span>
+│   └── <span class="cf">build_ddpo.py</span>        <span class="cg"># 构造 D_dpo（含阈值 r₀ 过滤）</span>
+├── <span class="cf">training/</span>
+│   ├── <span class="cf">qit_train.py</span>         <span class="cg"># Qit 阶段（SFT）</span>
+│   └── <span class="cf">qdpo_train.py</span>        <span class="cg"># Qdpo 阶段（DPO）</span>
+├── <span class="cf">inference/</span>
+│   ├── <span class="cf">generate_plan.py</span>     <span class="cg"># π_dpo 生成 plan</span>
+│   ├── <span class="cf">parse_bracket.py</span>     <span class="cg"># 括号序列 → AST</span>
+│   └── <span class="cf">apply_hint.py</span>        <span class="cg"># 转为 pg_hint_plan 格式</span>
+├── <span class="cf">eval/</span>                       <span class="cg"># 评估脚本</span>
+└── <span class="cf">configs/</span>                    <span class="cg"># 训练超参配置</span></pre></div>
+
+  <h3 style="color:#6dd5ed;margin:24px 0 12px;font-size:1.2rem;">🚀 端到端使用示例</h3>
+
+  <div class="code-block"><pre><span class="cg"># ==================== Step 1: 收集训练数据 ====================</span>
+<span class="ck">python</span> qinstruct/collect_plans.py \
+    --workload imdb \
+    --optimizers postgresql,oracle \
+    --output data/imdb/plans.json
+
+<span class="ck">python</span> qinstruct/execute_and_time.py \
+    --plans data/imdb/plans.json \
+    --output data/imdb/timed_plans.json
+
+<span class="ck">python</span> qinstruct/build_dsft.py \
+    --input data/imdb/timed_plans.json \
+    --output data/imdb/dsft.json
+
+<span class="ck">python</span> qinstruct/build_ddpo.py \
+    --input data/imdb/timed_plans.json \
+    --threshold <span class="cv">0.95</span> \
+    --output data/imdb/ddpo.json
+
+<span class="cg"># ==================== Step 2: Qit 训练 ====================</span>
+<span class="ck">python</span> training/qit_train.py \
+    --base_model <span class="cs">"meta-llama/Meta-Llama-3-8B-Instruct"</span> \
+    --dataset data/imdb/dsft.json \
+    --lora_r <span class="cv">16</span> --lora_alpha <span class="cv">32</span> \
+    --lr <span class="cv">2e-4</span> --steps <span class="cv">600</span> \
+    --output checkpoints/qit_imdb
+
+<span class="cg"># ==================== Step 3: Qdpo 训练 ====================</span>
+<span class="ck">python</span> training/qdpo_train.py \
+    --base_model checkpoints/qit_imdb \
+    --dataset data/imdb/ddpo.json \
+    --beta <span class="cv">0.1</span> \
+    --lr <span class="cv">5e-6</span> --steps <span class="cv">200</span> \
+    --output checkpoints/qdpo_imdb
+
+<span class="cg"># ==================== Step 4: 推理 ====================</span>
+<span class="ck">python</span> inference/generate_plan.py \
+    --model checkpoints/qdpo_imdb \
+    --query <span class="cs">"SELECT * FROM movie_companies, title, movie_info_idx WHERE ..."</span> \
+    --schema data/imdb/schema.json \
+    --stats data/imdb/stats.json \
+    --demo data/imdb/demos/q1.json
+
+<span class="cg"># 输出: NestLoopJoin(HashJoin(movie_companies, title), movie_info_idx)</span>
+
+<span class="cg"># ==================== Step 5: 应用到 PostgreSQL ====================</span>
+<span class="ck">python</span> inference/apply_hint.py \
+    --plan <span class="cs">"NestLoopJoin(HashJoin(movie_companies, title), movie_info_idx)"</span> \
+    --query <span class="cs">"SELECT * FROM movie_companies, title, movie_info_idx WHERE ..."</span> \
+    --execute   <span class="cg"># 直接在 PostgreSQL 上执行</span></pre></div>
+
+  <h3 style="color:#6dd5ed;margin:24px 0 12px;font-size:1.2rem;">🎛️ 关键超参对照表</h3>
+  <table class="data-table">
+    <thead>
+      <tr><th>超参</th><th>默认值</th><th>说明</th><th>调优建议</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>--base_model</td><td>LLaMa-3-8B-Instruct</td><td>骨干模型</td><td>避免 Mistral（无效计划多）</td></tr>
+      <tr><td>--lora_r</td><td>16</td><td>LoRA 秩</td><td>大模型可降到 8 节省显存</td></tr>
+      <tr><td>--lora_alpha</td><td>32</td><td>LoRA 缩放</td><td>保持 = 2 × lora_r</td></tr>
+      <tr><td>--lr (Qit)</td><td>2e-4</td><td>SFT 学习率</td><td>小数据集可降到 5e-5</td></tr>
+      <tr><td>--lr (Qdpo)</td><td>5e-6</td><td>DPO 学习率</td><td>必须远小于 Qit</td></tr>
+      <tr><td>--steps (Qit)</td><td>600</td><td>SFT 步数</td><td>看 loss 曲线，平稳即可</td></tr>
+      <tr><td>--steps (Qdpo)</td><td>200</td><td>DPO 步数</td><td>过多易损失 Qit 的有效性</td></tr>
+      <tr><td>--beta</td><td>0.1</td><td>DPO 偏离系数</td><td>不要超过 0.3</td></tr>
+      <tr><td>--threshold (r₀)</td><td>0.95</td><td>偏好对筛选阈值</td><td>DSB 用 0.8 更好</td></tr>
+      <tr><td>--max_length</td><td>2048</td><td>token 长度</td><td>大表多列时调到 4096</td></tr>
+    </tbody>
+  </table>
+
+  <h3 style="color:#6dd5ed;margin:24px 0 12px;font-size:1.2rem;">🐛 常见问题</h3>
+  <div class="warn-box">
+    <h4>问题 1: 显存不够</h4>
+    <p>A100 80GB 训练 LLaMa-3-8B + LoRA 应该没问题。如显存紧张：① 降低 batch_size（默认 8 → 4）；② lora_r 从 16 降到 8；③ 启用 gradient checkpointing；④ 用 4-bit 量化（unsloth 支持）。</p>
+  </div>
+  <div class="warn-box">
+    <h4>问题 2: 生成无效计划</h4>
+    <p>如果推理时频繁产生无效计划（引用不存在的列名等）：① 检查 demonstration 是否选对了同模板查询；② 增加 Qit 训练步数（数据多样性可能不足）；③ 降低 Qdpo 步数（避免过度偏离 SFT）。</p>
+  </div>
+  <div class="warn-box">
+    <h4>问题 3: 推理太慢</h4>
+    <p>LLM 自回归本身就慢。可尝试：① 用 vLLM 加速推理（KV cache + continuous batching）；② 启用 speculative decoding；③ 减小 max_length；④ 部署时用 4-bit 量化（精度损失小）。</p>
+  </div>
+</div>
+
+<!-- ====== Section 11: Full Chinese Translation ====== -->
+<div class="section translation" id="sec-11">
+  <h2 class="section-title"><span class="num">11</span>全文中文翻译（对应嵌入图片）</h2>
+  <p class="section-desc">以下为论文 <em>Can Large Language Models Be Query Optimizer for Relational Databases?</em>（LLM-QO，PVLDB Vol.17 No.10，arXiv:2502.05562）正文的中文翻译，遵循原文结构与专业术语，并在关键位置嵌入论文原图以帮助理解。</p>
+
+  <h3>标题与作者</h3>
+  <p>《大型语言模型能否成为关系数据库的查询优化器？》（Can Large Language Models Be Query Optimizer for Relational Databases?），作者：谭杰、赵康飞、李瑞、于旭杰（香港中文大学），朴成智（香港浸会大学），程虹、孟恒丽（香港中文大学），赵德利、荣宇（阿里巴巴达摩院、湖畔实验室）。</p>
+
+  <h3>摘要</h3>
+  <p>查询优化的目标是在 DBMS 中呈指数级增长的计划空间里，为给定查询找到最优执行计划，这是一个复杂的规划与决策问题。传统优化器严重依赖由各种启发式与经验调参构建的成本模型，可能生成次优计划。近期大语言模型（LLM）在算术、编程等复杂规划与决策任务上展现出潜力。本文尝试探索 LLM 处理查询优化的潜力，并提出一个名为 LLM-QO 的、基于 PostgreSQL 执行引擎的试探性 LLM 查询优化器。在 LLM-QO 中，我们将查询优化建模为<strong>自回归生成</strong>任务，直接生成执行计划而无需显式枚举。为探究 LLM-QO 的关键输入，我们设计了一个定制的数据配方 QInstruct，从多种优化器收集训练数据，并将数据库的元数据、查询及其对应计划序列化为文本格式。基于 QInstruct，我们实现了一个两阶段微调流水线——查询指令微调（Query Instruction Tuning, Qit）与查询直接偏好优化（Query Direct Preference Optimization, Qdpo）——赋予通用 LLM 处理查询优化的能力。实验中，LLM-QO 能生成<strong>有效且高质量</strong>的计划，并在三个查询负载上持续优于传统与学习型优化器。我们的发现验证了 LLM 可以被蒸馏为查询优化器，其中<strong>泛化性、效率与自适应能力</strong>值得进一步研究。</p>
+
+  <div class="fig-note">
+    📌 <b>图 1（框架与性能，对应 llmqo_overview_motivation.png）</b>：左为 LLM-QO 总体框架（(a) 数据准备流水线、(b) 训练流水线、(c) 推理流水线）；右为 LLM-QO 与 PostgreSQL、Oracle 在 DSB 各查询模板上的执行时间对比，可见 LLM-QO 在多数模板上更优。
+    <img src="images/llmqo_overview_motivation.png" alt="LLM-QO 框架与性能" style="max-width:100%;border-radius:12px;margin:12px 0;background:#fff;padding:8px">
+  </div>
+
+  <h3>1 引言</h3>
+  <p>查询优化器是 DBMS 的基础组件，研究已持续数十年。通用优化器遵循"计划枚举与搜索"范式：从指数级增长的计划空间枚举候选计划，并用成本模型寻找最小成本计划。成本模型依赖各种经年经验校准的启发式、假设与超参数。近期研究用机器学习（如强化学习）替代动态规划来生成计划，或把学习策略注入通用优化器以引导候选计划选择。这种范式在计划空间探索与执行效率间做了较好权衡，因为用成本模型计算所有计划成本在计算上不可行。然而，其性能上界受初始枚举阶段生成的候选计划限制，可能因探索不足而错过更优计划。</p>
+  <p>我们见证了 LLM 在规划与决策问题上的巨大成功。经海量数据预训练的 LLM 展现出解决特定任务的涌现能力；经任务数据微调后，能接受上下文信息并进行严谨逻辑推理（如数学、编程）。数据库领域也已开始用 LLM 做参数调优、查询重写等。受此启发，值得从全新视角审视查询优化：是否可以不经显式枚举，而由 LLM 直接生成执行计划？LLM 在海量数据上预训练获得的推理能力，或可促进对计划空间的全面探索，生成新颖高效的计划。</p>
+  <p>尽管前景诱人，让 LLM 充当查询优化器面临多重交织的挑战。查询优化需从"计划枚举搜索"范式转向"自回归生成"范式，这对通用 LLM 是全新任务——它们不了解数据库实例信息，也不懂算子类型、算法与复杂度等优化领域知识。因此核心问题是如何让 LLM 理解查询规划任务并为输入 SQL 生成有效且高效的计划。数据层面需用与查询优化相关的高质量要素（任务描述、可用算子、待处理查询、目录元数据、查询计划等）以清晰、信息丰富的"数据配方"格式喂给 LLM；算法层面需有效的训练算法来微调 LLM。为此我们提出 LLM-QO 框架，构建于 PostgreSQL 执行引擎之上，如图 1(a)。LLM-QO 旨在"蒸馏"多个现有优化器的经验，借助 LLM 的泛化与涌现能力推断更优计划。</p>
+  <p>数据上，我们设计数据准备流水线，封装为定制数据配方 QInstruct：它包含输入查询、从多优化器收集的目标计划、数据库实例元数据与一个规划示例（demonstration），并转换为文本格式，以保持必要且最小化的上下文、节省在线生成的 token。算法上，我们实现两阶段微调流水线：第一阶段查询指令微调（Qit）让 LLM 能生成有效计划；第二阶段查询直接偏好优化（Qdpo）通过区分好计划与普通计划进一步提升专业性。两阶段工作流引导 LLM 以参数化方式蒸馏并综合多个优化器的行为，从而有可能成为"总体最优"的优化器。</p>
+  <p>实验结果：相比 PostgreSQL 内置优化器，LLM-QO 在 IMDB、JOB-light、DSB 上的平均执行时间分别提升 5.6%、8.6%、68.7%。图 1(b) 给出 LLM-QO 与 PostgreSQL、Oracle 在 DSB 上按模板的对比。</p>
+
+  <div class="fig-note">
+    📌 <b>图 2（LLM-QO 概览，对应 llmqo_framework_overview.png）</b>：展示 (a) QInstruct 与数据准备流水线、(b) LLM 训练流水线（Qit→Qdpo）、(c) 推理流水线。该图是理解全文方法的主干图。
+    <img src="images/llmqo_framework_overview.png" alt="LLM-QO 框架总览" style="max-width:100%;border-radius:12px;margin:12px 0;background:#fff;padding:8px">
+  </div>
+
+  <h3>2 相关工作（简述）</h3>
+  <p><b>基于学习的查询优化</b>分两类：其一是<em>从零学习（de novo）</em>，用 RL 替代动态规划生成计划（如 DQ、RTOS、JOGGER、Neo、Balsa）；其二是<em>引导式学习（steered）</em>，把学习策略注入通用优化器以引导候选计划选择（如 Bao 用多臂老虎机搜 per-query hint、HybridQO 用前缀树解释 hint、Lero 用学习排序决定计划偏好）。<b>LLM 提示</b>方面，in-context learning 与 Chain-of-Thought 让 LLM 能分步推理。<b>LLM 微调</b>方面，指令微调赋予任务跟随能力，DPO 将奖励建模直接融入偏好学习，免去奖励模型；LoRA 以低秩近似大幅降低微调开销。<b>LLM 用于 DBMS</b> 已有参数调优（λ-Tune、GPTuner）、表格理解（Table-GPT）、text-to-SQL、查询重写（LLM-R²、Evaporate）等工作，但探索 LLM 于查询优化仍有空白。</p>
+
+  <h3>3 预备知识与问题定义</h3>
+  <p><b>3.1 问题定义。</b>给定多表数据库，对 SQL 查询 q，传统优化器将其转为树形执行计划 p（如图 3(a)），指定 join 顺序与每算子的算法，并通过动态规划基于成本模型搜索最优。本文目标：构建基于通用 LLM 的模型，直接将查询计划推断为文本响应。把 SQL 查询 q 及规划相关信息（schema、统计）编码为 token 序列 x∈X，LLM π: X→Y 直接推断其执行计划 y∈Y。生成的响应须满足：①<strong>可访问（accessible）</strong>——可转成执行引擎能求值的物理计划；②<strong>有效（valid）</strong>——与查询语义一致；③<strong>高效（efficient）</strong>——性能接近或优于现有优秀优化器。当前阶段我们支持选择-投影-join（SPJ）查询、单 join 条件，支持 NestLoopJoin / MergeJoin / HashJoin 三种 join 算子与 SeqScan 表扫描；面向静态数据库实例与特定执行引擎，跨库、跨硬件、复杂查询与动态负载留作未来工作。</p>
+  <p><b>3.2 大语言模型。</b>LLM 基于 Transformer，通过自回归的下一 token 预测生成响应。给定输入 x=[x₁,…,xₙ]、输出 y=[y₁,…,y_T]，模型 θ 参数化条件分布 p_θ(y|x)=∏p_θ(y_t|x,y_{1:t−1})（式 1）；用最大似然估计最小化负对数似然（式 2–3）。为释放开源 LLM 在特化任务上的推理潜力，研究者用名为"数据配方（data recipe）"的定制格式混合异构、多源数据——正如食材质量影响菜肴，训练数据的质、量、多样性显著影响 LLM 表现。</p>
+
+  <h3>4 LLM-QO 框架概览</h3>
+  <p>LLM-QO 包含两条主流水线：数据准备流水线与 LLM 训练流水线。<b>数据准备</b>生成基于数据配方 QInstruct 的训练数据，其设计要义是"信息充分且简洁"，在喂给 LLM 足够指令与知识的同时节省 token。QInstruct 包含五个要素：① Query（待优化 SQL）；② Instruction（如何优化的指南与输入说明）；③ Auxiliary information（数据库 schema 与相关统计）；④ High-quality plans（序列化为文本的高效计划）；⑤ Planning demonstration（一个具体规划示例以缓解幻觉）。其中查询、指令、辅助信息、示例共同构成 LLM 的 prompt，文本化计划则是用于微调的目标响应。计划可从传统优化器（尤其商用 DBMS 优化器）收集。</p>
+  <p><b>训练流水线</b>采用两阶段：第一阶段指令微调（Qit）让 LLM 能为给定查询生成执行计划，主要目标是引导通用 LLM 生成<em>可访问且有效</em>的计划；第二阶段偏好优化（Qdpo）通过区分好计划与普通计划进一步提升，期望推断出<em>高效</em>计划。两阶段引导 LLM 蒸馏并综合多个优化器的行为。<b>推理阶段</b>：测试查询与辅助信息按 QInstruct 格式拼入 prompt，调用微调后 LLM 得到响应，再转为执行计划用于求值。</p>
+
+  <h3>5 QInstruct 的构建</h3>
+  <p><b>5.1 配方准备。</b>对训练负载中的每条 SQL，离线生成其两阶段数据配方。Prompt 由查询、指令、辅助信息与规划示例组成（如图 4）。指令让 LLM 模仿 SQL 查询优化器，含两个占位符 &lt;SQL&gt; 与 &lt;Statistics&gt;（分别给出原始查询文本与相关表统计，列统计以 [min, max, distinct count] 的括号格式简洁描述）；并指定以括号序列表示计划、列出支持的 join 算子；同时用"think step by step"激发推理。Prompt 末尾附加一个 one-shot 规划示例（&lt;Planning Demonstration&gt;），其 SQL 与输入查询<strong>具有相同查询模板</strong>（相同表集合与 join 条件），以最大程度避免无效生成——我们发现 LLM 仅参考示例中出现过的表与列，多数情况下会自行生成新计划，故示例计划本身不必性能优良。</p>
+
+  <div class="fig-note">
+    📌 <b>图 4（QInstruct 格式，对应 llmqo_qinstruct_format.png）</b>：展示一条三表查询的完整 prompt——Instruction（含 think step by step 提示）、&lt;SQL&gt;、&lt;Statistics&gt;（各列 [min,max,distinct]），以及 Response（Step1/Step2 规划路径 + 括号序列最终答案）。
+    <img src="images/llmqo_qinstruct_format.png" alt="QInstruct 格式" style="max-width:100%;border-radius:12px;margin:12px 0;background:#fff;padding:8px">
+  </div>
+
+  <p><b>响应生成（双重表示）。</b>关键在于把树形执行计划表示为保留完整执行策略（join 顺序与物理算子）的文本序列。最直接的是括号格式（图 3(c)）：opt(opd₁,opd₂) 表示对左右子计划做 join 算子 opt。但括号格式消耗 token 最少却难以激发 LLM 的多步推理。因此我们设计结构化分层表示<strong>规划路径（planning path）</strong>：对 n 表查询，规划路径由 n−1 个有序步骤 [s₁,…,s_{n−1}] 组成，每步 sᵢ 对应一个非叶 join 算子，用 token 序列 s=[opd₁,opd₂,opt] 表示；步骤顺序由树的后序遍历决定，与自底向上的执行语义一致（见图 3(b)）。完整响应包含规划路径（推理步骤）与括号序列（最终答案），LLM-QO 再将其转为执行计划。</p>
+  <p><b>5.2 训练数据准备。</b>两阶段分别用指令数据 (x,y) 与偏好数据 (x,y_w,y_l)：y_w 为表现优良的计划，y_l 为相对普通的计划。原始计划从 PostgreSQL、Oracle 等多 DBMS 优化器按其<strong>真实执行时间</strong>收集（我们尝试过用传统成本模型的 cost 选计划，但众所周知真实性能与 cost 不一致，会损害 LLM 生成计划的效率）。<b>偏好计划生成（算法 1）</b>：给定 k 个优化器，先收集 k 个计划 {p₁,…,p_k} 及其执行时间 {t₁,…,t_k}，取最小执行时间 t* 对应的最优计划 p* 作为 y_w；再对每个 p_i，若 t*/t_i &lt; 阈值 r₀∈(0,1)，则取 p_i 为 y_l 并加入 D_dpo。我们保留单一最优计划而非 round-robin 锦标赛，使二阶段决策更简单稳定；当引入新优化器时，D_dpo 可增量扩展。</p>
+
+  <h3>6 LLM-QO 的训练</h3>
+  <p>两阶段均用 LoRA 高效微调。<b>6.1 查询指令微调（Qit）。</b>以 prompt x 为输入，引导 LLM 推断含规划路径与括号答案的计划 y。Qit 在预训练 LLM π 上对训练集 D_sft 做监督微调（SFT），用随机梯度下降最小化负对数似然（式 4），本质是监督模仿学习——如 AlphaGo 先从专家棋谱学起。QInstruct 把 k 个优化器中的最优计划封入 y，故第一阶段既学会分步解决查询优化，又"蒸馏"了 k 个专家中的总体最优优化器。</p>
+  <p><b>6.2 查询直接偏好优化（Qdpo）。</b>直觉是最大化我们偏好的优良计划的似然、最小化普通计划的似然。对训练样本 (x,y_w,y_l)，Qdpo 最小化偏好损失（式 5）：L_dpo = −log σ(u(x,y_w,y_l))，其中 u 为奖励差，衡量 y_w 相对 y_l 的效用差，参数化由 LLM 学习；σ 为 sigmoid，将奖励差归一化为"给定 x 时 y_w 优于 y_l"的条件概率。奖励差 u（式 6）由待学模型 π_dpo 与参考模型 π_sft 的对数概率比、乘系数 β 得到：u = β·log(π_dpo(y_w|x)/π_sft(y_w|x)) − β·log(π_dpo(y_l|x)/π_sft(y_l|x))。用 π_sft 归一化是为防止仅优化 p(y_w≻y_l|x) 时模型退化；β&gt;0 控制 π_dpo 与 π_sft 的偏离程度，β 越大容忍偏离越大。算法 2 给出随机梯度下降的 Qdpo 训练流程。</p>
+
+  <h3>7 实验研究</h3>
+  <p><b>7.1 设置。</b>数据集：IMDB（6 张表、18 属性、6 个 PK/FK join）与 TPC-DS（SF=5，含 PK/FK 与多对多 join）。查询集：IMDB 上按 join 数 t 生成（每 t 生成 1000 条）、JOB-light（70 个手写模板各生成 100 条）、DSB（TPC-DS 上 10 个 SPJ 模板各 100 条，超 300 秒的复杂模板剔除）。Baseline：PostgreSQL 12.4、Oracle 23.0、Bao、HybridQO。所有计划经 pg_hint_plan 转为 PostgreSQL 物理计划后由执行引擎计时（冷启动：清理共享缓冲与内核缓冲）。实现：PyTorch + Unsloth（LoRA），默认骨干 LLaMa-3-8B，AdamW，Qit 学习率 2e-4、Qdpo 5e-6，训练步数 600/200，batch 8；默认 r₀=0.95、β=0.1，按 8:2 划分；训练/推理用 80GB A100。</p>
+  <p><b>7.2 总体有效性（表 1）。</b>LLM-QO 生成计划全部有效。相比 PostgreSQL，LLM-QO(Qit) 在三负载上已显著更优；LLM-QO(Qdpo) 进一步将平均执行时间降到 PostgreSQL 的 91.4% / 94.4% / 31.3%（IMDB / JOB-light / DSB）。95、99 分位数相比 PostgreSQL 大幅降低，说明 Qdpo 在长尾场景尤其有效。相比学习型优化器 Bao、HybridQO，LLM-QO 平均更优——因其经 QInstruct 训练更易发现近优计划；Bao、HybridQO 依赖粗粒度 hint、计划探索空间有限，在长尾场景难以逼近最优。Bao 在 DSB 上表现突出（约 76% 计划禁用 NestLoopJoin），说明某些 hint 在特定负载极有效；未来可把学习型优化器计划与传统优化器协作以进一步增强 LLM-QO。</p>
+  <p><b>7.3 对 OOD 查询的泛化（表 2）。</b>测试查询与训练查询模板完全不同。IMDB/JOB-light 用 5 表查询作测试、2–4 表训练；DSB 用 5/6/12 join 模板作测试。LLM-QO(Qit) 相比 PostgreSQL 在 OOD 上以显著幅度持续更优，说明其能有效探索计划空间。相比 Bao、HybridQO 也具竞争力。但我们发现：若用完全未见过的模板在 Qdpo 阶段微调并测试，LLM-QO(Qdpo) 会产生大量无效计划——提示在 Qdpo 阶段用全新模板微调有负面效应，应通过平滑 Qit→Qdpo 过渡、利用更丰富训练数据来提升鲁棒性。</p>
+
+  <div class="fig-note">
+    📌 <b>图 5（DSB 上的偏好自适应，对应 llmqo_preference_adaption.png）</b>：在算法 1 中新增 DB2 优化器得到 D⁺_dpo，训练出 LLM-QO(Qdpo)+。该变体在各 LLM-QO 中总体最优，且在 tpl027 上因 DB2 计划被视作偏好计划而超越 Qit/Qdpo，验证了 LLM 可在 Qdpo 阶段适应新偏好。
+    <img src="images/llmqo_preference_adaption.png" alt="偏好自适应" style="max-width:100%;border-radius:12px;margin:12px 0;background:#fff;padding:8px">
+  </div>
+
+  <p><b>7.4 适应新偏好。</b>在算法 1 中加入 DB2(v12.1) 优化器，用 PostgreSQL/Oracle/DB2 在 DSB 上构建新偏好集 D⁺_dpo，得到 LLM-QO(Qdpo)+。如图 5，它在所有 LLM-QO 变体中总体最优，并在 tpl018/019/040 上显著降时；在 tpl027 上因 DB2 计划被视作偏好计划而超越前两者，验证了 LLM 可在 Qdpo 阶段适应新偏好、生成更高效计划。但 tpl091 上 Qdpo+ 未能提升——因其 Qit 阶段训练计划全部来自 Oracle，行为被 Oracle 偏好主导，较难在 Qdpo 阶段适应更多偏好。</p>
+  <p><b>7.5 消融研究（表 3）。</b>① <em>输入特征</em>：去掉数据库统计信息导致性能大幅下降（说明表数据分布对计划生成至关重要，类似目录对传统优化器）；去掉 demonstration 在所有指标上显著受损（示例为正向参考、约束计划空间）。② <em>输出格式</em>：去掉规划路径后，Qit 仍有竞争力，但 Qdpo 性能劣于完整版——说明规划路径使模型在 Qdpo 阶段能细粒度区分普通与优良计划。③ <em>骨干网络</em>：用 Mistral-7B、CodeLLaMA-7B、LLaMA2-7B 替换默认 LLaMA3-8B，框架在各骨干上均带来提升，验证通用性；CodeLLaMA/LLaMA2 经 Qdpo 后接近 LLaMA3-8B，优于 Mistral-7B（后者 Qdpo 后出现大量冗余内容、存在无效生成风险）。</p>
+  <p><b>7.6 参数分析（图 6）。</b>① <em>训练数据规模</em>：Qit 阶段执行时间随数据量增大而下降，且不像既往观察那样在 0.5% 数据即达峰——可能因计划生成的结构化输出对生成式 LLM 更难；Qdpo 阶段即使数据比小至 25% 也能取得高性能，印证 Qdpo 在数据有限时仍有效（数据规模=0 即跳过 Qdpo，性能明显不及）。② <em>阈值 r₀</em>：r₀ 越大偏好数据越多，但过大使 y_w、y_l 质量相近、阻碍收敛；r₀ 在 0.60–0.80 时显著优于 0.90/1.00，最佳在 0.80——在扩大偏好数据规模的同时不牺牲质量。③ <em>系数 β</em>：β 过大（更多知识保留）导致性能显著下降；β=0.01 则削弱第一阶段训练努力；β∈{0.05,0.1,0.3} 表现较优。</p>
+
+  <div class="fig-note">
+    📌 <b>图 6 的参数分析（对应 llmqo_ablation_data_scale_qit.png / _qdpo.png / _threshold_r0.png / _beta.png）</b>：四张子图分别展示 Qit 训练数据规模、Qdpo 训练数据规模、阈值 r₀、系数 β 对 DSB 执行时间（均值 × 与 95 分位 •）的影响。
+    <img src="images/llmqo_ablation_data_scale_qit.png" alt="Qit 数据规模" style="max-width:48%;border-radius:10px;margin:8px 4px;background:#fff;padding:6px">
+    <img src="images/llmqo_ablation_data_scale_qdpo.png" alt="Qdpo 数据规模" style="max-width:48%;border-radius:10px;margin:8px 4px;background:#fff;padding:6px">
+    <img src="images/llmqo_ablation_threshold_r0.png" alt="阈值 r0" style="max-width:48%;border-radius:10px;margin:8px 4px;background:#fff;padding:6px">
+    <img src="images/llmqo_ablation_beta.png" alt="系数 beta" style="max-width:48%;border-radius:10px;margin:8px 4px;background:#fff;padding:6px">
+  </div>
+
+  <p><b>7.7 无效计划分析（表 4）。</b>OOD 场景下无效程度各异。我们将无效计划归为三类：E1 表数不匹配、E2 表不匹配、E3 算子不匹配（括号不匹配、操作数缺失/冗余）。三类不互斥。表 4 显示 planning demonstration 与 planning path 对减少无效生成都关键：IMDB/JOB-light 上用 demonstration 即可有效克服无效（'w/o both' 下 E1 占 74.4%，多为缺表——因训练用少表、测试用多表）；DSB 复杂查询需两者并用，且 planning path 显著缓解 E3（由计划固有复杂结构引起）。</p>
+  <p><b>7.8 案例分析（图 7、8）。</b>图 7 为 IMDB 一条 5 表查询：PostgreSQL 选了估计成本最低却执行最久的计划，根因是基数低估（顶层 HashJoin 右子计划基数被低估约 30 倍），导致哈希表建在更大的输入上、实际性能更差；LLM-QO 生成的不同 join 顺序计划均把哈希表建在更小的输入表上。图 8 为 DSB 的 tpl040：Oracle 计划优于 PostgreSQL；LLM-QO(Qit) 计划类似 PostgreSQL 但执行更久（NestLoopJoin 消耗 101.8 秒主导整体）；而 LLM-QO(Qdpo) 从 Oracle 收集偏好数据，生成了最优计划（2.18 秒）。这印证 Qit 让 LLM 模仿通用优化器生成有效计划，Qdpo 通过向不同优化器学习进一步生成更高效计划，自回归生成过程催生了新颖高效的计划。</p>
+  <p><b>7.9 计划生成时间（图 9）。</b>在单张 A100/H100 上用 LLaMA3-8B 评测三负载的平均生成延迟：查询越复杂、输出越长、延迟越高（DSB 因表与 join 更多而最慢）；延迟随 batch size 增大而降（更充分利用硬件）；DSB 在 A100 上 batch 32→64 不再下降（32 已足够利用 GPU）。总体上，大库上的复杂查询更能从 LLM-QO 受益；KV cache、continuous batching、speculative decoding 等推理加速技术将进一步提升其实用性。</p>
+
+  <h3>8 结论与未来工作</h3>
+  <p>本文首次将查询优化建模为序列生成任务来探索 LLM 用于 SQL 查询规划，提出创新框架 LLM-QO，通过 LLM 微调吸收并蒸馏现有优化器的复杂规划策略。我们定制数据配方 QInstruct，并基于它提出两阶段训练工作流，赋予通用 LLM 生成有效且高质量执行计划的能力。在 PostgreSQL 执行引擎上的综合实验，验证了 LLM-QO 在常规与 OOD 查询负载下的潜力，以及内部设计的有效性，为在数据库系统中部署通用 LLM 做查询规划铺平了道路。</p>
+  <p>研究中也浮现出泛化、效率与自适应方面的诸多挑战，值得深入探索：① 提升 LLM 训练以实现跨多数据库实例、跨执行引擎、跨查询类型与逻辑/物理算子的<strong>泛化</strong>（需海量算力与高质量数据）；② 通过系统性优化进一步提升 LLM-QO 的<strong>推理效率</strong>以更好支撑 DBMS 查询处理；③ LLM-QO 仍可能<strong>幻觉</strong>，需精炼 prompt 与生成过程以确保计划与必要条件一致；④ 受 §7.4 中加入 DB2 的成效启发，计划引入更多优化器以享受新计划偏好、增强对动态场景的自适应。</p>
+</div>
+
+<!-- ====== Footer ====== -->
+<div class="footer">
+  <p>📖 LLM-QO: Can Large Language Models Be Query Optimizer for Relational Databases? — 深度解读 | 生成于 2026-06-03</p>
+  <p>论文来源: <a href="https://arxiv.org/abs/2502.05562" style="color:#6dd5ed;">arXiv:2502.05562</a> (PVLDB Vol.17 No.10) | 代码: <a href="https://github.com/Candice1995/LLM-QO" style="color:#6dd5ed;">GitHub</a></p>
+</div>
+
+</div>
+<script src="theme.js"></script>
+</body>
+</html>

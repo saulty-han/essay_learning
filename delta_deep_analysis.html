@@ -1,0 +1,777 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>深度解读 — Delta: 学习型混合代价查询优化框架</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{
+  font-family:'Noto Sans SC',system-ui,-apple-system,sans-serif;
+  background:#0d1117;color:#c9d1d9;
+  line-height:1.8;font-size:16px;
+  min-height:100vh;
+}
+.container{
+  max-width:1400px;margin:0 auto;padding:0 24px;
+  background:#0d1117;position:relative;
+}
+.back-btn{
+  position:fixed;top:16px;left:16px;z-index:9999;
+  background:rgba(20,20,35,.75);color:#c9d1d9;
+  border:1px solid rgba(255,255,255,.15);border-radius:10px;
+  padding:8px 16px;font-size:14px;cursor:pointer;
+  backdrop-filter:blur(6px);transition:all .3s;
+  text-decoration:none;display:flex;align-items:center;gap:6px;
+}
+.back-btn:hover{background:rgba(30,30,55,.9);border-color:rgba(255,255,255,.3);}
+.hero{padding:80px 0 40px;text-align:center;}
+.hero-title{
+  font-size:2.2rem;font-weight:700;
+  background:linear-gradient(135deg,#f97316,#c2410c,#fb923c);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  background-clip:text;margin-bottom:12px;line-height:1.3;
+}
+.hero-sub{font-size:1.1rem;color:#8b949e;margin-bottom:8px;}
+.venue{font-size:.95rem;color:#8b949e;margin-top:8px;}
+.venue a{color:#f97316;text-decoration:none;}
+.venue a:hover{text-decoration:underline;}
+.tag-row{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:16px;}
+.tag{
+  display:inline-block;padding:4px 14px;border-radius:20px;font-size:.85rem;
+  border:1px solid rgba(249,115,22,.3);color:#f97316;
+  background:rgba(249,115,22,.06);
+}
+.divider{border:none;border-top:1px solid rgba(255,255,255,.08);margin:48px 0;}
+.section{margin:40px 0;}
+.section-title{
+  font-size:1.75rem;font-weight:700;margin-bottom:20px;
+  color:#e6edf3;display:flex;align-items:center;gap:10px;
+}
+.section-title .num{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:36px;height:36px;border-radius:50%;
+  background:linear-gradient(135deg,#f97316,#c2410c);
+  color:#0d1117;font-size:1rem;font-weight:700;flex-shrink:0;
+}
+.section-desc{font-size:16px;line-height:1.9;color:#c9d1d9;margin-bottom:16px;}
+.toc{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:16px;padding:28px 36px;margin:30px 0;
+}
+.toc h3{font-size:1.2rem;color:#e6edf3;margin-bottom:14px;}
+.toc ol{list-style:none;counter-reset:toc;padding:0;}
+.toc li{counter-increment:toc;margin:8px 0;}
+.toc li::before{content:counter(toc) ".";color:#f97316;font-weight:600;margin-right:8px;}
+.toc a{color:#8b949e;text-decoration:none;transition:color .2s;}
+.toc a:hover{color:#f97316;}
+.module-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:24px;margin:18px 0;transition:all .3s;
+}
+.module-card:hover{border-color:rgba(249,115,22,.3);transform:translateY(-2px);}
+.module-card h3{font-size:1.15rem;font-weight:600;margin-bottom:10px;color:#f97316;}
+.module-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.arch-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:22px;margin:14px 0;transition:all .3s;
+}
+.arch-card:hover{border-color:rgba(249,115,22,.3);}
+.arch-card h4{font-size:1.05rem;font-weight:600;color:#fb923c;margin-bottom:8px;}
+.arch-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.step-flow{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:22px;margin:14px 0;
+}
+.step-flow h4{font-size:1.05rem;font-weight:600;color:#f97316;margin-bottom:8px;}
+.step-flow p{font-size:15px;line-height:1.8;color:#8b949e;}
+.data-table{
+  width:100%;border-collapse:collapse;margin:18px 0;
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;overflow:hidden;font-size:14px;
+}
+.data-table th{
+  background:rgba(249,115,22,.1);color:#f97316;
+  padding:12px 16px;text-align:left;font-weight:600;
+}
+.data-table td{
+  padding:10px 16px;border-top:1px solid rgba(255,255,255,.06);
+  color:#c9d1d9;
+}
+.data-table tr:hover td{background:rgba(249,115,22,.04);}
+.formula-box{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;padding:20px 24px;margin:16px 0;
+  font-size:18px;text-align:center;color:#e6edf3;
+  font-family:'JetBrains Mono',monospace;
+}
+.code-block{
+  background:rgba(20,20,35,.8);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;padding:18px 22px;margin:16px 0;
+  overflow-x:auto;
+}
+.code-block pre{
+  font-family:'JetBrains Mono',monospace;font-size:14px;
+  line-height:1.7;color:#c9d1d9;white-space:pre;
+}
+.ck{color:#f97316;}.cs{color:#fb923c;}.cf{color:#d2a8ff;}.cg{color:#8b949e;}.cv{color:#79c0ff;}
+.qa-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:24px;margin:16px 0;
+}
+.qa-q{font-size:1.05rem;font-weight:600;color:#f97316;margin-bottom:12px;}
+.qa-a{font-size:15px;line-height:1.9;color:#8b949e;}
+.highlight-box{
+  background:rgba(249,115,22,.06);border:1px solid rgba(249,115,22,.2);
+  border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;
+}
+.warn-box{
+  background:rgba(251,146,60,.08);border:1px solid rgba(251,146,60,.25);
+  border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;
+}
+.info-box{
+  background:rgba(249,115,22,.06);border:1px solid rgba(249,115,22,.2);
+  border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;
+}
+.prompt-box{
+  background:rgba(20,20,35,.8);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;padding:18px 22px;margin:16px 0;
+  font-family:'JetBrains Mono',monospace;font-size:13px;
+  line-height:1.7;color:#c9d1d9;white-space:pre-wrap;
+}
+.prompt-label{
+  display:inline-block;padding:2px 10px;border-radius:6px;
+  font-size:.85rem;font-weight:600;margin-bottom:8px;
+  background:rgba(249,115,22,.15);color:#f97316;
+}
+.fc{font-size:14px;color:#8b949e;text-align:center;margin:10px 0;line-height:1.6;}
+.comp-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:22px;margin:14px 0;transition:all .3s;
+}
+.comp-card:hover{border-color:rgba(249,115,22,.3);}
+.comp-card h4{font-size:1.05rem;font-weight:600;color:#fb923c;margin-bottom:8px;}
+.comp-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.insight-box{
+  background:rgba(249,115,22,.06);border:1px solid rgba(249,115,22,.2);
+  border-radius:12px;padding:18px 22px;margin:16px 0;
+}
+.insight-box h4{color:#f97316;font-size:1.05rem;margin-bottom:8px;}
+.insight-box p{font-size:15px;line-height:1.8;color:#c9d1d9;}
+.limit-box{
+  background:rgba(251,146,60,.08);border:1px solid rgba(251,146,60,.25);
+  border-radius:12px;padding:18px 22px;margin:16px 0;
+}
+.limit-box h4{color:#fb923c;font-size:1.05rem;margin-bottom:8px;}
+.limit-box p{font-size:15px;line-height:1.8;color:#c9d1d9;}
+.kv-row{
+  display:flex;border-bottom:1px solid rgba(255,255,255,.06);padding:8px 0;
+}
+.kv-row:last-child{border-bottom:none;}
+.kv-key{width:180px;flex-shrink:0;color:#f97316;font-weight:500;font-size:14px;}
+.kv-val{color:#c9d1d9;font-size:14px;line-height:1.7;}
+.footer{text-align:center;color:#555;font-size:14px;padding:48px 0 32px;}
+.svg-container{
+  background:rgba(20,20,35,.4);border:1px solid rgba(255,255,255,.06);
+  border-radius:14px;padding:20px;margin:24px 0;overflow-x:auto;
+  text-align:center;
+}
+.svg-container svg{max-width:100%;height:auto;}
+.phase-badge{
+  display:inline-block;padding:3px 12px;border-radius:8px;
+  font-size:.85rem;font-weight:600;margin-right:8px;
+}
+.phase-1{background:rgba(249,115,22,.15);color:#fb923c;}
+.phase-2{background:rgba(251,146,60,.15);color:#fdba74;}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
+.grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;}
+@media(max-width:900px){
+  .grid-2,.grid-3{grid-template-columns:1fr;}
+  .hero-title{font-size:1.6rem;}
+  .kv-row{flex-direction:column;}
+  .kv-key{width:auto;}
+}
+@keyframes flowPulse{
+  0%,100%{opacity:.6;}
+  50%{opacity:1;}
+}
+.flow-arrow{animation:flowPulse 2s ease-in-out infinite;}
+.translation h3{font-size:1.3rem;color:#fb923c;margin:26px 0 12px;font-weight:700;}
+.translation h4{font-size:1.1rem;color:#f97316;margin:18px 0 8px;font-weight:600;}
+.translation p{font-size:15.5px;line-height:1.95;color:#c9d1d9;margin-bottom:12px;}
+.fig-note{
+  background:rgba(249,115,22,.07);border-left:3px solid #f97316;
+  border-radius:8px;padding:12px 18px;margin:14px 0;
+  font-size:14.5px;color:#f0c9a8;line-height:1.8;
+}
+.fig-note b{color:#fb923c;}
+</style>
+</head>
+<body>
+<div class="container">
+
+<a class="back-btn" href="index.html">&#8592; 返回目录</a>
+
+<a href="delta_full_translation.html" style="display:block;max-width:860px;margin:18px auto 0;padding:13px 22px;background:linear-gradient(90deg,rgba(31,111,235,.16),rgba(137,87,227,.16));border:1px solid rgba(137,87,227,.5);border-radius:12px;color:#e6edf3;text-decoration:none;font-weight:500;font-size:15px;text-align:center;box-shadow:0 2px 14px rgba(0,0,0,.35);">阅读本文逐段完整中文翻译（Full Translation）</a>
+
+<!-- ========== HERO ========== -->
+<div class="hero">
+  <h1 class="hero-title">Delta: 学习型混合代价查询优化框架</h1>
+  <p class="hero-sub">用「兼容查询检测器 + 两阶段混合代价规划器」，把价值网络与代价模型的优势结合起来，并主动过滤会翻车的查询</p>
+  <div class="venue">
+    arXiv 2025 (2506.15848) &nbsp;|&nbsp;
+    <a href="https://arxiv.org/abs/2506.15848">arXiv: 2506.15848</a> &nbsp;|&nbsp;
+    <a href="https://github.com/PengJiazhen408/Delta">GitHub: PengJiazhen408/Delta</a>
+  </div>
+  <div class="tag-row">
+    <span class="tag">Query Optimization</span>
+    <span class="tag">Mixed Cost-based</span>
+    <span class="tag">Value Network</span>
+    <span class="tag">Cost Model</span>
+    <span class="tag">Mahalanobis</span>
+    <span class="tag">Compatible Query Detector</span>
+  </div>
+</div>
+
+<!-- ========== TOC ========== -->
+<div class="toc">
+  <h3>目录</h3>
+  <ol>
+    <li><a href="#sec-1">研究动机：代价优化器 vs 价值优化器的两难</a></li>
+    <li><a href="#sec-2">框架概览：兼容查询检测器 + 两阶段混合代价规划器</a></li>
+    <li><a href="#sec-3">预备知识与问题定义：代价模型 vs 价值网络、整体代价</a></li>
+    <li><a href="#sec-4">阶段一：基于价值网络的计划生成器 VPG（含 Lemma 1 与算法 1）</a></li>
+    <li><a href="#sec-5">阶段二：基于代价模型的计划选择器 CPS（数据增强 + 异方差损失）</a></li>
+    <li><a href="#sec-6">兼容查询检测器 CQD（马氏距离）</a></li>
+    <li><a href="#sec-7">实验评估：三大负载上的性能与训练成本</a></li>
+    <li><a href="#sec-8">消融与参数分析：γ、k 与各组件贡献</a></li>
+    <li><a href="#sec-9">代码使用与实战（GitHub / 安装 / 复现）</a></li>
+    <li><a href="#sec-10">总结与核心问答</a></li>
+    <li><a href="#sec-11">全文中文翻译（对应嵌入图片）</a></li>
+  </ol>
+</div>
+
+<!-- ========== SEC 1 ========== -->
+<div class="section" id="sec-1">
+  <h2 class="section-title"><span class="num">1</span>研究动机：代价优化器 vs 价值优化器的两难</h2>
+  <p class="section-desc">查询优化器是 DBMS 的核心模块，目标是在 O(n!) 量级的计划空间里找到让执行延迟最小的计划（已被证明是 NP-hard）。现有优化器分两类，各有致命缺陷；Delta 的出发点就是同时弥补二者。</p>
+
+  <div class="grid-2">
+    <div class="module-card">
+      <h3>① 代价优化器 CBO（Cost-based）</h3>
+      <p>用<strong>动态规划（DP）+ 代价模型</strong>估算每个子计划的代价，并据此搜索计划。但它面临：</p>
+      <p>• <b>搜索空间爆炸</b>：DP 需保留所有潜在最优子计划（带 interesting order 等物理属性），空间巨大；</p>
+      <p>• <b>启发式剪枝的妥协</b>：为提速常把 O(n!) 缩减成 left-deep 的 O(2ⁿ)，可能漏掉真正最优的计划；表连接过多时甚至会退化成随机搜索。</p>
+      <p>结论：<b>代价模型擅长「比较完整计划」，却不擅长「在庞大空间里有效探索」。</b></p>
+    </div>
+    <div class="module-card">
+      <h3>② 价值优化器 VBO（Value-based）</h3>
+      <p>用<strong>学习到的价值网络</strong>估算每个子计划的「整体代价」（即包含该子计划的所有完整计划里的最小代价），再用 beam search 高效探索。</p>
+      <p>• 价值网络更适合在庞大空间里「找 promising 的计划」；</p>
+      <p>• 但价值网络的「预测任务」比代价模型更难，因此<b>训练成本更高、精度更低</b>；</p>
+      <p>• 以往 VBO 直接取价值网络排第 1 的计划，对精度要求极高。</p>
+    </div>
+  </div>
+
+  <div class="highlight-box">
+    <b>Delta 的核心思想 —— 混合代价（Mixed Cost-based）</b>：把「价值网络」和「代价模型」各取所长、互相补位：
+    <p>• <b>阶段一（VPG，粗粒度过滤）</b>：用价值网络做 beam search，不是只取 top-1，而是生成 <b>top-k 个候选计划</b>，只要候选集里「至少有一个高质量计划」即可，从而<strong>大幅放松对价值网络精度的要求</strong>，降低训练难度；</p>
+    <p>• <b>阶段二（CPS，细粒度排序）</b>：用学习到的代价模型对这 k 个候选计划逐个预测延迟，挑出延迟最小的那个。此时比较空间从 O(n!) 缩小到 k，<strong>直接精确评估变得可行</strong>。</p>
+  </div>
+
+  <div class="insight-box">
+    <h4>还有一个被所有优化器忽略的问题：并非所有查询都能被学好</h4>
+    <p>Delta 形式化地把「优化器表现很差的查询」称为 <b>planner-incompatible query（不兼容查询）</b>，与「优化器稳定有效的兼容查询」区分开。优化器在特定分布的负载上训练，遇到分布不同的查询会严重掉点。为此 Delta 设计了一个<strong>基于马氏距离的兼容查询检测器（CQD）</strong>，在规划前就拦掉会让混合代价规划器翻车的查询，退回保守策略（如原生优化器）。</p>
+  </div>
+
+  <div class="kv-row"><span class="kv-key">整体收益</span><span class="kv-val">三大负载上相比 PostgreSQL 平均 2.34× 加速，相比 SOTA 学习型方法 2.21× 加速。</span></div>
+  <div class="kv-row"><span class="kv-key">主要贡献</span><span class="kv-val">① 首个混合代价规划器 + 兼容查询检测器；② 价值生成器 + 代价选择器并复用/增强数据降训练成本；③ 马氏距离检测器；④ 三负载充分实验。</span></div>
+</div>
+
+<!-- ========== SEC 2 ========== -->
+<div class="section" id="sec-2">
+  <h2 class="section-title"><span class="num">2</span>框架概览：兼容查询检测器 + 两阶段混合代价规划器</h2>
+  <p class="section-desc">Delta 由「混合代价规划器」和「兼容查询检测器（CQD）」两部分组成。规划器又含「基于价值的计划生成器 VPG」与「基于代价的计划选择器 CPS」。下面先看整体架构（论文 Figure 1），再讲两个设计要点。</p>
+
+  <div class="svg-container">
+    <svg viewBox="0 0 980 360" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif">
+      <defs>
+        <marker id="arrD" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+          <path d="M0,0 L8,3 L0,6 Z" fill="#fb923c"/>
+        </marker>
+        <linearGradient id="gd1" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stop-color="#c2410c"/><stop offset="1" stop-color="#f97316"/>
+        </linearGradient>
+      </defs>
+
+      <!-- User query -->
+      <rect x="20" y="150" width="140" height="56" rx="10" fill="rgba(20,20,35,.85)" stroke="#f97316"/>
+      <text x="90" y="183" fill="#e6edf3" font-size="14" text-anchor="middle" font-weight="700">User Query Q</text>
+
+      <!-- CQD -->
+      <rect x="200" y="140" width="180" height="76" rx="10" fill="rgba(249,115,22,.1)" stroke="#f97316" stroke-width="2"/>
+      <text x="290" y="172" fill="#fb923c" font-size="14" text-anchor="middle" font-weight="700">CQD 检测器</text>
+      <text x="290" y="194" fill="#8b949e" font-size="11" text-anchor="middle">马氏距离 vs 训练集</text>
+
+      <!-- Accept branch -->
+      <line x1="380" y1="165" x2="430" y2="165" stroke="#fb923c" stroke-width="2" marker-end="url(#arrD)"/>
+      <text x="395" y="155" fill="#fdba74" font-size="11">Accept</text>
+
+      <!-- VPG -->
+      <rect x="440" y="60" width="200" height="70" rx="10" fill="rgba(20,20,35,.85)" stroke="#f97316"/>
+      <text x="540" y="90" fill="#e6edf3" font-size="13" text-anchor="middle" font-weight="700">VPG 价值生成器</text>
+      <text x="540" y="112" fill="#8b949e" font-size="11" text-anchor="middle">beam search top-k</text>
+
+      <!-- Candidate set -->
+      <rect x="440" y="150" width="200" height="48" rx="10" fill="rgba(20,20,35,.85)" stroke="#fb923c"/>
+      <text x="540" y="179" fill="#e6edf3" font-size="12" text-anchor="middle">候选计划集 Sₖ (k 个)</text>
+
+      <!-- CPS -->
+      <rect x="440" y="220" width="200" height="70" rx="10" fill="rgba(20,20,35,.85)" stroke="#f97316"/>
+      <text x="540" y="250" fill="#e6edf3" font-size="13" text-anchor="middle" font-weight="700">CPS 代价选择器</text>
+      <text x="540" y="272" fill="#8b949e" font-size="11" text-anchor="middle">代价模型挑最优</text>
+
+      <line x1="540" y1="130" x2="540" y2="148" stroke="#fb923c" stroke-width="2" marker-end="url(#arrD)"/>
+      <line x1="540" y1="198" x2="540" y2="218" stroke="#fb923c" stroke-width="2" marker-end="url(#arrD)"/>
+
+      <!-- Result / Exec engine -->
+      <rect x="700" y="220" width="240" height="70" rx="10" fill="rgba(20,20,35,.85)" stroke="#fb923c"/>
+      <text x="820" y="250" fill="#e6edf3" font-size="13" text-anchor="middle" font-weight="700">DBMS 执行引擎</text>
+      <text x="820" y="272" fill="#8b949e" font-size="11" text-anchor="middle">最优计划 P*</text>
+      <line x1="640" y1="255" x2="698" y2="255" stroke="#fb923c" stroke-width="2" marker-end="url(#arrD)"/>
+
+      <!-- Reject branch -->
+      <path d="M290,216 C290,300 760,310 760,292" fill="none" stroke="#8b949e" stroke-width="2" stroke-dasharray="5,4" marker-end="url(#arrD)"/>
+      <text x="520" y="320" fill="#8b949e" font-size="11">Reject → 退回原生优化器 (PostgreSQL)</text>
+
+      <line x1="160" y1="178" x2="198" y2="178" stroke="#fb923c" stroke-width="2" marker-end="url(#arrD)"/>
+      <rect x="700" y="60" width="240" height="56" rx="10" fill="rgba(20,20,35,.5)" stroke="#8b949e"/>
+      <text x="820" y="92" fill="#8b949e" font-size="12" text-anchor="middle">Native Optimizer（保守策略）</text>
+      <path d="M290,140 C420,100 620,90 698,86" fill="none" stroke="#fb923c" stroke-width="2" marker-end="url(#arrD)"/>
+    </svg>
+    <div class="fc">图 1（对应论文 Figure 1）：Delta 架构与工作流程。CQD 先判断查询是否兼容；兼容的走「VPG 生成 top-k 候选 → CPS 选最优」，不兼容的退回原生优化器。</div>
+  </div>
+
+  <div class="grid-2">
+    <div class="arch-card">
+      <h4>设计要点 1：从 top-1 转向 top-k</h4>
+      <p>把 VBO（如 LOGER、Balsa）扩展成 VPG：不再只取价值网络排第 1 的计划，而是取 <b>top-k</b>。由于价值网络有误差，top-k 里存在比 top-1 更优计划的概率很高——这会在第 5 节用 Lemma 1 严格证明（top-k 的最佳情况改善 R(P*) 不劣于 top-1）。实验观察也显示：top-10 候选集质量优于 top-1 的情形在 LOGER 占 39.4%、在 Balsa 占 91.2%。</p>
+    </div>
+    <div class="arch-card">
+      <h4>设计要点 2：复用 + 增强数据降成本</h4>
+      <p>代价模型比价值网络<b>更容易训练</b>（预测任务更简单），所以阶段二用 CPS。为降低两个模型的训练成本：① 阶段一通过「分散精度要求」降低价值网络的数据量需求；② <b>复用并增强</b>阶段一价值网络训练时用过的执行计划来训练阶段二的代价模型。数据增强可在 JOB 上把唯一训练样本提升 8–9×，在 TPC-DS/Stack 上提升 2.5–4×。</p>
+    </div>
+  </div>
+
+  <div class="info-box">
+    <b>两种误差来源</b>：① <b>分布内（in-distribution）</b>——误差来自训练数据不足、标签噪声、特征缺失等，用两阶段搜索 + 数据增强 + 异方差损失来缓解；② <b>分布外（OOD）</b>——模型没有对应知识，预测不可靠，应视为不兼容查询。CQD 基于查询与训练数据之间的<b>马氏距离</b>（一种无模型、不增加训练成本的方法）来拦截 OOD 查询。
+  </div>
+</div>
+
+<!-- ========== SEC 3 ========== -->
+<div class="section" id="sec-3">
+  <h2 class="section-title"><span class="num">3</span>预备知识与问题定义</h2>
+  <p class="section-desc">本节先给出记号，再厘清「代价模型」与「价值网络」的本质区别——这正是 Delta 设计的理论根基。关键洞见：子计划的 <b>整体代价（overall cost）</b>比 <b>子计划代价（cost）</b>更适合作为生成计划时的评估指标，但更难估计。</p>
+
+  <div class="module-card">
+    <h3>3.1 两种模型</h3>
+    <p><b>代价模型 M(·)</b>：估计一个子计划 s 的执行代价或延迟：</p>
+    <div class="formula-box">M : s → C(s) 或 L(s)</div>
+    <p><b>价值网络 V(·)</b>：预测子计划 s 的<b>整体代价</b>——即在查询 Q 所有包含 s 的完整计划里，能达到的最小代价（或延迟）：</p>
+    <div class="formula-box">V : (Q, s) → C(Q, s) 或 L(Q, s)</div>
+    <p>若 s 已是完整计划，则其整体代价 = 自身代价。子计划的整体代价更能反映「这个子计划能否发展成最优计划」，但比子计划自身代价更难估计（需要遍历所有包含它的完整计划）。</p>
+  </div>
+
+  <div class="module-card">
+    <h3>3.2 整体代价 vs 子计划代价：一个具体例子（论文 Table II）</h3>
+    <p>考虑查询 Q = A ▷◁ B ▷◁ C ▷◁ D，子计划 s = A ▷◁ B（先连接 A、B），其自身代价为 20。下面是若干完整计划及其代价，以及是否包含 s：</p>
+    <table class="data-table">
+      <thead><tr><th>完整计划 P</th><th>代价 C(P)</th><th>包含 s=A▷◁B?</th></tr></thead>
+      <tbody>
+        <tr><td>(A▷◁B)▷◁(C▷◁D)</td><td>100</td><td>是</td></tr>
+        <tr><td>((A▷◁B)▷◁C)▷◁D</td><td>120</td><td>是</td></tr>
+        <tr><td>(A▷◁B)▷◁(D▷◁C)</td><td>90</td><td>是</td></tr>
+        <tr><td>B▷◁(A▷◁(C▷◁D))</td><td>80</td><td>否</td></tr>
+      </tbody>
+    </table>
+    <p>只看包含 s 的计划（代价 100、120、90），最小值是 <b>90</b>，所以整体代价 C(Q, s) = 90。注意：子计划自身代价 20，但「含它的最佳完整计划」代价 90。选子计划时，<b>整体代价比子计划代价更有用</b>，但也更难估计。</p>
+  </div>
+
+  <div class="module-card">
+    <h3>3.3 两阶段规划与问题定义</h3>
+    <p>阶段一：候选计划生成器 G 从计划空间产出 k 个候选 Sᴳ(Q) = {P₁,…,Pₖ}。计划质量用<strong>相对延迟</strong>衡量：R(Pᵢ) = L(Pᵢ)/L(P₀)，其中 P₀ 是 PostgreSQL 原生优化器产出的基线计划（R<1 表示优于 P₀）。</p>
+    <p>阶段二：选择器 B 从中挑出最优 P* = arg min L(P)。若 B 准确，选中计划即 P*。单阶段优化器可视为 k=1 的特例。</p>
+  </div>
+
+  <div class="warn-box">
+    <h4>如何评估「候选计划集」的质量？（论文 III-B）</h4>
+    <p>① <b>最佳情况改善 R(P*)</b> = 候选集里最优计划的相对延迟，越小越好（优化潜力越大）；</p>
+    <p>② <b>最坏情况风险 R(P△)</b> = 候选集里最差计划的相对延迟，若 >1 风险越高；</p>
+    <p>③ <b>高质量计划比例 η(Sᴳ)</b> = 候选集中优于 P₀ 的计划占比，越大越稳健。</p>
+    <p>若 R(P*) > 1.5，说明候选集里最好的计划都比 PostgreSQL 慢，这类查询称为 <b>G-incompatible（不兼容）</b>；R(P*) < 1.5 则为 <b>兼容</b>。</p>
+  </div>
+</div>
+
+<!-- ========== SEC 4 ========== -->
+<div class="section" id="sec-4">
+  <h2 class="section-title"><span class="num">4</span>阶段一：基于价值网络的计划生成器 VPG</h2>
+  <p class="section-desc">VPG 的核心主张：价值网络比代价模型更适合在庞大空间里「引导计划生成器聚焦 promising 区域」，但不适合直接决定最终最优计划。而且因为价值网络有误差，<b>top-k 里存在比 top-1 更优计划的概率很高</b>。</p>
+
+  <div class="svg-container">
+    <svg viewBox="0 0 960 280" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif">
+      <defs><marker id="aV" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#fb923c"/></marker></defs>
+      <!-- baseline bars -->
+      <text x="160" y="40" fill="#e6edf3" font-size="14" text-anchor="middle" font-weight="700">查询 17f（JOB）执行时间对比</text>
+      <!-- PG -->
+      <rect x="40" y="200" width="40" height="40" fill="#8b949e"/><text x="60" y="250" fill="#8b949e" font-size="11" text-anchor="middle">PG</text>
+      <!-- LOGER L1..L10 -->
+      <g fill="#f97316">
+        <rect x="110" y="170" width="22" height="70"/><rect x="138" y="180" width="22" height="60"/><rect x="166" y="160" width="22" height="80"/><rect x="194" y="175" width="22" height="65"/><rect x="222" y="165" width="22" height="75"/><rect x="250" y="185" width="22" height="55"/><rect x="278" y="172" width="22" height="68"/><rect x="306" y="120" width="22" height="120" fill="#fb923c"/><rect x="334" y="178" width="22" height="62"/><rect x="362" y="168" width="22" height="72"/>
+      </g>
+      <text x="250" y="265" fill="#f97316" font-size="11" text-anchor="middle">LOGER L1…L10（L8 最低）</text>
+      <!-- Balsa B1..B10 -->
+      <g fill="#c2410c">
+        <rect x="430" y="180" width="22" height="60"/><rect x="458" y="172" width="22" height="68"/><rect x="486" y="165" width="22" height="75"/><rect x="514" y="190" width="22" height="50"/><rect x="542" y="160" width="22" height="80"/><rect x="570" y="115" width="22" height="125" fill="#fdba74"/><rect x="598" y="185" width="22" height="55"/><rect x="626" y="178" width="22" height="62"/><rect x="654" y="170" width="22" height="70"/><rect x="682" y="182" width="22" height="58"/>
+      </g>
+      <text x="560" y="265" fill="#c2410c" font-size="11" text-anchor="middle">Balsa B1…B10（B6 最低）</text>
+      <text x="820" y="120" fill="#fb923c" font-size="13" font-weight="700">关键观察</text>
+      <text x="820" y="148" fill="#c9d1d9" font-size="12">L1、B1 是 VBO 选中的</text>
+      <text x="820" y="168" fill="#c9d1d9" font-size="12">计划，但 L8、B6 更优！</text>
+      <text x="820" y="198" fill="#8b949e" font-size="12">→ 取 top-k 而非 top-1</text>
+    </svg>
+    <div class="fc">图 2(a)（对应论文 Figure 2(a)）：JOB 负载查询 17f 的计划执行时间。L1/B1 是 VBO 选定的计划，但 top-10 里的 L8/B6 反而更快——证明取 top-k 更稳。</div>
+  </div>
+
+  <div class="highlight-box">
+    <b>Lemma 1（top-k 不劣于 top-1）</b>：设 Sᴠᵏ = {P₁,…,Pₖ} 为 VPG 生成的 top-k 计划集，Sᴠ¹ = {P₁} 为 top-1。对任意 k≥1，最佳情况改善满足 R(P*) ≤ R(P₁)，其中 P* = arg min_{P∈Sᴠᵏ} R(P)，P₁ 是 Sᴠ¹ 中的最优计划。
+    <div class="formula-box">R(P*) = min{R(P₁), R(P₂), …, R(Pₖ)} ≤ R(P₁)</div>
+    证明一句话：因为 P₁ 本身就包含在 Sᴠᵏ 中，所以 Sᴠᵏ 的最小值不会超过 R(P₁)。也就是说，<b>多选几个候选，最佳可能只会更好不会更差。</b>
+  </div>
+
+  <div class="step-flow">
+    <h4>Algorithm 1：基于 Beam Search 的 Top-k 计划生成</h4>
+    <p><b>输入</b>：用户查询 Q、训练好的价值网络 V、beam 宽度 b、候选数 k； <b>输出</b>：top-k 计划集 S = {P₁,…,Pₖ}。</p>
+    <p>1. 初始化：S ← ∅，s₀ ← 空计划，B ← {⟨s₀, 0⟩}（按整体延迟升序的优先队列，最大容量 b）；</p>
+    <p>2. while |S| < k 且 B 非空：</p>
+    <p>3. 　取出 B 中整体延迟最小的子计划 ⟨sᵢ, lᵢ⟩；</p>
+    <p>4. 　若 sᵢ 是完整计划 → 加入 S；</p>
+    <p>5. 　否则：枚举 sᵢ 的所有下一步状态 Sⱼ（加一个扫描/连接算子）；</p>
+    <p>6. 　对每个新子计划 sⱼ，用 V(Q, sⱼ) 算整体延迟 lⱼ，按升序插入 B；</p>
+    <p>7. 　若 |B| > b，只保留 top-b 个，删除其余；</p>
+    <p>8. 返回 S。</p>
+    <p>直观理解：beam search 用价值网络对每个子计划的「整体延迟」打分，始终优先扩展最有希望的子计划，直到凑齐 k 个完整计划。VPG 的探索顺序完全由价值网络决定，因此比「在传统 CBO 上做粗粒度 hint」更能把控候选集质量。</p>
+  </div>
+
+  <div class="module-card">
+    <h3>价值网络的训练（沿用 VBO：LOGER 或 Balsa）</h3>
+    <p>获取子计划「整体延迟」的真值很难（要遍历计划空间），因此用<b>强化学习（RL）</b>把整体延迟近似为「目前见过的、包含该子计划的计划里的最佳延迟」，而非全局最优。</p>
+    <p>训练循环：每轮对每个训练查询探索不同计划并实际执行，得到延迟；把执行过的计划以 (Q, P, L) 存入计划池（plan pool）。对每个计划 P 拆出子计划 s，得到其整体延迟 L，并以 ((Q, s), L) 存入哈希表（若已存在且新 L 更小则更新）。价值网络据此更新参数。这些 (Q, P, L) 在阶段二会被<b>复用</b>来训练代价模型。</p>
+  </div>
+</div>
+
+<!-- ========== SEC 5 ========== -->
+<div class="section" id="sec-5">
+  <h2 class="section-title"><span class="num">5</span>阶段二：基于代价模型的计划选择器 CPS</h2>
+  <p class="section-desc">阶段一把搜索范围从 O(n!) 缩小到 k 个候选。阶段二用经典代价模型 M 预测每个候选的延迟，选延迟最小的作为最优计划。CPS 的关键是：<b>复用阶段一的计划池数据 + 数据增强 + 异方差回归损失</b>，在不额外采集大量执行数据的前提下训出高精度代价模型。</p>
+
+  <div class="svg-container">
+    <svg viewBox="0 0 960 260" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif">
+      <defs><marker id="aC" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#fb923c"/></marker></defs>
+      <rect x="20" y="90" width="160" height="70" rx="10" fill="rgba(20,20,35,.85)" stroke="#f97316"/>
+      <text x="100" y="120" fill="#e6edf3" font-size="13" text-anchor="middle" font-weight="700">Plan Pool</text>
+      <text x="100" y="140" fill="#8b949e" font-size="11" text-anchor="middle">(Q,P,L) 复用</text>
+
+      <rect x="220" y="90" width="170" height="70" rx="10" fill="rgba(20,20,35,.85)" stroke="#fb923c"/>
+      <text x="305" y="118" fill="#e6edf3" font-size="12" text-anchor="middle" font-weight="700">Data Augmentation</text>
+      <text x="305" y="138" fill="#8b949e" font-size="11" text-anchor="middle">拆子计划 → 8-9×</text>
+
+      <rect x="430" y="90" width="170" height="70" rx="10" fill="rgba(20,20,35,.85)" stroke="#f97316"/>
+      <text x="515" y="120" fill="#e6edf3" font-size="13" text-anchor="middle" font-weight="700">Cost Model M</text>
+      <text x="515" y="140" fill="#8b949e" font-size="11" text-anchor="middle">M: P → (L, σ²)</text>
+
+      <rect x="640" y="90" width="200" height="70" rx="10" fill="rgba(20,20,35,.85)" stroke="#fb923c"/>
+      <text x="740" y="118" fill="#e6edf3" font-size="12" text-anchor="middle" font-weight="700">Heteroscedastic Loss</text>
+      <text x="740" y="138" fill="#8b949e" font-size="11" text-anchor="middle">降标签噪声影响</text>
+
+      <rect x="430" y="185" width="170" height="50" rx="10" fill="rgba(249,115,22,.1)" stroke="#f97316"/>
+      <text x="515" y="215" fill="#fb923c" font-size="12" text-anchor="middle" font-weight="700">Trained M*</text>
+
+      <line x1="180" y1="125" x2="218" y2="125" stroke="#fb923c" stroke-width="2" marker-end="url(#aC)"/>
+      <line x1="390" y1="125" x2="428" y2="125" stroke="#fb923c" stroke-width="2" marker-end="url(#aC)"/>
+      <line x1="600" y1="125" x2="638" y2="125" stroke="#fb923c" stroke-width="2" marker-end="url(#aC)"/>
+      <line x1="515" y1="160" x2="515" y2="183" stroke="#fb923c" stroke-width="2" marker-end="url(#aC)"/>
+    </svg>
+    <div class="fc">图 3（对应论文 Figure 3）：代价模型 M 的训练流程。复用阶段一计划池 → 数据增强 → 异方差回归损失 → 训好的 M*。</div>
+  </div>
+
+  <div class="module-card">
+    <h3>5.1 数据增强（Data Augmentation）</h3>
+    <p>学习型优化器的高训练成本主要来自「数据采集」（要执行成百上千个计划），且执行延迟必须在一个<b>稳定的系统状态</b>下测得（初始磁盘缓存一致、无其它资源密集进程），否则系统波动会让历史执行数据不可靠。</p>
+    <p>Delta 的做法：DBMS 不仅记录每个执行计划的延迟，还记录<b>每个子计划的执行时间</b>。对于计划池里的一条 (Q, P, L)，可以从中抽取子计划 s 及其直接延迟 L(s)，构成唯一训练样本 (s, L(s))。这能生成大量「自然且多样」的样本，在 <b>JOB 上把唯一训练样本提升 8–9×</b>，在 <b>TPC-DS / Stack 上提升 2.5–4×</b>，几乎零成本。</p>
+  </div>
+
+  <div class="module-card">
+    <h3>5.2 异方差回归损失（Heteroscedastic Loss）</h3>
+    <p>计划的延迟作为代价模型标签，即便系统状态稳定，也难免有固有（aleatoric）噪声。朴素做法是同一计划跑多次取平均（太耗资源）。Delta 改用<b>异方差回归损失</b>：假设不同样本噪声不同且与数据点相关。</p>
+    <p>代价模型同时预测延迟 L(P) 与噪声 ε(P)：</p>
+    <div class="formula-box">M : P → ( L(P), ε(P) ) &nbsp;&nbsp; 记 σ²ᵢ 为第 i 个样本的预测噪声</div>
+    <p>损失函数（N 个样本，yᵢ 为真实延迟，ŷᵢ、σ²ᵢ 为预测）：</p>
+    <div class="formula-box">L = (1/N) · Σᵢ [ (yᵢ − ŷᵢ)² / (2σ²ᵢ) + ln σ²ᵢ / 2 ]</div>
+    <p>直觉：第一项中 1/σ²ᵢ 是权重——噪声大的样本权重小，让模型更关注低噪声样本；第二项是惩罚项，防止模型靠一味增大 σ²ᵢ 来压低损失。</p>
+  </div>
+
+  <div class="module-card">
+    <h3>5.3 模型结构细节</h3>
+    <p>Delta 结合 Bao 与 Lero 的做法，把计划树 featurize 成向量树：每个节点编码为含① 算子的 one-hot；② min-max 归一化的基数与代价估计；③ 该节点为根的子计划所涉及的 relation 的 one-hot 求和。featurized 的计划树依次经过 <b>tree convolution → layer normalization → ReLU</b> 三个 block（共三组），最后用 dynamic pooling 把树结构压平成单向量，再经两组「双全连接层」（同结构不同权重）分别预测延迟和噪声。</p>
+    <div class="info-box" style="margin-top:14px;">为什么选「回归代价模型」而不是「价值网络」或「pair-wise 学习排序」？价值网络精度低不适合定最终计划；pair-wise 学习排序本质是分类、较易拟合，但训练低效（无法充分利用执行计划）。代价模型预测任务更简单、更易训练，配合数据增强与异方差损失，精度最高。</div>
+  </div>
+</div>
+
+<!-- ========== SEC 6 ========== -->
+<div class="section" id="sec-6">
+  <h2 class="section-title"><span class="num">6</span>兼容查询检测器 CQD（马氏距离）</h2>
+  <p class="section-desc">CQD 确保所有查询都只在「分布内」数据上被规划器处理，从而兼顾计划质量与鲁棒性。它用<b>马氏距离（Mahalanobis distance）</b>衡量测试查询与训练分布的偏离度——马氏距离无量纲、尺度不变、还能考虑变量间相关性，因此被广泛用于 OOD / 离群检测。</p>
+
+  <div class="step-flow">
+    <h4>CQD 检测流程</h4>
+    <p>① <b>生成基线计划</b>：对输入查询 Q，先用原生优化器得到执行计划 P₀（兼顾效率与代表性，与价值网络初始训练所用的计划一致）；</p>
+    <p>② <b>编码</b>：把 (Q, P₀) 用与价值网络相同的方法编码成高维特征向量 x⃗；每个训练样本 (Q', P') 同样编码，全部组成矩阵 X；</p>
+    <p>③ <b>算马氏距离</b>：</p>
+    <div class="formula-box">D_M(x⃗, X) = √[ (x⃗ − µ⃗)ᵀ Σ⁻¹ (x⃗ − µ⃗) ]</div>
+    <p>其中 µ⃗ 是 X 的均值向量，Σ 是协方差矩阵。距离越大表示越不相似；</p>
+    <p>④ <b>阈值判定</b>：</p>
+    <div class="formula-box">I = 1 (Accept) 若 D_M ≤ γ；&nbsp; 0 (Reject) 若 D_M > γ</div>
+    <p>超过 γ 的查询退回原生优化器。默认 γ = 500。</p>
+  </div>
+
+  <div class="warn-box">
+    <h4>阈值 γ 的权衡</h4>
+    <p>γ 小 → 保守，拒绝更多查询，鲁棒性强但放弃了混合优化器可能带来的性能收益；γ 大 → 放宽接受标准，能处理更多查询，但混入分布外查询会损害可靠性。系统可按实际需求在「优化」与「稳定」之间取舍。</p>
+  </div>
+</div>
+
+<!-- ========== SEC 7 ========== -->
+<div class="section" id="sec-7">
+  <h2 class="section-title"><span class="num">7</span>实验评估：三大负载上的性能与训练成本</h2>
+  <p class="section-desc">在三个标杆负载上回答：① Delta 能提升多少计划质量与训练效率？② VPG 生成的候选集是否优于 CBO？③ CPS 是否比价值网络选得更准？④ CQD 能否正确识别兼容查询？⑤ 各设计选择与参数（k、γ）的影响？</p>
+
+  <div class="module-card">
+    <h3>7.1 实验设置</h3>
+    <p><b>负载</b>：JOB（IMDB 真实数据，3.6GB/21 表/113 查询，94 训练 19 测试）、TPC-DS（SF=10，~10GB/26 表）、Stack（真实大数据，>100GB/11 表，含复合主键）。</p>
+    <p><b>基线</b>：传统 CBO 用 PostgreSQL；SOTA 两阶段学习型 CBO：Bao、HybridQO、Lero；VBO：LOGER、Balsa。在 LOGER / Balsa 上叠加 Delta 架构，称 <b>LOGER-∆</b> / <b>Balsa-∆</b>。</p>
+    <p><b>指标</b>：WRL（负载相对延迟，越小越好，1/WRL 即加速比）、GMRL（几何平均相对延迟）、Tt（训练时间，含数据采集）。</p>
+    <p><b>参数</b>：k=10，beam b=20，γ=500；PostgreSQL 12.5（96GB shared buffer、192GB cache、关闭 GEQO）；用 pg_hint_plan 指定计划，用 pgfincore / pg_prewarm 预载数据保证缓存一致；每实验重复 3 次取均值。</p>
+  </div>
+
+  <div class="module-card">
+    <h3>7.2 总体性能（论文 Table III）</h3>
+    <table class="data-table">
+      <thead><tr><th>优化器</th><th>JOB WRL</th><th>JOB GMRL</th><th>TPC-DS WRL</th><th>Stack WRL</th></tr></thead>
+      <tbody>
+        <tr><td>PostgreSQL</td><td>1.00</td><td>1.00</td><td>1.00</td><td>1.00</td></tr>
+        <tr><td>Bao</td><td>0.75</td><td>1.23</td><td>1.05</td><td>0.86</td></tr>
+        <tr><td>Lero</td><td>1.08</td><td>1.17</td><td>0.62</td><td>0.48</td></tr>
+        <tr><td>HybridQO</td><td>0.99</td><td>0.99</td><td>0.99</td><td>0.97</td></tr>
+        <tr><td>LOGER</td><td>0.32</td><td>0.60</td><td>0.59</td><td>0.68</td></tr>
+        <tr><td>Balsa</td><td>0.62</td><td>1.34</td><td>3.16</td><td>TLE</td></tr>
+        <tr><td><b>LOGER-∆</b></td><td><b>0.28</b></td><td><b>0.56</b></td><td><b>0.45</b></td><td><b>0.45</b></td></tr>
+        <tr><td><b>Balsa-∆</b></td><td><b>0.40</b></td><td><b>0.74</b></td><td><b>0.75</b></td><td>TLE</td></tr>
+      </tbody>
+    </table>
+    <p>（WRL：相对 PostgreSQL 的负载总延迟比，越小越好；TLE 表示 48 小时内无法完成训练。）</p>
+    <div class="highlight-box">
+      <b>关键结论</b>：充分训练后，Delta 在三个负载的延迟上全面优于所有基线。相比 PostgreSQL，<b>LOGER-∆ 加速 3.57× / 2.22× / 2.22×</b>（JOB / TPC-DS / Stack），<b>Balsa-∆ 加速 2.50× / 1.33×</b>（JOB / TPC-DS）。相比两阶段 CBO（Bao/Lero/HybridQO）与 VBO（LOGER/Balsa），Delta 同样显著领先。Balsa 因无法处理 Stack 的复合主键连接而 TLE。
+    </div>
+  </div>
+
+  <div class="insight-box">
+    <h4>训练成本也大幅下降</h4>
+    <p>LOGER-∆ 收敛只用 LOGER 训练时间的 <b>39.8% / 34.3% / 69.0%</b>（JOB/TPC-DS/Stack）；Balsa-∆ 用 Balsa 的 93.3% / 96.6%。训练曲线（论文 Figure 4）显示 Delta 收敛更快、WRL 更低、更稳定——得益于混合代价规划器与 CQD 增强了 VBO 的鲁棒性。</p>
+  </div>
+
+  <div class="module-card">
+    <h3>7.3 Value or Cost：各司其职（论文 VII-C）</h3>
+    <p><b>候选集质量</b>：对比四类生成器（CBO 的 Bao/Lero vs VBO 的 LOGER/Balsa），VBO 在三个指标上均优于 CBO——最佳情况改善更低、最坏情况风险更小、高质量计划比例中位数 η≥50% 显著超过 CBO。这与第 5 节理论一致：价值引导生成优于启发式。</p>
+    <p><b>最终选择</b>：对比价值网络（VN）与三种代价模型（朴素 NCM、学习排序 LTR、本文增强 ECM）从候选集中选最优，<b>三种代价模型总体优于价值网络</b>，而本文 ECM（数据增强 + 异方差损失）在所有场景最佳。证明代价模型更适合「定最终计划」。</p>
+  </div>
+</div>
+
+<!-- ========== SEC 8 ========== -->
+<div class="section" id="sec-8">
+  <h2 class="section-title"><span class="num">8</span>消融与参数分析</h2>
+  <p class="section-desc">本节在 JOB（选 Balsa 作底层，因为 LOGER 在 JOB 上兼容查询为 0，看不出 CQD 效果）上系统研究各组件贡献与参数敏感性。</p>
+
+  <div class="grid-2">
+    <div class="comp-card">
+      <h4>消融（Figure 7(a)）</h4>
+      <p>对比 Balsa-∆ 的变体：</p>
+      <p>• <b>Delta-noCPS</b>：去掉代价选择器 → WRL 升 68%、GMRL 升 26%；</p>
+      <p>• <b>Delta-noCQD</b>：去掉检测器 → WRL 升 20%、GMRL 升 22%；</p>
+      <p>• <b>Delta-noDA</b>：去掉数据增强 → WRL 升 43%、GMRL 升 35%；</p>
+      <p>• <b>Delta-MSE</b>：用 MSE 替代异方差损失 → WRL 升 30%、GMRL 升 26%。</p>
+      <p><b>CPS 与数据增强影响最大</b>，印证设计合理性。</p>
+    </div>
+    <div class="comp-card">
+      <h4>参数 γ（Figure 7(b)）</h4>
+      <p>γ 从 100 扫到 1300：<b>γ=500 时性能最佳</b>（作默认）。γ 太小（100/300）过于保守，性能接近 PostgreSQL；γ>700 时 CQD 接受全部查询，性能退化到 Delta-noCQD。</p>
+      <p><b>参数 k（Figure 7(c)(d)）</b>：所有情况下单次规划时间 < 350ms；k 越大 WRL/GMRL 越好但规划时间略增，且对 k 不敏感。实验取 k=10，可按需调整。</p>
+    </div>
+  </div>
+
+  <div class="module-card">
+    <h3>CQD 的有效性（论文 Figure 8 混淆矩阵）</h3>
+    <p>对 LOGER-∆ 与 Balsa-∆ 分别统计 CQD 的混淆矩阵（三负载汇总）：行是查询真实类型（兼容 CQ / 不兼容 IQ），列是 CQD 是否接受。</p>
+    <p>• <b>召回率（Recall）= 100%</b>：没有兼容查询被误拒，对规划器零负面影响；</p>
+    <p>• <b>特异度（Specificity）</b>：LOGER 上 71.4%、Balsa 上 80.0%——成功拦掉不兼容查询，避免坏计划。</p>
+  </div>
+</div>
+
+<!-- ========== SEC 9 ========== -->
+<div class="section" id="sec-9">
+  <h2 class="section-title"><span class="num">9</span>代码使用与实战（GitHub / 安装 / 复现）</h2>
+  <p class="section-desc">Delta 已开源，源码在 GitHub，可直接在 PostgreSQL 上复现论文结果。</p>
+
+  <div class="kv-row"><span class="kv-key">代码仓库</span><span class="kv-val"><a href="https://github.com/PengJiazhen408/Delta" style="color:#f97316;">https://github.com/PengJiazhen408/Delta</a>（论文参考文献 [18]）</span></div>
+  <div class="kv-row"><span class="kv-key">依赖环境</span><span class="kv-val">Python + PyTorch；PostgreSQL 12.5；pg_hint_plan（指定计划）、pgfincore、pg_prewarm（缓存预热）；Intel 服务器（论文用 2.80GHz / 376GB RAM / RTX 2080 Ti ×3 / Ubuntu 18.04）</span></div>
+  <div class="kv-row"><span class="kv-key">关键参数</span><span class="kv-val">候选数 k=10，beam 宽度 b=20，CQD 阈值 γ=500</span></div>
+  <div class="kv-row"><span class="kv-key">底层 VBO</span><span class="kv-val">LOGER 或 Balsa（在其上叠加 Delta 架构，分别得到 LOGER-∆ / Balsa-∆）</span></div>
+
+  <div class="code-block">
+    <pre><span class="cg"># 1) 准备 PostgreSQL 与插件（Ubuntu 示例）</span>
+sudo apt install postgresql-12
+git clone https://github.com/ossc-db/pg_hint_plan      <span class="cg"># 指定执行计划</span>
+git clone https://github.com/pgfincore/pgfincore      <span class="cg"># 缓存预热</span>
+<span class="cg"># pg_prewarm 随 PostgreSQL 自带</span>
+
+<span class="cg"># 2) 拉取 Delta 并安装 Python 依赖</span>
+git clone https://github.com/PengJiazhen408/Delta
+cd Delta
+pip install -r requirements.txt
+
+<span class="cg"># 3) 载入数据集（以 JOB 为例，按论文 94 训练 / 19 测试划分）</span>
+<span class="cg"># 4) 训练底层 VBO（LOGER / Balsa），其计划池 (Q,P,L) 会被 Delta 复用</span>
+<span class="cg"># 5) 运行 Delta：阶段一 VPG 生成 top-k，阶段二 CPS 选最优，CQD 过滤 OOD</span>
+python run_delta.py --workload job --k 10 --beam 20 --gamma 500
+
+<span class="cg"># 6) 评估：对比 PostgreSQL 原生计划，计算 WRL / GMRL / 训练时间 Tt</span></pre>
+  </div>
+
+  <div class="info-box">
+    <b>复现要点</b>：① 务必保证执行计划采集时的系统稳定（用 pgfincore/pg_prewarm 预载数据，关闭其它资源密集进程），否则训练标签噪声过大；② 阶段二代价模型<b>直接复用</b>阶段一计划池并做子计划级数据增强，无需重新大量执行计划；③ CQD 默认 γ=500，可按查询分布松紧调整。
+  </div>
+</div>
+
+<!-- ========== SEC 10 ========== -->
+<div class="section" id="sec-10">
+  <h2 class="section-title"><span class="num">10</span>总结与核心问答</h2>
+
+  <div class="qa-card">
+    <div class="qa-q">Q1：Delta 解决的根本矛盾是什么？</div>
+    <div class="qa-a">CBO 的代价模型擅长「比较完整计划」却不擅长「在 O(n!) 空间里探索」，VBO 的价值网络擅长「探索」但训练贵、精度低。Delta 用「价值网络粗筛 top-k + 代价模型精排」把二者优势互补，并用两阶段设计放松对价值网络的精度要求。</div>
+  </div>
+  <div class="qa-card">
+    <div class="qa-q">Q2：为什么取 top-k 而不是 top-1？</div>
+    <div class="qa-a">Lemma 1 严格证明 top-k 的最佳情况改善 R(P*) 不劣于 top-1；实验上 VBO 的 top-10 里有更优计划的概率在 LOGER 达 39.4%、Balsa 达 91.2%（查询 17f 中 L8/B6 优于 L1/B1）。取 top-k 把「找唯一最优」的硬要求降为「候选集里至少有一个好计划」，大幅降低训练难度。</div>
+  </div>
+  <div class="qa-card">
+    <div class="qa-q">Q3：训练成本怎么降下来的？</div>
+    <div class="qa-a">① 阶段一分散精度要求，减少价值网络的数据需求；② 阶段二代价模型直接复用阶段一的计划池 (Q,P,L)，并用「拆子计划」做数据增强（JOB 8–9×、TPC-DS/Stack 2.5–4×）；③ 异方差回归损失缓解标签噪声。结果 LOGER-∆ 训练时间降到 LOGER 的 39.8%/34.3%/69.0%。</div>
+  </div>
+  <div class="qa-card">
+    <div class="qa-q">Q4：CQD 为什么用马氏距离？</div>
+    <div class="qa-a">马氏距离无量纲、尺度不变、能考虑变量相关性，是 OOD/离群检测的常用方法。它只基于训练集的均值与协方差，<b>无需额外训练模型、零额外成本</b>，阈值 γ 可在「鲁棒」与「覆盖」间权衡（默认 500）。实验显示召回率 100%（不误伤兼容查询）、特异度 71–80%。</div>
+  </div>
+  <div class="qa-card">
+    <div class="qa-q">Q5：Delta 的最终收益？</div>
+    <div class="qa-a">相比 PostgreSQL 平均 2.34× 加速、相比 SOTA 学习型方法 2.21×；LOGER-∆ 在 JOB/TPC-DS/Stack 上分别 3.57×/2.22×/2.22× 加速。它统一了价值网络与代价模型，并主动过滤不兼容查询，是面向现代查询优化的实用方案。</div>
+  </div>
+</div>
+
+<!-- ========== SEC 11 ========== -->
+<div class="section translation" id="sec-11">
+  <h2 class="section-title"><span class="num">11</span>全文中文翻译（对应嵌入图片）</h2>
+  <p class="section-desc">以下为《Delta: A Learned Mixed Cost-based Query Optimization Framework》全文的忠实中文翻译，保留论文原意与专业术语，并在关键处嵌入对应图示说明。</p>
+
+  <h3>标题与摘要</h3>
+  <p><b>Delta：一种学习型混合代价查询优化框架</b></p>
+  <p>查询优化器是数据库管理系统（DBMS）的关键模块。现有优化器存在两种有缺陷的范式：(1) <b>基于代价的优化器（CBO）</b>使用动态规划与代价模型，但面临搜索空间爆炸与启发式剪枝约束；(2) <b>基于价值的优化器（VBO）</b>训练价值网络以实现高效 beam search，但训练成本更高、精度更低。它们也缺乏检测「自己可能表现很差的查询」的机制。为确定更高效的计划，我们提出 <b>Delta</b>——一种混合代价查询优化框架，由一个兼容查询检测器和一个两阶段规划器组成。Delta 首先用<b>基于马氏距离的检测器</b>预先过滤掉规划器可能表现不佳的<b>不兼容查询</b>；对兼容查询，Delta 启动其两阶段混合代价规划器——阶段一作为粗粒度过滤器，基于价值网络通过 beam search 生成高质量候选计划，放宽精度要求并缩小搜索空间；阶段二用<b>基于代价的学习型模型</b>作为细粒度排序器从候选计划中确定最佳计划。此外，为降低训练成本，我们复用并增强阶段一的训练数据来训练阶段二的模型。在三个负载上的实验表明，Delta 找到了更高质量的计划，相比 PostgreSQL 平均加速 <b>2.34×</b>，并比最先进的学习型方法快 <b>2.21×</b>。</p>
+
+  <div class="fig-note">📌 <b>图 1（架构总览）</b>：Delta 由「混合代价规划器」（VPG + CPS）与「兼容查询检测器 CQD」组成。CQD 先判断查询是否兼容；兼容的走 VPG 生成 top-k 候选、再经 CPS 选出最优计划交给执行引擎，不兼容的退回原生优化器（见上文 Figure 1 SVG）。</div>
+
+  <h3>I. 引言</h3>
+  <p>查询优化器是 DBMS 的核心组件，显著影响查询执行性能。给定一条 SQL 查询，优化器旨在确定使执行代价最小的计划；实践中常以执行时间（延迟）作为代价的代理指标。然而由于搜索空间庞大——连接 n 张表的查询有 O(n!) 个可能计划——寻找最优计划是公认的 NP-hard 问题。</p>
+  <p>现有方案通过从优化过的子计划逐步构建完整计划来应对这一挑战。根本难点在于建立有效的子计划选择准则，使局部选择共同最大化全局最优性。基于子计划选择准则，现有优化器可分为两类：<b>基于代价的优化器（CBO）</b>与<b>基于价值的优化器（VBO）</b>。</p>
+  <p><b>CBO</b> 分为传统方法与学习型变体，二者共享同一范式与约束：估计子计划代价，并依赖动态规划（DP）搜索计划。然而搜索空间爆炸与启发式剪枝的局限使其难以兼顾计划质量与搜索效率。一方面，为满足 DP 的最优性原则，CBO 需保留所有带物理属性（如 interesting order）的潜在最优子计划，从而增大搜索空间；另一方面，为提升效率常依赖启发式空间剪枝，导致次优甚至糟糕的计划。例如，一些 CBO 把稠密树空间 O(n!) 缩减为 left-deep 树空间 O(2ⁿ)，可能漏掉其它区域的最优计划；表连接过多时甚至会退化为随机搜索。即便代价模型准确，CBO 也因枚举代价过高而难以获得最优计划——代价模型<b>擅长比较完整计划，却不擅长引导在庞大空间中的有效探索</b>。</p>
+  <p><b>VBO</b> 借助学习型价值网络高效探索庞大空间，但其依赖强化学习（RL）导致训练成本更高、精度低于学习型代价模型。VBO 用价值网络估计每个子计划的整体代价（即包含该子计划的所有完整计划中的最小代价，是子计划发展成最优计划的潜力，也是我们真正关心的目标），因此可用 beam search 等 best-first 方法探索计划。若价值网络准确，beam search 找到的计划即最优。所以价值网络<b>更适合在庞大空间中搜索有希望的计划，而非评估完整计划</b>；但其特殊的预测任务使其训练成本更高、精度更低。</p>
+  <p><b>混合代价优化器</b>。通过分析代价与价值的利弊，我们设计新的混合代价查询优化框架 <b>Delta</b>，结合二者优势、互补短板。我们设计两阶段规划器：阶段一为<b>基于价值的计划生成器（VPG）</b>，从庞大空间生成 top-k 个候选计划，按价值网络估计的「整体代价」排名。由于价值网络的估计误差，该阶段只作粗粒度过滤，确保候选集中至少有一个高质量计划，相比 VBO「精确排所有计划取第一」<b>大幅放松了对价值网络的精度要求，降低训练难度</b>。阶段二为<b>基于代价的计划选择器（CPS）</b>，基于学习型代价模型对候选计划做细粒度评估，选延迟最小的计划；相比 CBO，计划空间从 O(n!) 缩小到 k，使直接评估比较可行。</p>
+  <p>仍有两点可改进。第一，混合优化器有两个学习模型，训练成本高：训练任一个模型都需执行成百上千个计划构建数据，每个计划执行耗时可达数分钟，且须在机器无其它资源密集活动时执行以保证运行时准确反映代价。为应对：一方面两阶段规划器降低了对价值网络的精度需求；另一方面，我们<b>充分复用并增强</b>阶段一为训练价值网络而收集的执行计划，用于训练阶段二的代价模型。第二，包括混合优化器在内的所有优化器都无法对任意查询都表现良好。我们把规划器表现很差的查询形式化称为<b>不兼容查询</b>，与稳定有效的<b>兼容查询</b>区分；规划器针对特定负载训练，遇到分布不同的查询会显著掉点。为此我们设计<b>基于马氏距离的兼容查询检测器</b>：先度量入查询与训练负载分布的偏离度，把高偏离查询判为不兼容；兼容查询交给混合代价规划器，不兼容查询则采取保守策略（如传统原生优化器）。</p>
+  <p>综上，Delta 由两阶段混合代价规划器与兼容查询检测器组成，源码已在 GitHub 开源 [18]。主要贡献：① 首个结合兼容查询检测器的混合代价规划器；② 混合规划器结合价值生成器与代价选择器，并复用增强数据降成本；③ 基于马氏距离的检测器在规划前过滤不兼容查询；④ 三负载充分实验，相比 PostgreSQL 加速 2.34×。</p>
+
+  <h3>II. 相关工作</h3>
+  <p><b>A. 基于代价的优化器</b>。可分为单阶段与两阶段。单阶段 CBO（含传统优化器与 Leon）只取代价模型排第 1 的计划，对代价模型精度要求高；传统优化器依赖过度理想化的独立性/均匀性假设导致大误差，且误差随连接指数传播；Leon 用学习排序替代代价模型但忽略训练成本而不实用。两阶段 CBO（Bao、Lero、HybridQO）先在传统优化器上用不同策略生成多样候选计划，再学代价模型选最优：Bao 通过禁用不同连接/扫描算子子集来生成不同计划；Lero 在不同连接层面对基数估计做不同缩放以影响子计划排名；HybridQO 指定不同连接顺序前缀。这些规划器只在传统 CBO 上做粗粒度 hint，无法控制候选集质量。此外所有 CBO 依赖 DP 搜索，仍受搜索空间爆炸与剪枝局限所困。</p>
+  <p><b>B. 基于价值的优化器</b>。用价值网络估计子计划整体代价，经 beam search 探索整个空间；但构建价值网络比代价模型更难（整体代价的真值比代价更难获取），以往 VBO 都用 RL 训练并取排第 1 的计划，对精度要求高。</p>
+  <p><b>C. 与已有工作的区别</b>。Delta 用混合代价模型与两阶段搜索确定更高效计划：相比依赖传统优化器与粗粒度 hint 的两阶段 CBO，Delta 用价值生成器产出更高质量的候选计划；相比 VBO，Delta 把探索目标从「选一个最优」改为「选 top-k」，放松对价值网络的精度要求。此外，现有优化器假设自己能平等应对所有情况，常在特定场景产生极差的计划；Delta 用马氏距离检测器预先过滤不兼容查询。</p>
+
+  <h3>III. 预备知识</h3>
+  <p><b>A. 记号</b>。查询 Q 的延迟记为 L(·)。n 表连接的搜索空间超过 (2(n−1))!/(n−1)!。代价模型 M: s→C(s) 或 L(s)；价值网络 V: (Q,s)→C(Q,s) 或 L(Q,s)，即包含子计划 s 的所有完整计划中的最小代价（整体代价）；若 s 完整则整体代价等于自身代价。</p>
+  <p>以 Q = A▷◁B▷◁C▷◁D、子计划 s = A▷◁B 为例（见上文 Table II）：包含 s 的计划代价有 100、120、90 等，最小值为 90，故整体代价 C(Q,s)=90。子计划自身代价 20，但含它的最佳完整计划代价 90——选子计划时整体代价比子计划代价更有用，但更难估计。</p>
+  <p>传统单阶段优化器（如 PostgreSQL 原生 N）基于代价估计用 DP 迭代构建计划，产出基线 P₀；单阶段 VBO 用 RL 训练价值网络、基于整体代价用 beam search 构建计划。两阶段规划器中，阶段一生成器 G 产出 k 个候选 Sᴳ(Q)={P₁,…,Pₖ}，质量用相对延迟 R(Pᵢ)=L(Pᵢ)/L(P₀) 衡量（R<1 表示优于 P₀）；阶段二选择器 B 选 P*=arg min L(P)。单阶段可视为 k=1 的特例。</p>
+  <p><b>B. 问题定义</b>。候选集质量由三指标衡量：① 最佳情况改善 R(P*)（越小越好）；② 最坏情况风险 R(P△)（>1 风险越高）；③ 高质量计划比例 η(Sᴳ)（越大越稳健）。若 R(P*)>1.5 称该查询为<b>不兼容</b>，反之<b>兼容</b>。我们的目标是设计一个新的两阶段框架，确定更高效的计划，包括：① 设计生成高质量候选集的生成器；② 以最小训练成本学习高精度选择模型；③ 设计兼容查询检测器。</p>
+
+  <div class="fig-note">📌 <b>图 2（top-1 vs top-k）</b>：(a) JOB 查询 17f 上 PG、LOGER（L1…L10）、Balsa（B1…B10）的计划执行时间，可见 L8、B6 优于 VBO 选定的 L1、B1；(b) 统计显示 LOGER 的 top-1 命中最佳计划仅占 40.6%，Balsa 仅 8.8%——说明 top-10 里藏着更优计划（见上文 Figure 2(a) SVG 与 Lemma 1）。</div>
+
+  <h3>IV. 框架概览</h3>
+  <p><b>设计</b>。整体代价（价值）比代价更适合作为在庞大空间中生成计划时子计划的评估指标。我们把 VBO（LOGER/Balsa）扩展为 VPG，取价值网络排 top-k 而非 top-1 的计划。相比 VBO，由于价值网络存在微小误差，top-k 中存在比 top-1 更高效计划的概率很高——第 V-A 节将用公式证明 top-k 候选集的最佳情况改善不劣于 top-1，实验上也观察到 LOGER/Balsa 的 top-10 候选集质量优于 top-1 的情形分别占 39.4%/91.2%。相比在传统 CBO 上做粗粒度 hint、无法控制 hint 质量与剪枝的基于代价的生成器，VPG 能按价值网络估计识别 top-k，为评估计划质量提供依据。</p>
+  <p>由于预测任务更简单，代价模型比价值网络更易训练，因此阶段二用 CPS 学习执行代价模型预测各候选延迟并选最小者，而非用价值网络。为降低两个模型的训练成本，我们用两阶段规划器通过分配精度需求来放松价值网络的数据量需求，同时复用并增强阶段一的价值网络训练数据来训练阶段二的代价模型——数据增强可在 JOB 上把唯一训练样本提升 8–9×，在 TPC-DS/Stack 上提升 2.5–4×。</p>
+  <p>规划质量取决于价值网络与代价模型的精度。我们把学习模型的误差来源分为：① <b>分布内</b>——来自训练数据不足、噪声、特征缺失等，用两阶段搜索 + 数据增强 + 异方差损失缓解；② <b>分布外</b>——模型未更新、缺乏对应知识，预测不可靠，应视为不兼容查询，用<b>基于马氏距离的 CQD</b>（无模型、零额外训练成本）拦截。</p>
+  <p><b>架构与流程</b>（见上文 Figure 1）。Delta 由混合代价规划器与 CQD 组成；规划器含 VPG 与 CPS。Delta 以用户查询为输入，输出选定计划交给 DBMS 执行引擎。CQD 拒绝那些交混合规划器优化会严重降级的查询，被拒查询交给保守策略（如原生优化器）；后端可利用空闲资源更新（重训）规划器中的模型以支持更多查询。被接受的查询由混合规划器优化：阶段一 VPG 作为粗粒度过滤器基于价值网络生成 top-k 候选，阶段二 CPS 基于学习型代价模型从中确定最优计划。</p>
+
+  <h3>V. 混合代价规划器</h3>
+  <p><b>A. 基于价值的计划生成器（VPG）</b>。价值网络比代价模型更适合引导生成器聚焦庞大空间中的 promising 区域，但不适合确定最终最优计划；且因价值网络误差，VBO 生成的 top-k 中存在比 top-1 更高效计划的概率很高。以查询 17f 为例（见上文图 2(a)）：LOGER 的 L8、Balsa 的 B6 优于其选定的 L1、B1。我们把 VBO 扩展为 VPG，生成价值网络估计的 top-k 计划作为候选集，而非 top-1。如 Lemma 1 所述，top-k 的最佳情况改善不低于 top-1。</p>
+  <p><b>Lemma 1</b>：设 Sᴠᵏ={P₁,…,Pₖ} 为 VPG 生成的 top-k 计划，Sᴠ¹={P₁} 为 top-1。对任意 k≥1，R(P*) ≤ R(P₁)，其中 P*=arg min_{P∈Sᴠᵏ} R(P)，P₁ 为 Sᴠ¹ 中最佳。证明：R(P*)=min{R(P₁),…,R(Pₖ)}，因 P₁∈Sᴠᵏ，故该最小值 ≤ R(P₁)。</p>
+  <p>此外，在三个负载（64 条查询）上统计 top-1 命中最佳计划的比例：LOGER 为 40.6%、Balsa 仅 8.8%。因此 VPG 生成的计划质量高于 CBO（第 VII-C 节将证实）。</p>
+  <p><b>Top-k 计划生成（算法 1）</b>。给定 Q，生成器自底向上：从空初始子计划 s₀ 出发，逐步选择作用于当前子计划 sᵢ 的新算子（扫描某表或连接两个可连接子计划），直到所有表连接完成得到完整计划。基于训练好的价值网络 V，VPG 用 beam search 自底向上生成 top-k：维护一个最大容量为 beam 宽度 b 的集合 B，按子计划整体延迟升序存储 promising 子计划，依次取出展开，直到生成 k 个完整计划（完整算法见上文 Algorithm 1 文字描述）。</p>
+  <p><b>价值网络训练</b>。Delta 构建于 VBO（LOGER/Balsa）之上。获取子计划整体延迟的真值比代价更难（需遍历计划空间），故用 RL 把整体延迟近似为「目前见过的含该子计划计划的最佳延迟」而非全局最优。训练循环反复观察各查询的不同计划执行以获取反馈并更新网络：每轮对每个训练查询探索并执行不同计划得到延迟，存入计划池 (Q,P,L)；对每个计划拆出子计划 s 得整体延迟 L 存入哈希表（若已存在且更小则更新）。该计划池在阶段二被复用。</p>
+  <p><b>B. 基于代价的计划选择器（CPS）</b>。阶段一 VPG 把最优计划选择范围从庞大空间缩小到 k 个候选；阶段二 CPS 以最小额外训练成本训练高精度代价模型 M 选最优。CPS 采用经典代价模型 M 预测计划延迟，选估计值最小者为最优（见上文 Figure 3 训练流程）。由于采集训练数据消耗系统资源，我们<b>复用</b>阶段一计划池的执行计划训练 M，无需额外数据；并基于朴素预测任务用<b>数据增强</b>从执行计划提取子计划，生成数倍多样自然样本补充训练。为降低标签噪声影响，采用<b>异方差回归损失</b>建模每个样本的噪声、提升估计鲁棒性。</p>
+  <p>关于最优计划选择的两种替代任务：① 用价值网络预测给定查询与计划的整体代价（精度低，不适合定最优）；② pair-wise 学习排序（预测两计划按延迟的排名，本质是分类、较易拟合，但训练低效，无法充分利用执行计划）。</p>
+  <p><b>数据增强</b>。学习型模型的高训练成本来自数据采集与模型训练；采集需执行成百上千个计划，且系统波动会使执行延迟不能真实反映代价，因此须在稳定系统状态下执行。我们充分利用执行计划：DBMS 既记录每个计划延迟也记录每个子计划执行时间，对计划池样本 (Q,P,L) 可提取子计划 s 及其直接延迟 L(s) 构成唯一样本 (s,L(s))，在 JOB 上提升 8–9×、TPC-DS/Stack 上 2.5–4×。</p>
+  <p><b>损失函数</b>。计划延迟作为标签即便系统稳定也难免固有噪声；朴素多次执行取平均太耗资源，故用异方差回归损失：模型同时预测延迟 L(P) 与噪声 ε(P)，即 M:P→(L(P),ε(P))。设 N 个样本、第 i 个真实延迟 yᵢ、预测 ŷᵢ 与 σ²ᵢ，损失 L=(1/N)Σᵢ[(yᵢ−ŷᵢ)²/(2σ²ᵢ)+ln σ²ᵢ/2]。第一项 1/σ²ᵢ 作权重，噪声大的样本权小，让模型更关注低噪声样本；第二项是防止模型一味增大 σ²ᵢ 压低损失的惩罚项。</p>
+  <p><b>模型细节</b>。结合 Bao 与 Lero 的方式，把计划树 featurize 为向量树：每个节点编码为① 算子 one-hot；② min-max 归一化的基数与代价估计；③ 该节点为根的子计划所涉及的 relation 的 one-hot 求和。featurized 计划树依次经过 tree convolution、layer normalization、ReLU 三组 block，最后用 dynamic pooling 把树压平为单向量，再经两组双全连接层（同结构不同权重）分别预测延迟与噪声。</p>
+
+  <h3>VI. 兼容查询检测器</h3>
+  <p>为保证鲁棒优化，Delta 用 CQD 识别混合代价规划器可能表现不佳的查询。若查询特征分布与训练数据对齐则为兼容，规划器可可靠预测；分布外（OOD）查询会导致预测退化、计划次优，CQD 拒绝此类不兼容情况以保护鲁棒性。CQD 通过计算查询特征与训练分布之间的<b>马氏距离</b>拦截 OOD 查询——马氏距离无量纲、尺度不变、考虑变量相关性，被广泛用于 OOD 与离群检测。</p>
+  <p>检测流程：先由原生优化器产出代表性基线计划 P₀；把 (Q,P₀) 用与价值网络相同方法编码为高维特征向量 x⃗，所有训练样本同样编码组成矩阵 X；计算马氏距离 D_M(x⃗,X)=√[(x⃗−µ⃗)ᵀΣ⁻¹(x⃗−µ⃗)]，µ⃗、Σ 为 X 的均值与协方差。阈值函数 I：D_M≤γ 接受（1），否则拒绝（0）并交给原生优化器。阈值 γ 控制可靠性与优化覆盖的权衡：γ 小则保守（拒绝多、鲁棒但放弃收益），γ 大则放宽（覆盖广但风险高）。通过过滤不兼容查询，CQD 确保规划器只在分布内数据上运行。</p>
+
+  <div class="fig-note">📌 <b>图 3（代价模型训练）</b>：Plan Pool 复用 → Data Augmentation（拆子计划，JOB 8–9×）→ Cost Model M 预测 (L, σ²) → Heteroscedastic Loss → 训好的 M*（见上文 Figure 3 SVG）。</div>
+
+  <h3>VII. 实验评估</h3>
+  <p><b>A. 实验设置</b>。负载：JOB（IMDB 真实数据 3.6GB/21 表/113 查询，94 训练 19 测试）、TPC-DS（SF=10 ~10GB/26 表，5 模板测试 15 训练）、Stack（真实大数据 >100GB/11 表，含复合主键）。基线：PostgreSQL（传统 CBO），两阶段学习型 CBO（Bao、HybridQO、Lero），VBO（LOGER、Balsa）；在 LOGER/Balsa 上叠加 Delta 称 LOGER-∆/Balsa-∆。指标：WRL（负载相对延迟，1/WRL 即加速）、GMRL（几何平均相对延迟）、Tt（训练时间）。参数：k=10、b=20、γ=500；PostgreSQL 12.5（96GB shared buffer、192GB cache、关闭 GEQO），用 pg_hint_plan 指定计划、pgfincore/pg_prewarm 预载数据，每实验重复 3 次。</p>
+  <p><b>B. 总体性能</b>（见上文 Table III）。充分训练后 Delta 在延迟上全面优于所有基线：相比 PostgreSQL，LOGER-∆ 在 JOB/TPC-DS/Stack 加速 3.57×/2.22×/2.22×，Balsa-∆ 在 JOB/TPC-DS 加速 2.50×/1.33×；相比两阶段 CBO 与 VBO 同样显著领先。训练成本上，LOGER-∆ 收敛只用 LOGER 的 39.8%/34.3%/69.0%，Balsa-∆ 用 Balsa 的 93.3%/96.6%。训练曲线（论文 Figure 4）显示 Delta 收敛更快、WRL 更低、更稳定，且在大规模 Stack 上改善尤其明显。</p>
+  <p><b>C. Value or Cost：各司其职</b>。候选集质量：对比 Bao/Lero（CBO）与 LOGER/Balsa（VBO），VBO 在最佳情况改善、最坏情况风险、高质量计划比例（中位数 η≥50%）上均优于 CBO，与第 V-A 节理论一致。最终选择：对比价值网络（VN）与三种代价模型（NCM/LTR/ECM），三种代价模型总体优于 VN，本文 ECM（数据增强+异方差损失）在所有场景最佳。</p>
+  <p><b>D. CQD 的影响</b>（论文 Figure 8）。混淆矩阵显示 CQD 召回率 100%（无兼容查询被误拒，零负面影响），特异度在 LOGER 上 71.4%、Balsa 上 80.0%（成功拦截不兼容查询）。</p>
+  <p><b>E. 消融与参数分析</b>（论文 Figure 7）。消融：去掉 CPS/CQD/数据增强/异方差损失分别使 WRL 升 68%/20%/43%/30%、GMRL 升 26%/22%/35%/26%，CPS 与数据增强影响最大。参数 γ：100–1300 扫描，γ=500 最佳，γ 太小接近 PostgreSQL，γ>700 退化为 Delta-noCQD。参数 k：规划时间均 <350ms，k 越大 WRL/GMRL 越好但时间略增且对 k 不敏感，实验取 k=10。</p>
+
+  <h3>VIII. 结论</h3>
+  <p>我们提出 Delta——一种混合代价查询优化框架，通过兼容查询检测器与两阶段规划器弥补 CBO 与 VBO 的局限。相比传统 CBO（PostgreSQL），Delta 通过缓解搜索空间爆炸与启发式剪枝约束实现 2.34× 更快的负载执行；相比两阶段 CBO，Delta 凭借价值规划器产出的更高质量候选计划快 2.11×；相比 VBO，Delta 以 66.6% 的训练时间换来 1.94× 更高的执行性能（得益于细粒度学习型代价排序）；基于马氏距离的检测器通过预先过滤不兼容查询进一步保证鲁棒性。这些结果彰显了 Delta 统一价值网络与代价模型、并检测不兼容查询以确定更高效计划的能力，为现代查询优化提供了实用方案。</p>
+
+  <h3>参考文献（节选关键）</h3>
+  <p>[7] Marcus et al. Bao: Making learned query optimization practical. SIGMOD 2021.</p>
+  <p>[8] Zhu et al. Lero: A learning-to-rank query optimizer. PVLDB 2023.</p>
+  <p>[9] Yu et al. Cost-based or learning-based? A hybrid query optimizer. PVLDB 2022.</p>
+  <p>[11] Marcus et al. Neo: A learned query optimizer. PVLDB 2019.</p>
+  <p>[12] Yang et al. Balsa: Learning a query optimizer without expert demonstrations. SIGMOD 2022.</p>
+  <p>[13] Chen et al. LOGER: A learned optimizer towards generating efficient and robust query execution plans. PVLDB 2023.</p>
+  <p>[18] Delta 源码：https://github.com/PengJiazhen408/Delta</p>
+  <p>[21] Leis et al. How good are query optimizers, really? (JOB) PVLDB 2015.</p>
+  <p>[29][30] Mahalanobis distance 相关经典文献。</p>
+  <p>[35] pg_hint_plan；[36] pgfincore；[37] pg_prewarm 插件。</p>
+</div>
+
+<div class="footer">Delta 深度解读 · 数据来源 arXiv:2506.15848 · GitHub: PengJiazhen408/Delta</div>
+
+</div>
+</body>
+</html>

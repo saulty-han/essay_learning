@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>深度解读 — AgentFold: Long-Horizon Web Agents with Proactive Context Management</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{font-family:'Noto Sans SC',system-ui,-apple-system,sans-serif;background:#0d1117;color:#c9d1d9;line-height:1.8;font-size:16px;min-height:100vh;}
+.container{max-width:1400px;margin:0 auto;padding:0 24px;background:#0d1117;position:relative;}
+.back-btn{position:fixed;top:16px;left:16px;z-index:9999;background:rgba(20,20,35,.75);color:#c9d1d9;border:1px solid rgba(255,255,255,.15);border-radius:10px;padding:8px 16px;font-size:14px;cursor:pointer;backdrop-filter:blur(6px);transition:all .3s;text-decoration:none;display:flex;align-items:center;gap:6px;}
+.back-btn:hover{background:rgba(30,30,55,.9);border-color:rgba(255,255,255,.3);}
+.hero{padding:80px 0 40px;text-align:center;}
+.hero-title{font-size:2rem;font-weight:700;background:linear-gradient(135deg,#3b82f6,#60a5fa,#93c5fd);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:12px;line-height:1.3;}
+.hero-sub{font-size:1.05rem;color:#8b949e;margin-bottom:8px;}
+.venue{font-size:.95rem;color:#8b949e;margin-top:8px;}
+.venue a{color:#60a5fa;text-decoration:none;}
+.venue a:hover{text-decoration:underline;}
+.tag-row{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:16px;}
+.tag{display:inline-block;padding:4px 14px;border-radius:20px;font-size:.85rem;border:1px solid rgba(59,130,246,.3);color:#60a5fa;background:rgba(59,130,246,.06);}
+.section{margin:40px 0;}
+.section-title{font-size:1.75rem;font-weight:700;margin-bottom:20px;color:#e6edf3;display:flex;align-items:center;gap:10px;}
+.section-title .num{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#3b82f6,#60a5fa);color:#0d1117;font-size:1rem;font-weight:700;flex-shrink:0;}
+.section-desc{font-size:16px;line-height:1.9;color:#c9d1d9;margin-bottom:16px;}
+.toc{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:28px 36px;margin:30px 0;}
+.toc h3{font-size:1.2rem;color:#e6edf3;margin-bottom:14px;}
+.toc ol{list-style:none;counter-reset:toc;padding:0;}
+.toc li{counter-increment:toc;margin:8px 0;}
+.toc li::before{content:counter(toc)".";color:#60a5fa;font-weight:600;margin-right:8px;}
+.toc a{color:#8b949e;text-decoration:none;transition:color .2s;}
+.toc a:hover{color:#60a5fa;}
+.module-card{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:24px;margin:18px 0;transition:all .3s;}
+.module-card:hover{border-color:rgba(59,130,246,.3);transform:translateY(-2px);}
+.module-card h3{font-size:1.15rem;font-weight:600;margin-bottom:10px;color:#60a5fa;}
+.module-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.arch-card{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:22px;margin:14px 0;transition:all .3s;}
+.arch-card:hover{border-color:rgba(59,130,246,.3);}
+.arch-card h4{font-size:1.05rem;font-weight:600;color:#93c5fd;margin-bottom:8px;}
+.arch-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.step-flow{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:22px;margin:14px 0;}
+.step-flow h4{font-size:1.05rem;font-weight:600;color:#60a5fa;margin-bottom:8px;}
+.step-flow p{font-size:15px;line-height:1.8;color:#8b949e;}
+.data-table{width:100%;border-collapse:collapse;margin:18px 0;background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:12px;overflow:hidden;font-size:13px;}
+.data-table th{background:rgba(59,130,246,.1);color:#60a5fa;padding:10px 12px;text-align:left;font-weight:600;}
+.data-table td{padding:9px 12px;border-top:1px solid rgba(255,255,255,.06);color:#c9d1d9;}
+.data-table tr:hover td{background:rgba(59,130,246,.04);}
+.formula-box{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:20px 24px;margin:16px 0;font-size:18px;text-align:center;color:#e6edf3;font-family:'JetBrains Mono',monospace;}
+.code-block{background:rgba(20,20,35,.8);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:18px 22px;margin:16px 0;overflow-x:auto;}
+.code-block pre{font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.7;color:#c9d1d9;white-space:pre;}
+.ck{color:#60a5fa;}.cs{color:#93c5fd;}.cf{color:#bfdbfe;}.cg{color:#8b949e;}.cv{color:#79c0ff;}
+.qa-card{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:24px;margin:16px 0;}
+.qa-q{font-size:1.05rem;font-weight:600;color:#60a5fa;margin-bottom:12px;}
+.qa-a{font-size:15px;line-height:1.9;color:#8b949e;}
+.highlight-box{background:rgba(59,130,246,.06);border:1px solid rgba(59,130,246,.2);border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;}
+.warn-box{background:rgba(240,136,62,.08);border:1px solid rgba(240,136,62,.25);border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;}
+.info-box{background:rgba(59,130,246,.06);border:1px solid rgba(59,130,246,.2);border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;}
+.prompt-box{background:rgba(20,20,35,.8);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:18px 22px;margin:16px 0;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.7;color:#c9d1d9;white-space:pre-wrap;}
+.prompt-label{display:inline-block;padding:2px 10px;border-radius:6px;font-size:.85rem;font-weight:600;margin-bottom:8px;background:rgba(59,130,246,.15);color:#60a5fa;}
+.fc{font-size:14px;color:#8b949e;text-align:center;margin:10px 0;line-height:1.6;}
+.comp-card{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:22px;margin:14px 0;transition:all .3s;}
+.comp-card:hover{border-color:rgba(59,130,246,.3);}
+.comp-card h4{font-size:1.05rem;font-weight:600;color:#93c5fd;margin-bottom:8px;}
+.comp-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.insight-box{background:rgba(59,130,246,.06);border:1px solid rgba(59,130,246,.2);border-radius:12px;padding:18px 22px;margin:16px 0;}
+.insight-box h4{color:#60a5fa;font-size:1.05rem;margin-bottom:8px;}
+.insight-box p{font-size:15px;line-height:1.8;color:#c9d1d9;}
+.limit-box{background:rgba(240,136,62,.08);border:1px solid rgba(240,136,62,.25);border-radius:12px;padding:18px 22px;margin:16px 0;}
+.limit-box h4{color:#f59e0b;font-size:1.05rem;margin-bottom:8px;}
+.limit-box p{font-size:15px;line-height:1.8;color:#c9d1d9;}
+.kv-row{display:flex;border-bottom:1px solid rgba(255,255,255,.06);padding:8px 0;}
+.kv-row:last-child{border-bottom:none;}
+.kv-key{width:180px;flex-shrink:0;color:#60a5fa;font-weight:500;font-size:14px;}
+.kv-val{color:#c9d1d9;font-size:14px;line-height:1.7;}
+.footer{text-align:center;color:#555;font-size:14px;padding:48px 0 32px;}
+.svg-container{background:rgba(20,20,35,.4);border:1px solid rgba(255,255,255,.06);border-radius:14px;padding:20px;margin:24px 0;overflow-x:auto;text-align:center;}
+.svg-container svg{max-width:100%;height:auto;}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
+@media(max-width:900px){.grid-2{grid-template-columns:1fr;}.hero-title{font-size:1.6rem;}.kv-row{flex-direction:column;}.kv-key{width:auto;}}
+.translation h3{font-size:1.3rem;color:#93c5fd;margin:26px 0 12px;font-weight:700;}
+.translation h4{font-size:1.1rem;color:#60a5fa;margin:18px 0 8px;font-weight:600;}
+.translation p{font-size:15.5px;line-height:1.95;color:#c9d1d9;margin-bottom:12px;}
+.fig-note{background:rgba(59,130,246,.07);border-left:3px solid #60a5fa;border-radius:8px;padding:12px 18px;margin:14px 0;font-size:14.5px;color:#93c5fd;line-height:1.8;}
+.fig-note b{color:#60a5fa;}
+</style>
+</head>
+<body>
+<div class="container">
+
+<a class="back-btn" href="index.html">&#8592; 返回目录</a>
+
+<a href="agentfold_full_translation.html" style="display:block;max-width:860px;margin:18px auto 0;padding:13px 22px;background:linear-gradient(90deg,rgba(31,111,235,.16),rgba(137,87,227,.16));border:1px solid rgba(137,87,227,.5);border-radius:12px;color:#e6edf3;text-decoration:none;font-weight:500;font-size:15px;text-align:center;box-shadow:0 2px 14px rgba(0,0,0,.35);">阅读本文逐段完整中文翻译（Full Translation）</a>
+
+<!-- ========== HERO ========== -->
+<div class="hero">
+  <h1 class="hero-title">AgentFold：长视界 Web 智能体与主动上下文管理</h1>
+  <p class="hero-sub">让智能体像人类一样「回顾性整合」记忆——在每一步主动折叠（fold）上下文，实现 100 步交互仅用 7k token、可扩展到 500 步</p>
+  <div class="venue">
+    arXiv 2025 (2510.24699) &nbsp;|&nbsp;
+    <a href="https://arxiv.org/abs/2510.24699">arXiv: 2510.24699</a> &nbsp;|&nbsp;
+    <a href="https://github.com/Alibaba-NLP/DeepResearch">GitHub: Alibaba-NLP/DeepResearch</a> &nbsp;|&nbsp;
+    <a href="https://tongyi-agent.github.io/blog">Project Page</a>
+  </div>
+  <div class="tag-row">
+    <span class="tag">Web Agent</span>
+    <span class="tag">Context Management</span>
+    <span class="tag">Long-Horizon Reasoning</span>
+    <span class="tag">SFT</span>
+    <span class="tag">Qwen3-30B-A3B</span>
+  </div>
+</div>
+
+<!-- ========== TOC ========== -->
+<div class="toc">
+  <h3>目录</h3>
+  <ol>
+    <li><a href="#sec-1">研究动机：Web 智能体的上下文困境</a></li>
+    <li><a href="#sec-2">框架概览：AgentFold 的折叠范式</a></li>
+    <li><a href="#sec-3">问题定义：ReAct 饱和与固定摘要的困境</a></li>
+    <li><a href="#sec-4">上下文结构：多尺度状态摘要 + 最新交互</a></li>
+    <li><a href="#sec-5">响应格式：思考 / 折叠指令 / 解释 / 动作</a></li>
+    <li><a href="#sec-6">训练方法：Fold-Generator 数据流水线 + SFT</a></li>
+    <li><a href="#sec-7">实验评估：BrowseComp/WideSearch/GAIA</a></li>
+    <li><a href="#sec-8">敏感性分析：上下文动态与扩展性</a></li>
+    <li><a href="#sec-9">代码使用与实战（GitHub）</a></li>
+    <li><a href="#sec-10">总结与未来展望</a></li>
+    <li><a href="#sec-11">全文中文翻译（对应嵌入图片）</a></li>
+  </ol>
+</div>
+
+<!-- ========== SEC 1 ========== -->
+<div class="section" id="sec-1">
+  <h2 class="section-title"><span class="num">1</span>研究动机：Web 智能体的上下文困境</h2>
+  <p class="section-desc">基于 LLM 的 Web 信息检索智能体展现出巨大潜力，但在<strong>长视界任务（long-horizon tasks）</strong>上面临一个根本性的<strong>上下文管理权衡</strong>——这是当前制约其性能的核心瓶颈。</p>
+
+  <div class="module-card">
+    <h3>现有方法的两大困境</h3>
+    <p><b>困境一：ReAct 式追加导致上下文饱和（Context Saturation）。</b>主流的 ReAct 类智能体（Yao et al., 2023）将完整的推理-动作-观察三元组历史追加到上下文中。这种方式保留了信息的完整性，但原始 Web 数据的噪声会迅速累积——经过几十轮交互后，上下文被大量无关细节填满，导致模型做出次优决策。想象一下：在浏览了 50 个网页后，上下文里塞满了每个页面的完整 HTML 片段，关键信息被淹没在噪声中。</p>
+    <p><b>困境二：固定式全量摘要导致信息不可逆丢失（Irreversible Loss）。</b>另一类方法在每个步骤对<strong>全部历史</strong>做机械式摘要来保持上下文整洁。但每次重新摘要都有风险：某个在第 1 步发现的关键细节可能在第 10 步的摘要中被丢弃，且永远无法恢复。假设每步有 1% 的概率丢失关键信息，100 步后该信息的存活概率仅为 0.99^100 ≈ 36.6%；500 步后更是暴跌至 0.99^500 ≈ 0.66%。</p>
+  </div>
+
+  <div class="highlight-box">
+    <b>人类认知的启示：</b>人类解决问题时既不会保留所有信息，也不会机械地逐步总结。相反，我们执行的是一种<strong>"回顾性整合（retrospective consolidation）"</strong>——在关键节点回看过去几步的动作，丢弃无关步骤、提炼中间发现、抽象出关键洞察（Newell & Simon, 1972）。这种<strong>主动的、有选择性的</strong>记忆管理正是长程推理的关键。
+  </div>
+
+  <div class="insight-box">
+    <h4>AgentFold 的核心洞察</h4>
+    <p>理想的智能体应该将内部上下文视为一个<strong>动态的认知工作空间（dynamic cognitive workspace）</strong>——需要主动塑造而非被动填充。AgentFold 在每一步执行一个"<b>折叠（Folding）</b>"操作，以多尺度管理历史轨迹：<b>粒度压缩（Granular Condensation）</b>保留重要的细粒度细节；<b>深层整合（Deep Consolidation）</b>将已完成的多步子任务整块抽象掉。这种灵活性使 AgentFold 在 100 轮交互后仅用约 <b>7k token</b>的上下文，并可扩展到 500 轮。</p>
+  </div>
+</div>
+
+<!-- ========== SEC 2 ========== -->
+<div class="section" id="sec-2">
+  <h2 class="section-title"><span class="num">2</span>框架概览：AgentFold 的折叠范式</h2>
+  <p class="section-desc">AgentFold 将上下文管理从"被动副产品"提升为"显式学习组件"。每步推理产生四元组响应：(Thinking, Folding Directive, Explanation, Action)，其中折叠指令立即更新多尺度状态摘要。</p>
+
+  <div class="fig-note">
+    📌 <b>图 1（对应论文 Figure 1）：AgentFold 性能概览 — 30B 模型匹配或超越大 20 倍的模型</b>
+    <img src="images/AgentFold-%20Long-Horizon%20Web%20Agents%20with%20Proactive%20Context%20Management/AgentFold-%20Long-Horizon%20Web%20Agents%20with%20Proactive%20Context%20Management_p1_fig1.png" alt="AgentFold Performance Overview" style="max-width:100%;border-radius:12px;margin:12px 0;background:#fff;padding:8px">
+  </div>
+
+  <div class="svg-container">
+    <svg viewBox="0 0 1000 380" xmlns="http://www.w3.org/2000/svg" font-family="'Noto Sans SC',sans-serif">
+      <defs><marker id="arr" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#93c5fd"/></marker></defs>
+      <!-- Input -->
+      <rect x="15" y="70" width="140" height="90" rx="10" fill="rgba(20,20,35,.85)" stroke="#3b82f6" stroke-width="1.5"/>
+      <text x="85" y="102" fill="#60a5fa" font-size="12" text-anchor="middle" font-weight="700">Input Context Ct</text>
+      <text x="85" y="122" fill="#8b949e" font-size="10" text-anchor="middle">Question + Tools</text>
+      <text x="85" y="142" fill="#8b949e" font-size="10" text-anchor="middle">Multi-Scale Summaries</text>
+      <text x="85" y="155" fill="#8b949e" font-size="10" text-anchor="middle">Latest Interaction</text>
+
+      <!-- Model -->
+      <rect x="200" y="50" width="180" height="130" rx="12" fill="rgba(59,130,246,.08)" stroke="#3b82f6" stroke-width="1.5"/>
+      <text x="290" y="78" fill="#60a5fa" font-size="13" text-anchor="middle" font-weight="700">AgentFold Model θ</text>
+      <text x="290" y="100" fill="#e6edf3" font-size="11" text-anchor="middle">Response Rt = (tht, ft, et, at)</text>
+      <rect x="218" y="112" width="65" height="26" rx="5" fill="rgba(147,197,253,.15)" stroke="#93c5fd"/>
+      <text x="250" y="130" fill="#93c5fd" font-size="9" text-anchor="middle">Thinking th</text>
+      <rect x="292" y="112" width="75" height="26" rx="5" fill="rgba(96,165,250,.15)" stroke="#60a5fa"/>
+      <text x="330"y="130" fill="#60a5fa" font-size="9" text-anchor="middle">Folding f</text>
+      <rect x="218" y="145" width="65" height="26" rx="5" fill="rgba(191,219,254,.15)" stroke="#bfdbfe"/>
+      <text x="250" y="163" fill="#bfdbfe" font-size="9" text-anchor="middle">Explain e</text>
+      <rect x="292" y="145" width="75" height="26" rx="5" fill="rgba(59,130,246,.15)" stroke="#3b82f6"/>
+      <text x="330" y="163" fill="#3b82f6" font-size="9" text-anchor="middle">Action a</text>
+
+      <!-- Folding operation -->
+      <rect x="420" y="50" width="220" height="130" rx="12" fill="rgba(34,197,94,.03)" stroke="rgba(34,197,94,.3)" stroke-dasharray="5,3"/>
+      <text x="530" y="76" fill="#4ade80" font-size="12" text-anchor="middle" font-weight="700">Folding Operation ft</text>
+      
+      <rect x="438" y="92" width="185" height="36" rx="6" fill="rgba(20,20,35,.85)" stroke="#22c55e"/>
+      <text x="530" y="115" fill="#86efac" font-size="11" text-anchor="middle">⓵ Granular Condensation</text>
+      <text x="530" y="125" fill="#8b949e" font-size="9" text-anchor="middle">{range:[t-1,t-1], summary:"σt"} 折叠单步</text>
+
+      <rect x="438" y="136" width="185" height="38" rx="6" fill="rgba(20,20,35,.85)" stroke="#f59e0b"/>
+      <text x="530" y="156" fill="#fbbf24" font-size="11" text-anchor="middle">⓶ Deep Consolidation</text>
+      <text x="530" y="168" fill="#8b949e" font-size="9" text-anchor="middle">{range:[k,t-1], summary:"σt"} 折叠多步子任务</text>
+
+      <!-- Updated context -->
+      <rect x="680" y="70" width="150" height="110" rx="10" fill="rgba(20,20,35,.85)" stroke="#60a5fa" stroke-width="1.5"/>
+      <text x="755" y="98" fill="#93c5fd" font-size="12" text-anchor="middle" font-weight="700">Updated Context</text>
+      <text x="755" y="118" fill="#8b949e" font-size="10" text-anchor="middle">[Folded Steps 1~3] ...</text>
+      <text x="755" y="133" fill="#8b949e" font-size="10" text-anchor="middle">[Folded Steps 4~7] ...</text>
+      <text x="755" y="148" fill="#8b949e" font-size="10" text-anchor="middle">[Step t] Full Detail</text>
+      <text x="755" y="170" fill="#60a5fa" font-size="9" text-anchor="middle">Multi-Scale + Latest</text>
+
+      <!-- Action execution -->
+      <rect x="860" y="105" width="120" height="45" rx="8" fill="rgba(245,158,11,.08)" stroke="#f59e0b"/>
+      <text x="920" y="132" fill="#fbbf24" font-size="11" text-anchor="middle" font-weight="600">Tool Call → Response</text>
+
+      <!-- Arrows -->
+      <line x1="155" y1="115" x2="198" y2="115" stroke="#93c5fd" stroke-width="1.5" marker-end="url(#arr)"/>
+      <line x1="380" y1="115" x2="418" y2="115" stroke="#60a5fa" stroke-width="1.5" marker-end="url(#arr)"/>
+      <line x1="640" y1="115" x2="678" y2="115" stroke="#4ade80" stroke-width="1.5" marker-end="url(#arr)"/>
+      <line x1="830" y1="128" x2="858" y2="128" stroke="#f59e0b" stroke-width="1.5" marker-end="url(#arr)"/>
+      <path d="M920,152 Q920,210 530,230 Q290,245 155,200" fill="none" stroke="#8b949e" stroke-width="1" stroke-dasharray="4,2" marker-end="url(#arr)"/>
+
+      <!-- Loop label -->
+      <rect x="360" y="215" width="280" height="32" rx="8" fill="rgba(59,130,246,.05)" stroke="rgba(59,130,246,.2)"/>
+      <text x="500" y="236" fill="#93c5fd" font-size="11" text-anchor="middle" font-style="italic">Perceive → Reason → Fold → Act 循环</text>
+    </svg>
+    <div class="fc">图 2：AgentFold 单步工作流。输入上下文 → 模型生成四元组响应 → 折叠操作更新多尺度状态摘要 → 执行动作获取新观察 → 进入下一步。</div>
+  </div>
+</div>
+
+<!-- ========== SEC 3 ========== -->
+<div class="section" id="sec-3">
+  <h2 class="section-title"><span class="num">3</span>问题定义：ReAct 饱和与固定摘要的困境</h2>
+
+  <div class="grid-2">
+    <div class="arch-card">
+      <h4>ReAct 的饱和问题</h4>
+      <p>ReAct（Reasoning + Acting）范式下，智能体每步输出一个思维（Thought）、动作（Action）、观察（Observation），并将三者全部追加到上下文中。设每步产生平均 L 个 token，T 步后上下文大小为 O(T·L)。对于 Web 浏览场景，L 通常包含大量原始网页文本，L 值可达数千 token，导致 T=30~50 时即达到上下文窗口上限。</p>
+    </div>
+    <div class="arch-card">
+      <h4>固定摘要的信息丢失</h4>
+      <p>另一种方案是在每步对整个历史做一次摘要。这虽然控制了上下文长度，但存在<strong>不可逆的信息损失</strong>风险。更严重的是，摘要策略是预先定义的、静态的，无法根据当前任务的特定需求灵活调整——有些步骤的细节可能对未来至关重要，却被过早压缩掉了。</p>
+    </div>
+  </div>
+
+  <div class="formula-box">
+    关键权衡公式：若每步摘要有 ε 概率丢失关键信息，则 T 步后存活概率 = (1-ε)<sup>T</sup>
+  </div>
+
+  <div class="highlight-box">
+    <b>AgentFold 突破口：</b>不采用"全部保留"或"统一压缩"，而是在每一步<strong>自主决定</strong>如何处理历史——可以只压缩最新一步（粒度压缩），也可以把已完成的整个子任务整块抽象掉（深层整合）。决策权交给模型本身，通过 SFT 学会这种能力。
+  </div>
+</div>
+
+<!-- ========== SEC 4 ========== -->
+<div class="section" id="sec-4">
+  <h2 class="section-title"><span class="num">4</span>上下文结构：多尺度状态摘要 + 最新交互</h2>
+
+  <div class="module-card">
+    <h3>Ct = Multi-Scale State Summaries (St) ⊕ Latest Interaction (It)</h3>
+    <p>AgentFold 的上下文由两个互补部分构成：</p>
+    <p><b>① 多尺度状态摘要 St（Multi-Scale State Summaries）：</b>一组按时间分块的压缩记录，每个块代表一段已被"折叠"的历史轨迹。例如 "[Folded Step 1~3]: 用户查询了 X 主题，初步发现 A 和 B 两个方向"；"[Folded Step 4~7]: 深入探索了 A 方向，找到候选 C"。这些块是<strong>噪声过滤后的、高度浓缩的</strong>，为长期规划提供全局视角。</p>
+    <p><b>② 最新交互 It（Latest Interaction）：</b>最近一步的<strong>完整、未压缩的</strong>记录（包含思考过程、工具调用、工具返回结果）。它提供了短期决策所需的最高分辨率细节，确保不会因过度压缩而遗漏即时相关信息。</p>
+  </div>
+
+  <div class="fig-note">
+    📌 <b>图 2（对应论文 Figure 2）：中间步骤的上下文结构示意</b>
+    左侧为输入上下文（问题 + 工具列表 + 多尺度摘要 + 最新交互）；右侧为 AgentFold 四部分响应（Think / Fold / Explain / Tool Call），以及两种折叠模式的对比。
+    <img src="images/AgentFold-%20Long-Horizon%20Web%20Agents%20with%20Proactive%20Context%20Management/AgentFold-%20Long-Horizon%20Web%20Agents%20with%20Proactive%20Context%20Management_p1_fig2.png" alt="AgentFold Context Structure" style="max-width:100%;border-radius:12px;margin:12px 0;background:#fff;padding:8px">
+  </div>
+
+  <div class="info-box">
+    <h4>为什么这种设计优于纯追加或纯摘要？</h4>
+    <p>Latest Interaction 解决了<strong>短期精确性</strong>——智能体在做下一步决策前能看到上一步的所有原始细节（包括工具返回的错误信息、未预期的数据等）。Multi-Scale Summaries 解决了<strong>长期连贯性</strong>——即使过了 100 步，智能体仍能在压缩的摘要中找到早期的重要发现，而不需要在海量的原始记录中翻找。两者的结合实现了"既见树木又见森林"的效果。</p>
+  </div>
+</div>
+
+<!-- ========== SEC 5 ========== -->
+<div class="section" id="sec-5">
+  <h2 class="section-title"><span class="num">5</span>响应格式：思考 / 折叠指令 / 解释 / 动作</h2>
+
+  <div class="step-flow">
+    <h4>Rt = AgentFold(Ct; θ) → (tht, ft, et, at)</h4>
+    <p>每步 AgentFold 输出一个连贯的四元组文本块，解析为四个组件：</p>
+    <p><b>(1) Thinking tht：</b>详细的 Chain-of-Thought 内部独白。智能体在此分析当前上下文 Ct，同时权衡两个决策维度——<em>如何折叠历史上下文</em>以及<em>下一步采取什么动作</em>。其他三个结构化分量均由此推导而出。</p>
+    <p><b>(2) Folding Directive ft：</b>智能体对多尺度状态摘要 St−2 的显式修改命令。格式为 JSON：<code>{ "range": [k, t-1], "summary": "σt" }</code>，其中 k 是要折叠的起始步骤 ID，σt 是替换用的摘要文本。支持两种模式：
+      <br/>• <b style="color:#22c55e">⓵ Granular Condensation（k=t-1）</b>：只折叠最新的单步交互，保留最高分辨率。适用于增量步骤——将一条冗长的原始记录转为紧凑摘要（如"[压缩步骤5] 发现新候选 XYZ 需进一步探索"）。
+      <br/>• <b style="color:#f59e0b">⓶ Deep Consolidation（k&lt;t-1）</b>：折叠多个连续步骤为一个粗粒度摘要。适用于已完成的子任务——当某段探索已得出明确结论（如"方向 A 无效"），可将整段轨迹抽象为一句总结，彻底清理无关细节。</p>
+    <p><b>(3) Explanation et：</b>对下一步动作动机的自然语言解释。这不仅增强了可解释性，更重要的是——<b>决定"哪些内容值得保留"的最佳时机恰恰是规划新动作的时刻</b>。这个紧密耦合确保了 AgentFold 的行为既有目的又高效。</p>
+    <p><b>(4) Action at：</b>推进任务的下一步动作（如调用搜索工具、访问 URL 等），执行后将工具返回结果追加为新的 Latest Interaction。</p>
+  </div>
+
+  <div class="highlight-box">
+    <b>关键设计哲学：</b>上下文管理不是推理的"副作用"，而是与动作规划同等重要的<strong>核心学习组件</b>。通过将折叠指令纳入响应的四元组，AgentFold 在训练中学会了何时保留细节、何时抽象整段历史——这是一种内化的、自适应的能力，而非依赖外部规则或固定模板。
+  </div>
+</div>
+
+<!-- ========== SEC 6 ========== -->
+<div class="section" id="sec-6">
+  <h2 class="section-title"><span class="num">6</span>训练方法：Fold-Generator 数据流水线 + SFT</h2>
+
+  <div class="module-card">
+    <h3>6.1 为什么需要专门的训练？</h3>
+    <p>AgentFold 要求模型输出<strong>准确、结构化的多元件响应</strong>——即使是 GPT-4 级别的模型也无法通过纯提示工程可靠地做到这一点。因此作者构建了一个专门的数据收集管道 <b>Fold-Generator</b>，基于强大的开源 LLM 生成训练轨迹，再通过 SFT 将这种复杂的多步推理蒸馏进目标模型。</p>
+  </div>
+
+  <div class="step-flow">
+    <h4>6.2 Fold-Generator 数据收集流程</h4>
+    <p><b>① 问题集：</b>使用 WebSailor (Li et al., 2025a) 相同的问题集以确保公平比较。</p>
+    <p><b>② 生成 + 过滤：</b>Fold-Generator 对每个问题生成完整轨迹，然后通过<strong>拒绝采样（rejection sampling）</strong>严格筛选：
+      <br/>• 不符合要求格式的步骤 → 丢弃
+      <br/>• 包含过多环境错误的轨迹 → 丢弃
+      <br/>确保每个数据点都是清晰正确的推理范例</p>
+    <p><b>③ 输出形式：</b>高质量的交互对集合 { (Ct, R*t) }N，其中 Ct 是结构化上下文，R*t 是经验证的金标准响应，N 是所有问题的总交互步数。</p>
+    <p><b>④ SFT 训练：</b>使用这些数据进行常规监督微调，目标是将复杂的、多步验证过的推理蒸馏为单一高效的前向传播。</p>
+  </div>
+
+  <div class="info-box">
+    <h4>SFT 方法的三大优势</h4>
+    <p><b>① 能力内化：</b>将"折叠"从脆弱的依赖提示词的外部指令转变为鲁棒的、内在化的模型技能。</p>
+    <p><b>② 效率提升：</b>SFT 将计算密集的"生成-过滤"策略蒸馏到最终模型的权重中，使 AgentFold 推理时比用于数据收集的通用 LLM 更高效。</p>
+    <p><b>③ 可控透明：</b>整个流水线基于开源模型构建，保持了对数据和训练过程的完全控制，便于详细检查与迭代改进。</p>
+  </div>
+
+  <div class="kv-row"><div class="kv-key">基础模型</div><div class="kv-val">Qwen3-30B-A3B-Instruct-2507（总计 30B 参数，激活 3B MoE）</div></div>
+  <div class="kv-row"><div class="kv-key">最大工具调用次数</div><div class="kv-val">100（超过强制终止）</div></div>
+  <div class="kv-row"><div class="kv-key">训练方式</div><div class="kv-val">Supervised Fine-Tuning（SFT），无需持续预训练或 RL</div></div>
+</div>
+
+<!-- ========== SEC 7 ========== -->
+<div class="section" id="sec-7">
+  <h2 class="section-title"><span class="num">7</span>实验评估：BrowseComp / WideSearch / GAIA</h2>
+
+  <div class="data-table">
+    <table>
+      <tr><th>Agent</th><th>BrowseComp ↑</th><th>BrowseComp-ZH ↑</th><th>WideSearch ↑</th><th>GAIA ↑</th><th>备注</th></tr>
+      <tr><td colspan="6" style="background:rgba(59,130,246,.05);color:#93c5fd;text-align:center;"><b>专有闭源 Agent</b></td></tr>
+      <tr><td>Claude-4-Sonnet</td><td>14.7</td><td>22.5</td><td>62.0</td><td>68.3</td><td>Anthropic</td></tr>
+      <tr><td>Claude-4-Opus</td><td>18.8</td><td>37.4</td><td>-</td><td>-</td><td>Anthropic</td></tr>
+      <tr><td>OpenAI-o4-mini</td><td>28.3</td><td>44.3</td><td>-</td><td>-</td><td>OpenAI</td></tr>
+      <tr><td>OpenAI-o3</td><td>49.7</td><td>58.1</td><td>60.0</td><td>70.5</td><td>OpenAI</td></tr>
+      <tr><td>OpenAI Deep Research</td><td>51.5</td><td>42.9</td><td>-</td><td>67.4</td><td>OpenAI</td></tr>
+      <tr><td colspan="6" style="background:rgba(34,197,94,.05);color:#4ade80;text-align:center;"><b>开源 Agent</b></td></tr>
+      <tr><td>WebThinker-32B</td><td>2.8</td><td>7.3</td><td>-</td><td>48.5</td><td></td></tr>
+      <tr><td>WebDancer-32B</td><td>3.8</td><td>18.0</td><td>-</td><td>51.5</td><td></td></tr>
+      <tr><td>WebSailor-72B</td><td>12.0</td><td>30.1</td><td>-</td><td>55.4</td><td>2× 参数量</td></tr>
+      <tr><td>MiroThinker-32B-DPO-v0.2</td><td>13.0</td><td>17.0</td><td>-</td><td>64.1</td><td></td></tr>
+      <tr><td>Kimi-K2-Instruct-1T</td><td>14.1</td><td>28.8</td><td>59.9</td><td>57.3</td><td>1T 参数</td></tr>
+      <tr><td>GLM-4.5-355B-A32B</td><td>26.4</td><td>37.5</td><td>-</td><td>66.0</td><td>~12× 参数量</td></tr>
+      <tr><td>DeepSeek-V3.1-671B-A37B</td><td>30.0</td><td>49.2</td><td>-</td><td>63.1</td><td>~22× 参数量</td></tr>
+      <tr style="background:rgba(59,130,246,.08);"><td><b>AgentFold-30B-A3B (Ours)</b></td><td><b style="color:#60a5fa">36.2</b></td><td><b style="color:#60a5fa">47.3</b></td><td><b style="color:#60a5fa">62.1</b></td><td>67.0</td><td><b>30B 总参数</b></td></tr>
+    </table>
+    <div class="fc">表 1（对应论文 Table 1）：主要实验结果。AgentFold-30B-A3B 在开源领域树立新 SOTA，并在 WideSearch 上超越所有闭源系统。</div>
+  </div>
+
+  <div class="comp-card">
+    <h4>核心发现</h4>
+    <p><b>① 以小博大：</b>30B 参数的 AgentFold 在 BrowseComp 上达到 36.2%，超越 671B 参数的 DeepSeek-V3.1（30.0%）——参数量仅为对手的 1/22！在 BrowseComp-ZH 上同样领先（47.3% vs 49.2% 的 DeepSeek，注意 DeepSeek 在此基准上更高）。</p>
+    <p><b>② 逼近闭源：</b>AgentFold 在 BrowseComp 上接近 OpenAI o4-mini（28.3% vs 36.2%，AgentFold 反超），在 WideSearch 上超越所有闭源系统包括 o3（62.1% vs 60.0%）。</p>
+    <p><b>③ 中文能力突出：</b>BrowseComp-ZH 上 47.3% 的成绩表明折叠范式在中英文长视界任务上都有效。</p>
+  </div>
+</div>
+
+<!-- ========== SEC 8 ========== -->
+<div class="section" id="sec-8">
+  <h2 class="section-title"><span class="num">8</span>敏感性分析：上下文动态与扩展性</h2>
+
+  <div class="fig-note">
+    📌 <b>图 3（上下文长度动态，对应论文 Figure 3a）</b>：200 条 BrowseComp 轨迹的分析显示，AgentFold 的上下文 token 数在交互过程中保持稳定增长但不爆炸——大部分情况下远低于上下文窗口限制。
+    <img src="images/AgentFold-%20Long-Horizon%20Web%20Agents%20with%20Proactive%20Context%20Management/AgentFold-%20Long-Horizon%20Web%20Agents%20with%20Proactive%20Context%20Management_p1_fig10.png" alt="Context Dynamics" style="max-width:48%;border-radius:12px;margin:12px 4px;background:#fff;padding:6px">
+    📌 <b>图 4（扩展性分析，对应论文 Figure 4）</b>：交互步数上限从 16 到 256 的性能变化。GLM-4.5-355B 在 64 步后性能饱和并下降；AgentFold-30B 持续上升至 256 步。
+    <img src="images/AgentFold-%20Long-Horizon%20Web%20Agents%20with%20Proactive%20Context%20Management/AgentFold-%20Long-Horizon%20Web%20Agents%20with%20Proactive%20Context%20Management_p1_fig11.png" alt="Scaling Turns" style="max-width:48%;border-radius:12px;margin:12px 4px;background:#fff;padding:6px">
+  </div>
+
+  <div class="insight-box">
+    <h4>上下文的非单调增长特性</h4>
+    <p>在扩展到 500 步上限的实验中，AgentFold 的上下文大多保持在 20k token 以内，且<strong>并非单调增长</strong>。这是因为当一段长探索被证明无效时，智能体会对该失败子轨迹进行<strong>深层整合</strong>——将整段无关历史抽象掉并转向新策略，往往使上下文重置为更紧凑的状态。这种<strong>自纠正式的上下文管理</strong>是 AgentFold 能够持续数百步交互的根本原因。</p>
+  </div>
+</div>
+
+<!-- ========== SEC 9 ========== -->
+<div class="section" id="sec-9">
+  <h2 class="section-title"><span class="num">9</span>代码使用与实战</h2>
+  <div class="code-block">
+<pre><span class="cs"># ==================== AgentFold 快速开始 ====================
+# GitHub: https://github.com/Alibaba-NLP/DeepResearch
+# 项目页: https://tongyi-agent.github.io/blog
+# 论文: arXiv:2510.24699 (2025-10-28)
+
+<span class="cs"># 1️⃣ 克隆仓库</span>
+git clone https://github.com/Alibaba-NLP/DeepResearch.git
+cd DeepResearch
+
+<span class="cs"># 2️⃣ 安装依赖</span>
+pip install -r requirements.txt
+
+<span class="cs"># 3️⃣ 下载模型权重（Qwen3-30B-A3B 或其他支持的 MoE 模型）</span>
+<span class="cg"># 从 ModelScope / HuggingFace 下载 Qwen3-30B-A3B-Instruct-2507</span>
+python scripts/download_model.py --model qwen3-30b-a3b
+
+<span class="cs"># 4️⃣ 运行评估</span>
+<span class="cv"># BrowseComp 基准测试（默认 100 步上限）</span>
+python evaluate.py --benchmark browsecomp --model_path ./checkpoints/agentfold-30b
+
+<span class="cs"># 5️⃣ 自定义任务（示例：长视界研究）</span>
+python run_agent.py \
+  --query "比较 2024-2025 年主流数据库优化器的性能差异" \
+  --max_turns 256 \
+  --output_dir ./results/
+<span class="cg"># AgentFold 会自动进行数百步的搜索、阅读、整合，最终输出研究报告</span></pre>
+  </div>
+  <div class="kv-row"><div class="kv-key">GitHub</div><div class="kv-val"><a href="https://github.com/Alibaba-NLP/DeepResearch" style="color:#60a5fa;">Alibaba-NLP/DeepResearch</a></div></div>
+  <div class="kv-row"><div class="kv-key">项目主页</div><div class="kv-val"><a href="https://tongyi-agent.github.io/blog" style="color:#60a5fa;">tongyi-agent.github.io/blog</a></div></div>
+  <div class="kv-row"><div class="kv-key">arXiv</div><div class="kv-val">2510.24699 [cs.CL]</div></div>
+  <div class="kv-row"><div class="kv-key">基础模型</div><div class="kv-val">Qwen3-30B-A3B-Instruct (MoE, 3B active)</div></div>
+  <div class="kv-row"><div class="kv-key">训练方式</div><div class="kv-val">SFT via Fold-Generator data pipeline (无 RL/continual pre-training)</div></div>
+</div>
+
+<!-- ========== SEC 10 ========== -->
+<div class="section" id="sec-10">
+  <h2 class="section-title"><span class="num">10</span>总结与未来展望</h2>
+
+  <div class="qa-card">
+    <div class="qa-q">Q: AgentFold 与其他上下文压缩方法（如 MemGPT、InfLLM）有何不同？</div>
+    <div class="qa-q">A: MemGPT/InfLLM 采用的是<strong>被动触发</strong>式的压缩策略——当上下文快满时才做摘要。而 AgentFold 的折叠是<strong>主动的、每步执行的</strong>，且折叠决策与动作规划紧密耦合。更重要的是，AgentFold 支持<strong>多尺度折叠</strong>（可压缩单步也可压缩多步子任务），而大多数替代方法只有单一压缩模式。此外，折叠能力是通过 SFT <b>内化</b>到模型中的，而非依赖外部提示模板。</div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-q">Q: 30B 模型真的能超越 671B 吗？这合理吗？</div>
+    <div class="qa-a">A: 这正是本文的核心论点——<b>架构创新比单纯堆砌参数更重要</b>。671B 的 DeepSeek 用 ReAct 范式运行，在 30-50 步后上下文就饱和了，后续步骤质量急剧下降。而 AgentFold 通过折叠保持了上下文的精炼和聚焦，使得 30B 模型能在 100+ 步后仍保持高效推理。类比：一个有条理的人（AgentFold）比一个记忆力强但不会整理笔记的人（大模型 ReAct）更能完成长线任务。</div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-q">Q: AgentFold 可以应用到 Web 搜索以外的领域吗？</div>
+    <div class="qa-a">A: 可以。论文的核心贡献是通用的<strong>主动上下文管理范式</strong>，理论上可用于任何需要长序列推理的任务：代码生成（多文件重构）、数学证明（长链推导）、多轮对话系统、甚至本项目的其他论文（如 D-Bot 的诊断流水线也面临类似的长上下文问题）。作者已在 DeepResearch 产品中将其应用于实际的研究助手场景。</div>
+  </div>
+
+  <div class="limit-box">
+    <h4>当前局限</h4>
+    <p>• Fold-Generator 数据质量依赖底层 LLM 能力，可能引入偏差；</p>
+    <p>• 仅在信息检索类基准上验证，尚未在代码生成/数学等领域广泛测试；</p>
+    <p>• 折叠决策的可解释性有待增强——目前难以直观判断每步为何选择某种折叠模式；</p>
+    <p>• 仍需外部工具调用（搜索/浏览），工具本身的错误会影响整体表现。</p>
+  </div>
+</div>
+
+<!-- ========== SEC 11: TRANSLATION ========== -->
+<div class="section translation" id="sec-11">
+  <h2 class="section-title"><span class="num">11</span>全文中文翻译（对应嵌入图片）</h2>
+  <p class="section-desc">以下为论文 <em>AgentFold: Long-Horizon Web Agents with Proactive Context Management</em>（arXiv:2510.24699, Alibaba Tongyi Lab, 2025）正文的中文翻译。</p>
+
+  <h3>标题与作者</h3>
+  <p>《AgentFold：具有主动上下文管理的长视界 Web 智能体》，作者：叶睿、张忠望、李宽、殷慧峰（*共同第一作者，通讯作者）、陶正伟、赵一达、苏良才、张立文、乔子宇、王新宇、谢鹏军、黄飞、陈思恒、周京仁、蒋勇（*通讯作者），阿里巴巴通义实验室。</p>
+
+  <h3>摘要</h3>
+  <p>基于 LLM 的 Web 智能体在信息检索方面展现出巨大潜力，然而它们在长视界任务上的有效性受到上下文管理中一个根本性权衡的阻碍。主流的基于 ReAct 的智能体因其累积了嘈杂的原始历史而遭受上下文饱和之苦，而那些在每步固定地概括全部历史的方法则面临着关键细节不可逆丢失的风险。针对这些问题，我们提出 <b>AgentFold</b>——一种以主动上下文管理为中心的新型智能体范式，灵感来源于人类的<strong>回顾性整合（retrospective consolidation）</strong>认知过程。AgentFold 将其上下文视为一个需主动雕琢的<strong>动态认知工作空间</strong>，而非一个待填充的被动日志。在每一步，它学习执行一个"折叠（folding）"操作，以多尺度管理其历史轨迹：它可以执行<b>粒度压缩</b>以保存至关重要的细粒度细节，或执行<b>深层整合</b>以将整个已完成的多步子任务抽象掉。在主流基准上的结果是惊人的：仅需简单的监督微调（无需持续预训练或强化学习），我们的 AgentFold-30B-A3B 智能体在 BrowseComp 上达到 <b>36.2%</b>，在 BrowseComp-ZH 上达到 <b>47.3%</b>。值得注意的是，这一表现不仅超越或匹配了规模大得多的开源模型（如 DeepSeek-V3.1-671B-A37B），还超越了领先的专有智能体（如 OpenAI 的 o4-mini）。AgentFold 在复杂任务求解期间主动折叠其工作上下文。</p>
+
+  <div class="fig-note">
+    📌 <b>图 1（对应论文 Figure 1）：AgentFold-30B-A3B 智能体在挑战性长视界基准上的卓越表现</b>
+    <img src="images/AgentFold-%20Long-Horizon%20Web%20Agents%20with%20Proactive%20Context%20Management/AgentFold-%20Long-Horizon%20Web%20Agents%20with%20Proactive%20Context%20Management_p1_fig1.png" alt="Figure 1" style="max-width:100%;border-radius:12px;margin:12px 0;background:#fff;padding:8px">
+  </div>
+
+  <h3>1 引言</h3>
+  <p>有效寻求和综合 Web 信息的能力是现代进步的基础性前提。然而这一关键过程从根本上受限于人类固有的认知容量与耐力极限。<b>基于 LLM 的 Web 智能体</b>标志着范式的转变，提供了一种能够超越这些边界、不知疲倦地在数字景观中导航并显著增强复杂信息搜寻任务效率与效果的系统。然而，当代 Web 智能体的一个关键挑战在于在上下文全面性与简洁性之间取得有效平衡——这一权衡显著影响其性能，尤其在长视界任务上。<b>(1)</b> 主流的基于 ReAct 的智能体将推理-动作-观察三元组的全部历史累积在上下文中，保留了信息完整性但因原始 Web 数据的大量噪声而严重受苦于次优动作。<b>(2)</b> 反之，近期那些在每步机械地概括全部历史的方法维持了整洁的上下文，但在任何单次摘要阶段都面临关键细节的过早且不可逆丢失的风险。这些根本性局限性揭示了当前方法论中的一个关键缺口，表明有必要开发具有高级上下文管理的下一代智能体范式。</p>
+  <p>在本文中，我们认为理想智能体应像人类的<strong>心理草稿纸</strong>那样管理其内部上下文：一个需主动管理的工作空间，而非被动填充的空间。人类问题解决既不涉及对所有信息的穷尽式保留，也不涉及刚性的逐步总结。相反，它是一种在关键时刻执行的<strong>有纪律的回顾性整合</strong>过程。这涉及一种动态的"回看"机制：在若干个动作之后，丢弃无关步骤、提炼中间发现、抽象出关键洞察。这种自我纠错式的整合行为是实现有效且持续的推理的关键能力——我们认为这对智能体有效的长视界推理与探索至关重要。</p>
+  <p>遵循这一精神，我们介绍 <b>AgentFold</b>——一种被设计为在任务执行期间主动且智能地"折叠"上下文片段的智能体架构。它不是操作单一的日志，而是操作一个<strong>动态的、迭代展开的轨迹</strong>。在典型步骤中，其推理产生一个包含以下内容的多部分响应：<b>管理历史状态摘要的折叠指令</b>、<b>其思维过程的解释</b>以及<b>下一个动作</b>。折叠指令被立即应用以更新未来的多尺度状态摘要，而解释、执行的动作及其产生的观察形成新的最新交互供下一周期使用。此过程重复直到智能体判定其已收集足够信息以提供准确的最终答案。初始步骤是一个特例，由于缺少先前的历史而省略折叠指令。</p>
+  <p>此操作循环建立了一个强大的<b>感知→推理→折叠→行动</b>循环，其中上下文整理是一个显式的、学习到的步骤，而非被动的副产品。通过将明确定义的认知工作空间与智能体操纵它的自主性相结合，AgentFold 直接解决了保留细粒度细节与防止上下文膨胀之间的关键权衡，使更聚焦且高效的推理过程成为可能，从而应对复杂的长视界挑战。</p>
+
+  <h3>2 方法论概述（略，详见 sec-2 至 sec-6）</h3>
+  <p>（注：方法论部分的完整翻译已融入上述各节。核心内容包括：双分区上下文结构、四元组响应格式、粒度压缩与深层整合两种折叠模式、Fold-Generator+SFT 训练流程。）</p>
+
+  <h3>4 实验</h3>
+  <p><b>实现。</b>我们基于开源 LLM Qwen3-30B-A3B-Instruct-2507（总参数 30B，激活 3B）训练 AgentFold。我们将最大工具调用数设为 100，超出将被强制终止。</p>
+  <p><b>基准。</b>我们考虑 3 个信息检索基准：BrowseComp（英文）、BrowseComp-ZH（中文）和 WideSearch-en。</p>
+  <p><b>主要结果。</b>如表 1 所示，AgentFold-30B-A3B 为开源智能体建立了新的最先进水平，并与领先的专有系统高度竞争。它在开源领域确立了统治地位，击败了规模大达 20 倍的模型——在 BrowseComp 上得分 36.2%（对抗 DeepSeek-V3.1 的 671B 参数量的 30.0%）。此外，AgentFold 在最高水平证明了自身实力：在 WideSearch 上获得最佳总分 62.1%，超越了所有专有智能体包括 OpenAI-o3 和 Claude-4-Sonnet。这些结果凸显了我们架构创新的深远影响，展示了有效的上下文管理如何弥合与大得多的模型之间的性能差距。</p>
+  <p><b>上下文动态。</b>我们分析了 BrowseComp 上 200 条轨迹。绘制了每轮存活的轨迹数量 |Tt|（灰柱）与这些相同轨迹的平均上下文 token 数 At（蓝曲线）。结果表明 AgentFold 的上下文在交互过程中保持稳定增长而不爆炸。</p>
+  <p><b>交互步数的扩展性。</b>基于其在紧凑上下文方面的发现，我们在 BrowseComp 上测试了将交互步数扩展到 256 的情况（与 355B GLM-4.5 基线对比）。结果展示两大优势：(1) 我们的较小模型在所有可比的步数限制下持续优于 355B 基线；(2) GLM-4.5 智能体的性能在 64 步后饱和并下降（因其追加式上下文已满），而 AgentFold 的准确率稳步提升直至 256 步，展示了良好的扩展属性。</p>
+  <p>为进一步探测这些极限，我们进行了扩展实验，将最大步数增至 500。结果显示上下文大多保持在 20k token 以下，且<strong>非单调增长</strong>。这一行为是 AgentFold 识别并从死胡同中恢复能力的直接结果。当一段漫长的探究被证明无效时，智能体能对整个失败的子轨迹进行深层整合——将一段长的、无关的历史抽象掉同时转向新策略，往往将上下文重置为更紧凑的状态。这展示了一种复杂的、自纠正形式的上下文管理。</p>
+  <p>此实验确认了 AgentFold 的主动上下文管理是解锁长视界任务求解的关键。它展示了智能体参与真正延展交互——可能持续数百步——以执行所需的广泛且深入的 Web 探索的巨大潜力，而这种探索目前远非传统智能体架构所能企及。</p>
+
+  <div class="fig-note">
+    📌 <b>图 4（扩展性实验，对应论文 Figure 4）</b>：交互步数上限扩展实验。GLM-4.5-355B 在 64 步后性能饱和下降；AgentFold-30B 持续提升到 256 步以上。
+    <img src="images/AgentFold-%20Long-Horizon%20Web%20Agents%20with%20Proactive%20Context%20Management/AgentFold-%20Long-Horizon%20Web%20Agents%20with%20Proactive%20Context%20Management_p1_fig11.png" alt="Scaling Turns" style="max-width:80%;border-radius:12px;margin:12px 0;background:#fff;padding:8px">
+  </div>
+
+  <h3>结论</h3>
+  <p>我们介绍了 AgentFold——一种新型智能体架构，其核心是通过主动的上下文管理解决长视界任务中的上下文权衡难题。通过将上下文视为需主动管理的动态认知工作空间，AgentFold 实现了在保持关键细节的同时防止上下文膨胀。其简洁的上下文使其能够在数百步的交互中保持高效推理。在主流基准上的结果令人印象深刻：仅需简单 SFT（无持续预训练或 RL），我们的 30B 模型超越了规模大 20 倍以上的模型，并与顶级专有系统相匹敌。这标志着从静态预定义上下文策略的智能体到<strong>自我感知的知识管理者</b>的概念飞跃。通过将上下文整理作为可学习的核心动作整合进来，AgentFold 学到了关于<strong>记住什么、抽象什么、丢弃什么</strong>的复杂任务特定策略。这种主动塑造自身信息工作空间的能力是其增强的鲁棒性与效率的关键，使其能够在复杂的长视界挑战中动态平衡对细粒度细节的需求与连贯的长期计划。</p>
+</div>
+
+<!-- ====== Footer ====== -->
+<div class="footer">
+  <p>AgentFold: Long-Horizon Web Agents with Proactive Context Management - 深度解读</p>
+  <p>论文来源: <a href="https://arxiv.org/abs/2510.24699" style="color:#60a5fa;">arXiv:2510.24699</a> | 代码: <a href="https://github.com/Alibaba-NLP/DeepResearch" style="color:#60a5fa;">Alibaba-NLP/DeepResearch</a></p>
+</div>
+
+</div>
+<script src="theme.js"></script>
+</body>
+</html>

@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>深度解读 — SEFRQO: 自进化 RAG 查询优化器</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{
+  font-family:'Noto Sans SC',system-ui,-apple-system,sans-serif;
+  background:#0d1117;color:#c9d1d9;
+  line-height:1.8;font-size:16px;
+  min-height:100vh;
+}
+.container{
+  max-width:1400px;margin:0 auto;padding:0 24px;
+  background:#0d1117;position:relative;
+}
+.back-btn{
+  position:fixed;top:16px;left:16px;z-index:9999;
+  background:rgba(20,20,35,.75);color:#c9d1d9;
+  border:1px solid rgba(255,255,255,.15);border-radius:10px;
+  padding:8px 16px;font-size:14px;cursor:pointer;
+  backdrop-filter:blur(6px);transition:all .3s;
+  text-decoration:none;display:flex;align-items:center;gap:6px;
+}
+.back-btn:hover{background:rgba(30,30,55,.9);border-color:rgba(255,255,255,.3);}
+.hero{padding:80px 0 40px;text-align:center;}
+.hero-title{
+  font-size:2.2rem;font-weight:700;
+  background:linear-gradient(135deg,#14b8a6,#0d9488,#5eead4);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  background-clip:text;margin-bottom:12px;line-height:1.3;
+}
+.hero-sub{font-size:1.1rem;color:#8b949e;margin-bottom:8px;}
+.venue{font-size:.95rem;color:#8b949e;margin-top:8px;}
+.venue a{color:#14b8a6;text-decoration:none;}
+.venue a:hover{text-decoration:underline;}
+.tag-row{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:16px;}
+.tag{
+  display:inline-block;padding:4px 14px;border-radius:20px;font-size:.85rem;
+  border:1px solid rgba(20,184,166,.3);color:#14b8a6;
+  background:rgba(20,184,166,.06);
+}
+.divider{border:none;border-top:1px solid rgba(255,255,255,.08);margin:48px 0;}
+.section{margin:40px 0;}
+.section-title{
+  font-size:1.75rem;font-weight:700;margin-bottom:20px;
+  color:#e6edf3;display:flex;align-items:center;gap:10px;
+}
+.section-title .num{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:36px;height:36px;border-radius:50%;
+  background:linear-gradient(135deg,#14b8a6,#0d9488);
+  color:#0d1117;font-size:1rem;font-weight:700;flex-shrink:0;
+}
+.section-desc{font-size:16px;line-height:1.9;color:#c9d1d9;margin-bottom:16px;}
+.toc{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:16px;padding:28px 36px;margin:30px 0;
+}
+.toc h3{font-size:1.2rem;color:#e6edf3;margin-bottom:14px;}
+.toc ol{list-style:none;counter-reset:toc;padding:0;}
+.toc li{counter-increment:toc;margin:8px 0;}
+.toc li::before{content:counter(toc) ".";color:#14b8a6;font-weight:600;margin-right:8px;}
+.toc a{color:#8b949e;text-decoration:none;transition:color .2s;}
+.toc a:hover{color:#14b8a6;}
+.module-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:24px;margin:18px 0;transition:all .3s;
+}
+.module-card:hover{border-color:rgba(20,184,166,.3);transform:translateY(-2px);}
+.module-card h3{font-size:1.15rem;font-weight:600;margin-bottom:10px;color:#14b8a6;}
+.module-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.arch-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:22px;margin:14px 0;transition:all .3s;
+}
+.arch-card:hover{border-color:rgba(20,184,166,.3);}
+.arch-card h4{font-size:1.05rem;font-weight:600;color:#2dd4bf;margin-bottom:8px;}
+.arch-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.step-flow{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:22px;margin:14px 0;
+}
+.step-flow h4{font-size:1.05rem;font-weight:600;color:#14b8a6;margin-bottom:8px;}
+.step-flow p{font-size:15px;line-height:1.8;color:#8b949e;}
+.data-table{
+  width:100%;border-collapse:collapse;margin:18px 0;
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;overflow:hidden;font-size:14px;
+}
+.data-table th{
+  background:rgba(20,184,166,.1);color:#14b8a6;
+  padding:12px 16px;text-align:left;font-weight:600;
+}
+.data-table td{
+  padding:10px 16px;border-top:1px solid rgba(255,255,255,.06);
+  color:#c9d1d9;
+}
+.data-table tr:hover td{background:rgba(20,184,166,.04);}
+.formula-box{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;padding:20px 24px;margin:16px 0;
+  font-size:18px;text-align:center;color:#e6edf3;
+  font-family:'JetBrains Mono',monospace;
+}
+.code-block{
+  background:rgba(20,20,35,.8);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;padding:18px 22px;margin:16px 0;
+  overflow-x:auto;
+}
+.code-block pre{
+  font-family:'JetBrains Mono',monospace;font-size:14px;
+  line-height:1.7;color:#c9d1d9;white-space:pre;
+}
+.ck{color:#14b8a6;}.cs{color:#2dd4bf;}.cf{color:#d2a8ff;}.cg{color:#8b949e;}.cv{color:#79c0ff;}
+.qa-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:24px;margin:16px 0;
+}
+.qa-q{font-size:1.05rem;font-weight:600;color:#14b8a6;margin-bottom:12px;}
+.qa-a{font-size:15px;line-height:1.9;color:#8b949e;}
+.highlight-box{
+  background:rgba(20,184,166,.06);border:1px solid rgba(20,184,166,.2);
+  border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;
+}
+.warn-box{
+  background:rgba(45,212,191,.08);border:1px solid rgba(45,212,191,.25);
+  border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;
+}
+.info-box{
+  background:rgba(20,184,166,.06);border:1px solid rgba(20,184,166,.2);
+  border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;
+}
+.prompt-box{
+  background:rgba(20,20,35,.8);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;padding:18px 22px;margin:16px 0;
+  font-family:'JetBrains Mono',monospace;font-size:13px;
+  line-height:1.7;color:#c9d1d9;white-space:pre-wrap;
+}
+.prompt-label{
+  display:inline-block;padding:2px 10px;border-radius:6px;
+  font-size:.85rem;font-weight:600;margin-bottom:8px;
+  background:rgba(20,184,166,.15);color:#14b8a6;
+}
+.fc{font-size:14px;color:#8b949e;text-align:center;margin:10px 0;line-height:1.6;}
+.comp-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:22px;margin:14px 0;transition:all .3s;
+}
+.comp-card:hover{border-color:rgba(20,184,166,.3);}
+.comp-card h4{font-size:1.05rem;font-weight:600;color:#2dd4bf;margin-bottom:8px;}
+.comp-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.insight-box{
+  background:rgba(20,184,166,.06);border:1px solid rgba(20,184,166,.2);
+  border-radius:12px;padding:18px 22px;margin:16px 0;
+}
+.insight-box h4{color:#14b8a6;font-size:1.05rem;margin-bottom:8px;}
+.insight-box p{font-size:15px;line-height:1.8;color:#c9d1d9;}
+.limit-box{
+  background:rgba(45,212,191,.08);border:1px solid rgba(45,212,191,.25);
+  border-radius:12px;padding:18px 22px;margin:16px 0;
+}
+.limit-box h4{color:#2dd4bf;font-size:1.05rem;margin-bottom:8px;}
+.limit-box p{font-size:15px;line-height:1.8;color:#c9d1d9;}
+.kv-row{
+  display:flex;border-bottom:1px solid rgba(255,255,255,.06);padding:8px 0;
+}
+.kv-row:last-child{border-bottom:none;}
+.kv-key{width:180px;flex-shrink:0;color:#14b8a6;font-weight:500;font-size:14px;}
+.kv-val{color:#c9d1d9;font-size:14px;line-height:1.7;}
+.footer{text-align:center;color:#555;font-size:14px;padding:48px 0 32px;}
+.svg-container{
+  background:rgba(20,20,35,.4);border:1px solid rgba(255,255,255,.06);
+  border-radius:14px;padding:20px;margin:24px 0;overflow-x:auto;
+  text-align:center;
+}
+.svg-container svg{max-width:100%;height:auto;}
+.phase-badge{
+  display:inline-block;padding:3px 12px;border-radius:8px;
+  font-size:.85rem;font-weight:600;margin-right:8px;
+}
+.phase-1{background:rgba(20,184,166,.15);color:#2dd4bf;}
+.phase-2{background:rgba(45,212,191,.15);color:#5eead4;}
+.phase-3{background:rgba(120,180,80,.15);color:#90d27d;}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
+.grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;}
+@media(max-width:900px){
+  .grid-2,.grid-3{grid-template-columns:1fr;}
+  .hero-title{font-size:1.6rem;}
+  .kv-row{flex-direction:column;}
+  .kv-key{width:auto;}
+}
+@keyframes flowPulse{
+  0%,100%{opacity:.6;}
+  50%{opacity:1;}
+}
+.flow-arrow{animation:flowPulse 2s ease-in-out infinite;}
+.translation h3{font-size:1.3rem;color:#2dd4bf;margin:26px 0 12px;font-weight:700;}
+.translation h4{font-size:1.1rem;color:#14b8a6;margin:18px 0 8px;font-weight:600;}
+.translation p{font-size:15.5px;line-height:1.95;color:#c9d1d9;margin-bottom:12px;}
+.fig-note{
+  background:rgba(20,184,166,.07);border-left:3px solid #14b8a6;
+  border-radius:8px;padding:12px 18px;margin:14px 0;
+  font-size:14.5px;color:#a7d3cc;line-height:1.8;
+}
+.fig-note b{color:#2dd4bf;}
+</style>
+</head>
+<body>
+<div class="container">
+
+<a class="back-btn" href="index.html">&#8592; 返回目录</a>
+
+<a href="sefrqo_full_translation.html" style="display:block;max-width:860px;margin:18px auto 0;padding:13px 22px;background:linear-gradient(90deg,rgba(31,111,235,.16),rgba(137,87,227,.16));border:1px solid rgba(137,87,227,.5);border-radius:12px;color:#e6edf3;text-decoration:none;font-weight:500;font-size:15px;text-align:center;box-shadow:0 2px 14px rgba(0,0,0,.35);">阅读本文逐段完整中文翻译（Full Translation）</a>
+
+<!-- ========== HERO ========== -->
+<div class="hero">
+  <h1 class="hero-title">SEFRQO: 自进化的 RAG 查询优化器</h1>
+  <p class="hero-sub">用「离线微调 + 在线 RAG 自进化」让 LLM 同时具备：从错误中学习、零冷启动、自适应变化</p>
+  <div class="venue">
+    arXiv 2025 (2508.17556) &nbsp;|&nbsp;
+    <a href="https://arxiv.org/abs/2508.17556">arXiv: 2508.17556</a> &nbsp;|&nbsp;
+    <a href="https://github.com/ihanwen99/SEFRQO">GitHub: ihanwen99/SEFRQO</a>
+  </div>
+  <div class="tag-row">
+    <span class="tag">Query Optimization</span>
+    <span class="tag">LLM</span>
+    <span class="tag">RAG</span>
+    <span class="tag">GRPO</span>
+    <span class="tag">Self-Evolving</span>
+    <span class="tag">Hint-based</span>
+  </div>
+</div>
+
+<!-- ========== TOC ========== -->
+<div class="toc">
+  <h3>目录</h3>
+  <ol>
+    <li><a href="#sec-1">研究动机：学习型优化器的三重理想属性</a></li>
+    <li><a href="#sec-2">框架概览：三阶段两范式（含系统图）</a></li>
+    <li><a href="#sec-3">预备知识与问题定义：Hint 生成与 LLM 自回归</a></li>
+    <li><a href="#sec-4">离线阶段一：SFT 监督微调学会 Hint 格式</a></li>
+    <li><a href="#sec-5">离线阶段二：Q&#8203;GRPO 延迟奖励强化微调</a></li>
+    <li><a href="#sec-6">在线阶段：RAG 自进化提示优化</a></li>
+    <li><a href="#sec-7">实验评估：静态 / 动态 / 跨域场景</a></li>
+    <li><a href="#sec-8">敏感性分析：检索数量、生成模式、相似度</a></li>
+    <li><a href="#sec-9">代码使用与实战（GitHub / 安装 / 复现）</a></li>
+    <li><a href="#sec-10">总结与未来展望</a></li>
+    <li><a href="#sec-11">全文中文翻译（对应嵌入图片）</a></li>
+  </ol>
+</div>
+
+<!-- ========== SEC 1 ========== -->
+<div class="section" id="sec-1">
+  <h2 class="section-title"><span class="num">1</span>研究动机：学习型优化器的三重理想属性</h2>
+  <p class="section-desc">SEFRQO 的核心论点是：现有的学习型查询优化器（LQO）最多只能同时满足「从错误中学习」「零冷启动」「自适应变化」这三条理想属性中的两条，而 SEFRQO 是第一个把三者全部集于一身的方案。</p>
+
+  <div class="module-card">
+    <h3>三条理想属性（Ideal Properties）</h3>
+    <p><b>① 从错误中学习（Learn from mistakes）：</b>能快速、主动地把查询计划的执行反馈吸收进来。代表性系统是 Bao——它用上下文多臂老虎机为每个查询挑 hint 集，并通过执行反馈持续重训。</p>
+    <p><b>② 立即工作、无冷启动（No cold start）：</b>不需要海量训练数据就能开始产生收益。Fastgres 属于这一类：它用动态规划 + 监督模型为每个查询选 hint，无需长时训练，但它无法在 workload 变化后不重训地自适应。</p>
+    <p><b>③ 自适应 schema / workload / 数据（Adapt）：</b>当表结构、查询负载或底层数据变化时，不需大量人工干预即可适应。传统学习型方法（如 Balsa、Neo）一旦数据/schema 变了就得完全重训。</p>
+  </div>
+
+  <div class="highlight-box">
+    <b>为什么三者难以兼得？</b> 不使用 LLM 的 LQO（Bao、Fastgres、Lero…）推理能力有限，要么需要大量训练数据（→ 冷启动），要么假设 schema/workload 固定（→ 无法自适应）。而使用 LLM 的 LQO（LLM-QO、LLMOpt、LLMSteer）借助 LLM 能「立即工作、能自适应」，但<strong>微调成本太高</strong>，无法在 DBMS 关键路径上「即时从错误中学习」——它们把反馈学习推迟到了昂贵的离线重训阶段。
+  </div>
+
+  <div class="insight-box">
+    <h4>SEFRQO 的破局点</h4>
+    <p>作者观察到：LLM 的<strong>上下文学习（in-context learning）</strong>能力可以在<strong>不修改模型参数</strong>的情况下，仅靠在 prompt 里塞入「相似查询 + 本查询的历史执行记录」就让模型即时进化。于是 SEFRQO 把问题拆成两个阶段：<b>离线用微调（SFT + QGRPO）打底</b>（解决冷启动与格式正确），<b>在线用 RAG 提示做自进化</b>（解决从错误中学习与自适应）。一个持续更新的向量数据库充当优化器的「记忆」。</p>
+  </div>
+</div>
+
+<!-- ========== SEC 2 ========== -->
+<div class="section" id="sec-2">
+  <h2 class="section-title"><span class="num">2</span>框架概览：三阶段两范式</h2>
+  <p class="section-desc">SEFRQO 的整体流程（论文 Figure 1）由三个阶段组成，分别对应三个优化子问题：离线 SFT（→ 公式 5，保证语法正确）、离线 QGRPO（→ 公式 6，偏好低延迟）、在线 RAG 提示优化（→ 公式 7，最小化该查询延迟）。</p>
+
+  <div class="svg-container">
+    <svg viewBox="0 0 960 300" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif">
+      <defs>
+        <marker id="arr" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+          <path d="M0,0 L8,3 L0,6 Z" fill="#5eead4"/>
+        </marker>
+        <linearGradient id="g1" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stop-color="#0d9488"/><stop offset="1" stop-color="#14b8a6"/>
+        </linearGradient>
+      </defs>
+      <rect x="10" y="20" width="940" height="48" rx="10" fill="rgba(20,184,166,.08)" stroke="rgba(20,184,166,.3)"/>
+      <text x="30" y="49" fill="#2dd4bf" font-size="15" font-weight="700">OFFLINE PHASE（离线阶段 · 固定参数）</text>
+
+      <rect x="20" y="90" width="180" height="80" rx="10" fill="rgba(20,20,35,.8)" stroke="#14b8a6"/>
+      <text x="110" y="120" fill="#e6edf3" font-size="14" text-anchor="middle" font-weight="700">Pre-Trained</text>
+      <text x="110" y="140" fill="#e6edf3" font-size="14" text-anchor="middle" font-weight="700">LLM</text>
+
+      <rect x="240" y="90" width="200" height="80" rx="10" fill="rgba(20,20,35,.8)" stroke="#14b8a6"/>
+      <text x="340" y="118" fill="#e6edf3" font-size="13" text-anchor="middle" font-weight="700">① SFT 监督微调</text>
+      <text x="340" y="140" fill="#8b949e" font-size="12" text-anchor="middle">学会 Hint 格式</text>
+
+      <rect x="480" y="90" width="200" height="80" rx="10" fill="rgba(20,20,35,.8)" stroke="#14b8a6"/>
+      <text x="580" y="118" fill="#e6edf3" font-size="13" text-anchor="middle" font-weight="700">② QGRPO 强化微调</text>
+      <text x="580" y="140" fill="#8b949e" font-size="12" text-anchor="middle">延迟奖励引导偏好</text>
+
+      <rect x="720" y="90" width="200" height="80" rx="10" fill="rgba(20,20,35,.8)" stroke="#2dd4bf"/>
+      <text x="820" y="118" fill="#e6edf3" font-size="13" text-anchor="middle" font-weight="700">Fine-tuned LLM</text>
+      <text x="820" y="140" fill="#8b949e" font-size="12" text-anchor="middle">参数固定</text>
+
+      <line x1="200" y1="130" x2="238" y2="130" stroke="#5eead4" stroke-width="2" marker-end="url(#arr)"/>
+      <line x1="440" y1="130" x2="478" y2="130" stroke="#5eead4" stroke-width="2" marker-end="url(#arr)"/>
+      <line x1="680" y1="130" x2="718" y2="130" stroke="#5eead4" stroke-width="2" marker-end="url(#arr)"/>
+
+      <rect x="10" y="200" width="940" height="48" rx="10" fill="rgba(120,180,80,.08)" stroke="rgba(120,180,80,.3)"/>
+      <text x="30" y="229" fill="#90d27d" font-size="15" font-weight="700">ONLINE PHASE（在线阶段 · 自进化 · 每查询动态构造 prompt）</text>
+
+      <rect x="20" y="258" width="200" height="34" rx="8" fill="rgba(20,20,35,.8)" stroke="#2dd4bf"/>
+      <text x="120" y="280" fill="#e6edf3" font-size="12" text-anchor="middle">Dynamic Prompt</text>
+      <rect x="250" y="258" width="120" height="34" rx="8" fill="rgba(20,20,35,.8)" stroke="#2dd4bf"/>
+      <text x="310" y="280" fill="#e6edf3" font-size="12" text-anchor="middle">LLM</text>
+      <rect x="400" y="258" width="120" height="34" rx="8" fill="rgba(20,20,35,.8)" stroke="#2dd4bf"/>
+      <text x="460" y="280" fill="#e6edf3" font-size="12" text-anchor="middle">Hint</text>
+      <rect x="550" y="258" width="180" height="34" rx="8" fill="rgba(20,20,35,.8)" stroke="#2dd4bf"/>
+      <text x="640" y="280" fill="#e6edf3" font-size="12" text-anchor="middle">Execution Engine</text>
+      <rect x="760" y="258" width="180" height="34" rx="8" fill="rgba(20,20,35,.8)" stroke="#2dd4bf"/>
+      <text x="850" y="280" fill="#e6edf3" font-size="12" text-anchor="middle">VecDB（记忆）</text>
+      <path d="M140,258 C140,245 740,243 840,256" fill="none" stroke="#90d27d" stroke-width="2" marker-end="url(#arr)"/>
+    </svg>
+    <div class="fc">图 1（对应论文 Figure 1）：SEFRQO 系统概览。离线两阶段产出固定参数的微调 LLM；在线阶段通过动态 prompt 让 LLM 持续从执行反馈中自进化。</div>
+  </div>
+
+  <div class="grid-2">
+    <div class="arch-card">
+      <h4>定义 1：离线微调（公式 5 + 6）</h4>
+      <p>给定 SQL 查询 Q 与相关统计 stats（如表基数），微调 LLM 参数 θ<sub>LLM</sub>，目标有二：① <b>语法正确</b>（hint 能被优化器接受为合法计划）；② <b>延迟偏好</b>（生成的 hint 使执行延迟最小）。用 SFT 解决①、用 QGRPO 解决②。</p>
+    </div>
+    <div class="arch-card">
+      <h4>定义 2：在线上下文学习（公式 7）</h4>
+      <p>对同一个固定参数的 LLM，在运行时构造一个「优化后的 prompt」P*，引导它生成使该查询延迟最小的 hint。P* 由本查询的 stats + 从 VecDB 动态检索的 k 条相似参考查询构成。这被形式化为一个 <b>prompt 优化问题</b>。</p>
+    </div>
+  </div>
+</div>
+
+<!-- ========== SEC 3 ========== -->
+<div class="section" id="sec-3">
+  <h2 class="section-title"><span class="num">3</span>预备知识与问题定义</h2>
+  <p class="section-desc">在理解两个阶段前，论文先交代了两个基石：① 基于 hint 的查询计划生成（如何让 LLM 控制 PostgreSQL）；② LLM 的自回归生成（论文用到的概率记号）。</p>
+
+  <div class="module-card">
+    <h3>3.1 基于 Hint 的计划生成（pg_hint_plan）</h3>
+    <p>SEFRQO 不重新发明优化器，而是用 <b>pg_hint_plan</b> 在 SQL 注释里写「hint」来控制 PostgreSQL 的计划。</p>
+    <p><b>Join-order 模式（简单模式）：</b>用 <code>Leading</code> 子句指定连接顺序。例如 <code>Leading(a (b c))</code> 表示先做 b⊲⊳c，再做 a⊲⊳(b⊲⊳c)，由 PostgreSQL 自己决定每个连接的算子类型。</p>
+    <p><b>Full-plan 模式（完整模式）：</b>进一步指定扫描类型（<code>IndexScan</code>、<code>SeqScan</code>）与连接类型（<code>HashJoin</code>、<code>NestedLoop</code>），精确控制计划。</p>
+  </div>
+
+  <div class="module-card">
+    <h3>3.2 LLM 自回归生成</h3>
+    <p>prompt 分为 <b>System Prompt</b>（定义角色，如「你是做查询优化的数据库专家」）和 <b>User Prompt</b>（具体任务）。LLM 把文本 token 化后自回归地逐 token 预测，输出序列 y=[y₁…y_T] 经分词器还原为自然语言——在本文中 y 就是一条 hint。其生成概率可分解为：</p>
+    <div class="formula-box">p<sub>θ</sub>(y | x) = ∏<sub>t=1</sub><sup>T</sup> p<sub>θ</sub>(y<sub>t</sub> | x, y<sub>1:t−1</sub>)</div>
+    <p>论文为简洁起见，用 x 直接表示 prompt、h 直接表示生成的 hint，把 token 化细节隐藏。</p>
+  </div>
+</div>
+
+<!-- ========== SEC 4 ========== -->
+<div class="section" id="sec-4">
+  <h2 class="section-title"><span class="num">4</span>离线阶段一：SFT 监督微调学会 Hint 格式</h2>
+  <p class="section-desc">SFT 的目标是让 LLM「认识任务」——学会输出格式正确、能被数据库接受的 hint。它用一个由黄金 hint 对构成的训练集 D<sub>sft</sub> 来最大化条件概率 p<sub>θ</sub>(h* | x)。</p>
+
+  <div class="step-flow">
+    <h4>Algorithm 1：SFT 数据集准备（含运行示例）</h4>
+    <p>对每条训练查询 Q<sub>i</sub>：</p>
+    <p>① <b>E<sub>i</sub> ← DB(Q<sub>i</sub>)</b>：用 <code>EXPLAIN ANALYZE</code> 拿到执行计划与中间统计（行 2）；</p>
+    <p>② <b>T<sub>i</sub> ← ExtractTables(E<sub>i</sub>)</b>：抽取涉及的表（行 3）；</p>
+    <p>③ <b>C<sub>i</sub> ← GetCardinalities(T<sub>i</sub>, E<sub>i</sub>)</b>：拿到各表基数（行 4）；</p>
+    <p>④ <b>x<sub>Qi</sub> ← ConstructPrompt(Q<sub>i</sub>, C<sub>i</sub>)</b>：把查询与基数拼成 prompt（行 5）；</p>
+    <p>⑤ <b>h*<sub>i</sub> ← ExtractHint(E<sub>i</sub>)</b>：从计划里抽出 hint 作为标签（行 6）；</p>
+    <p>⑥ 把 (x<sub>Qi</sub>, h*<sub>i</sub>) 加入 D<sub>sft</sub>。</p>
+  </div>
+
+  <div class="highlight-box">
+    <b>具体例子（论文 Figure 2）：</b> 对一条涉及 <code>company_name, company_type, movie_companies, role_type, title</code> 的查询，其计划树经抽取得到 5 张表的根–叶结构。最终抽出的 full-plan hint 形如：
+    <div class="prompt-box"><span class="prompt-label">抽取得到的 Hint</span>/*+ NestedLoop(mc cn t rt ct)
+ NestedLoop(mc cn t rt)
+ HashJoin(mc cn t)
+ NestedLoop(mc cn)
+ SeqScan(mc)
+ IndexScan(cn)
+ IndexScan(t)
+ SeqScan(rt)
+ IndexOnlyScan(ct)
+ Leading(((((mc cn) t) rt) ct)) */</div>
+    其中 <code>Leading(((((mc cn) t) rt) ct))</code> 编码了连接顺序，其余子句指定了每张表的扫描方式与每个连接的连接算法。SFT 就是让 LLM「照着这种格式学」。
+  </div>
+  <p>SFT 的训练目标是最小化负对数似然：<span class="formula-box">L<sub>sft</sub>(θ) = E<sub>(x,h*)∼D<sub>sft</sub></sub> [ − log p<sub>θ</sub>(h* | x) ]</span></p>
+</div>
+
+<!-- ========== SEC 5 ========== -->
+<div class="section" id="sec-5">
+  <h2 class="section-title"><span class="num">5</span>离线阶段二：QGRPO 延迟奖励强化微调</h2>
+  <p class="section-desc">SFT 只教会「格式」，但没教会「快」。QGRPO（Query Group Relative Policy Optimization）在 SFT 基础上，用「真实执行延迟」作为奖励，把 LLM 的输出偏好推向更低延迟的 hint。它基于 GRPO，但关键创新在于<strong>不需要额外的偏好标注数据集</strong>。</p>
+
+  <div class="svg-container">
+    <svg viewBox="0 0 940 280" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif">
+      <defs><marker id="a2" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#5eead4"/></marker></defs>
+      <rect x="20" y="30" width="200" height="60" rx="10" fill="rgba(20,20,35,.8)" stroke="#14b8a6"/>
+      <text x="120" y="58" fill="#e6edf3" font-size="13" text-anchor="middle" font-weight="700">Input Query Q</text>
+      <text x="120" y="78" fill="#8b949e" font-size="11" text-anchor="middle">+ 相关统计</text>
+
+      <rect x="270" y="30" width="180" height="60" rx="10" fill="rgba(20,20,35,.8)" stroke="#14b8a6"/>
+      <text x="360" y="58" fill="#e6edf3" font-size="13" text-anchor="middle" font-weight="700">LLM (π<sub>old</sub>)</text>
+      <text x="360" y="78" fill="#8b949e" font-size="11" text-anchor="middle">生成 G 个 hint</text>
+
+      <rect x="500" y="20" width="130" height="40" rx="8" fill="rgba(20,20,35,.8)" stroke="#2dd4bf"/>
+      <text x="565" y="44" fill="#e6edf3" font-size="12" text-anchor="middle">h₁</text>
+      <rect x="500" y="70" width="130" height="40" rx="8" fill="rgba(20,20,35,.8)" stroke="#2dd4bf"/>
+      <text x="565" y="94" fill="#e6edf3" font-size="12" text-anchor="middle">h₂</text>
+      <rect x="500" y="125" width="130" height="34" rx="8" fill="rgba(20,20,35,.8)" stroke="#2dd4bf"/>
+      <text x="565" y="147" fill="#e6edf3" font-size="12" text-anchor="middle">… h_G</text>
+
+      <rect x="670" y="30" width="200" height="60" rx="10" fill="rgba(20,20,35,.8)" stroke="#2dd4bf"/>
+      <text x="770" y="56" fill="#e6edf3" font-size="12" text-anchor="middle" font-weight="700">Execution Engine</text>
+      <text x="770" y="76" fill="#8b949e" font-size="11" text-anchor="middle">测真实延迟 tᵢ, t_d</text>
+
+      <rect x="400" y="190" width="220" height="60" rx="10" fill="rgba(20,20,35,.8)" stroke="#14b8a6"/>
+      <text x="510" y="214" fill="#e6edf3" font-size="12" text-anchor="middle" font-weight="700">Latency Reward</text>
+      <text x="510" y="234" fill="#8b949e" font-size="11" text-anchor="middle">r_i = tanh(ln(Δt_i))</text>
+
+      <rect x="660" y="190" width="240" height="60" rx="10" fill="rgba(20,20,35,.8)" stroke="#14b8a6"/>
+      <text x="780" y="214" fill="#e6edf3" font-size="12" text-anchor="middle" font-weight="700">Group Relative Adv.</text>
+      <text x="780" y="234" fill="#8b949e" font-size="11" text-anchor="middle">Â_i = (r_i − mean) / std</text>
+
+      <line x1="220" y1="60" x2="268" y2="60" stroke="#5eead4" stroke-width="2" marker-end="url(#a2)"/>
+      <line x1="450" y1="55" x2="498" y2="55" stroke="#5eead4" stroke-width="2" marker-end="url(#a2)"/>
+      <line x1="630" y1="55" x2="668" y2="55" stroke="#5eead4" stroke-width="2" marker-end="url(#a2)"/>
+      <line x1="770" y1="90" x2="510" y2="188" stroke="#5eead4" stroke-width="2" marker-end="url(#a2)"/>
+      <line x1="770" y1="90" x2="780" y2="188" stroke="#5eead4" stroke-width="2" marker-end="url(#a2)"/>
+    </svg>
+    <div class="fc">图 2（对应论文 Figure 3）：QGRPO 工作流——同一查询生成 G 个 hint，逐个真实执行得到延迟，用「相对默认计划的加速比」给奖励，再做组内相对比较更新策略。</div>
+  </div>
+
+  <div class="grid-2">
+    <div class="arch-card">
+      <h4>5.1 基于延迟的奖励模型（Algorithm 2）</h4>
+      <p>① 先执行不带 hint 的查询得到基线延迟 t<sub>d</sub>；</p>
+      <p>② 对每个生成的 hint h<sub>i</sub>，执行得到真实延迟 t<sub>i</sub>；</p>
+      <p>③ 计算加速比 Δt<sub>i</sub> = t<sub>d</sub> / t<sub>i</sub>（越大越好）；</p>
+      <p>④ 奖励 r<sub>i</sub> = tanh(ln(Δt<sub>i</sub>))，把奖励压到 [−1, 1]。</p>
+    </div>
+    <div class="arch-card">
+      <h4>为什么用 ln + tanh？</h4>
+      <p>ln 让「加速 2 倍」(Δt=2→ln≈0.69) 与「变慢 2 倍」(Δt=0.5→ln≈−0.69) 对称；tanh 再限制范围，避免极端好/坏计划导致的数值爆炸，提升微调稳定性。</p>
+    </div>
+  </div>
+
+  <div class="insight-box">
+    <h4>5.2 组内相对优势（公式 9）与简化梯度（公式 10）</h4>
+    <p>优势 A<sub>i</sub> = (r<sub>i</sub> − mean(r)) / std(r)：在「同一查询的 G 个 hint」这个小组内做相对比较，<b>不需要任何人工偏好标注</b>。相比 DPO（需要构造成对偏好数据）、PPO（需要额外的价值模型），QGRPO 只靠真实执行反馈，鼓励 LLM 自我探索，从而在面对未见过 workload 或 schema 漂移时保有更好的推理与泛化能力。</p>
+    <div class="formula-box">Ĝ<sub>GRPO</sub> = Â<sub>i</sub> + β·( π<sub>ref</sub>(h<sub>i</sub>|x) / π<sub>θ</sub>(h<sub>i</sub>|x) − 1 )</div>
+    <p>β 控制与参考策略 π<sub>ref</sub>（即 SFT 模型）的 KL 散度，防止更新后策略偏离太远。</p>
+  </div>
+</div>
+
+<!-- ========== SEC 6 ========== -->
+<div class="section" id="sec-6">
+  <h2 class="section-title"><span class="num">6</span>在线阶段：RAG 自进化提示优化</h2>
+  <p class="section-desc">这是 SEFRQO 区别于所有前人工作的核心：用 RAG 让 LLM 在<strong>不更新参数</strong>的前提下，通过对 prompt 的自我迭代不断降低延迟。论文 Figure 4 把流程拆成三个阶段。</p>
+
+  <div class="svg-container">
+    <svg viewBox="0 0 960 280" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif">
+      <defs><marker id="a3" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#90d27d"/></marker></defs>
+      <rect x="20" y="30" width="270" height="80" rx="10" fill="rgba(20,20,35,.8)" stroke="#14b8a6"/>
+      <text x="155" y="58" fill="#e6edf3" font-size="13" text-anchor="middle" font-weight="700">① Preparation</text>
+      <text x="155" y="80" fill="#8b949e" font-size="11" text-anchor="middle">收集历史执行记录</text>
+      <text x="155" y="98" fill="#8b949e" font-size="11" text-anchor="middle">(含默认优化器计划)</text>
+
+      <rect x="345" y="30" width="270" height="80" rx="10" fill="rgba(20,20,35,.8)" stroke="#14b8a6"/>
+      <text x="480" y="58" fill="#e6edf3" font-size="13" text-anchor="middle" font-weight="700">② Initialization</text>
+      <text x="480" y="80" fill="#8b949e" font-size="11" text-anchor="middle">首次遇到 Q：直接执行</text>
+      <text x="480" y="98" fill="#8b949e" font-size="11" text-anchor="middle">存基线记录到 VecDB</text>
+
+      <rect x="670" y="30" width="270" height="80" rx="10" fill="rgba(20,20,35,.8)" stroke="#2dd4bf"/>
+      <text x="805" y="58" fill="#e6edf3" font-size="13" text-anchor="middle" font-weight="700">③ Generation</text>
+      <text x="805" y="80" fill="#8b949e" font-size="11" text-anchor="middle">检索 k 相似查询 + 历史最佳</text>
+      <text x="805" y="98" fill="#8b949e" font-size="11" text-anchor="middle">构造动态 prompt → LLM</text>
+
+      <line x1="290" y1="70" x2="343" y2="70" stroke="#90d27d" stroke-width="2" marker-end="url(#a3)"/>
+      <line x1="615" y1="70" x2="668" y2="70" stroke="#90d27d" stroke-width="2" marker-end="url(#a3)"/>
+      <path d="M805,110 C805,200 155,210 155,118" fill="none" stroke="#90d27d" stroke-width="2" marker-end="url(#a3)" stroke-dasharray="6 4"/>
+      <text x="480" y="205" fill="#90d27d" font-size="11" text-anchor="middle">Self-Evolving：更优则更新 VecDB，下一轮用历史最佳反馈</text>
+    </svg>
+    <div class="fc">图 3（对应论文 Figure 4）：SEFRQO 的 RAG 自进化三阶段。虚线表示跨轮迭代反馈闭环——每当生成更优计划就更新记忆，下一轮把「历史最佳 + 性能增益」塞回 prompt。</div>
+  </div>
+
+  <div class="module-card">
+    <h3>6.1 向量库存储设计（Figure 5）</h3>
+    <p>VecDB 中每条执行记录维护 7 个字段：<b>Id</b>（主键）、<b>Iteration</b>（Preparation/Initialization 为 0，Generation 从 1 起）、<b>Vector</b>（SQL 文本经 SentenceTransformer 编码的嵌入，用于相似度检索）、<b>SQL_id</b>（如 job_33b，用于区分自身与参考）、<b>SQL</b>、<b>Plan</b>、<b>Execution Time</b>。检索时用余弦相似度取 top-k。</p>
+  </div>
+
+  <div class="module-card">
+    <h3>6.2 动态 Prompt 结构（Figure 6）</h3>
+    <p>prompt x = (SP ∥ UP)。<b>SP</b> 是静态系统提示（定义角色、可执行的动作、动作约束）；<b>UP</b> 是动态用户提示，包含：① k 条最相似查询及其执行计划作为参考；② 本查询统计 stats（表基数、过滤选择性）；③ 本查询的「历史最佳计划 + 相对默认计划的性能增益 η」；④ 对 LLM 的期望与约束（生成更好的、不要照抄执行引擎或自己历史 hint、格式须合法）。</p>
+  </div>
+
+  <div class="highlight-box">
+    <b>具体例子（JOB 20a，论文 §6.4）：</b> Preparation 阶段从 PostgreSQL 拿到默认计划 <code>NestedLoop(k mk) → NestedLoop(k mk cc)</code>；Generation 第一轮 SEFRQO 生成 <code>NestedLoop(mk k) → NestedLoop(mk k t)</code>；后续反馈迭代中进化为 <code>HashJoin(mk k) → NestedLoop(mk k cc)</code>。SEFRQO 自己「悟出」两点：① 先 join mk 和 k 有益，且用 HashJoin 比 NestedLoop 更高效；② <code>NestedLoop(mk k t)</code> 这个嵌套循环连接高效，应保留。这正是自进化反馈把「历史最佳计划 + 增益」塞回 prompt 后涌现的行为。
+  </div>
+
+  <div class="arch-card">
+    <h4>Algorithm 4：跨轮 Prompt 优化</h4>
+    <p>对上一轮 prompt 生成的 hint h 执行得 (plan, t)；取 VecDB 中历史最佳 (plan*, t*)；若 t &lt; t* 则更新历史最佳；取 Initialization 阶段存的基线 t₀，算增益 η = (t₀ − t*) / t₀；把 (plan*, η) 合并进 UP；拼回 SP 得到本轮优化 prompt P*。η&lt;0 表示当前最佳计划比基线还差。</p>
+  </div>
+</div>
+
+<!-- ========== SEC 7 ========== -->
+<div class="section" id="sec-7">
+  <h2 class="section-title"><span class="num">7</span>实验评估：静态 / 动态 / 跨域场景</h2>
+  <p class="section-desc">实验在 AMD Ryzen 9700X + 128GB + A6000 上进行，PostgreSQL 16.4 + pg_hint_plan，向量库用 Milvus，嵌入用 SentenceTransformer(Paraphrase-MiniLM-L6-v2)。评测 6 个本地 LLM：LLaMA3.1-3B/8B 及其 SFT 版(LS3B/LS8B)、SFT+QGRPO 版(LSG3B/LSG8B)，k=1。</p>
+
+  <div class="module-card">
+    <h3>7.1 三个研究问题与对比基线</h3>
+    <p><b>基线：</b>Bao（steering 类 LQO）、Balsa（generative 类 LQO）、LLMSteer（唯一可复现的 LLM-based LQO）。LLM-QO 与 LLMOpt 因无完整代码未能复现。</p>
+    <p><b>三种变体：</b>默认（full-plan hint + 向量库参考）、<b>JO</b>（只用 Leading 连接顺序）、<b>NR</b>（只用本查询历史记录、不检索参考查询）。</p>
+    <p><b>指标：</b>相对 PostgreSQL 的性能增益（Overall / Filtered）、相对执行时间 RET（↓）、同质性比率 HR（↓，越低表示生成的 hint 越多样、越少照抄默认计划）。</p>
+  </div>
+
+  <div class="data-table">
+    <caption style="color:#8b949e;padding:6px;">表 1（论文 Table 1）：静态场景性能增益 ↑</caption>
+    <thead><tr><th>Workload</th><th>Balsa</th><th>Bao</th><th>L3B</th><th>L8B</th><th>LS3B</th><th>LS8B</th><th>LSG3B</th><th>LSG8B</th></tr></thead>
+    <tbody>
+      <tr><td>CEB Overall</td><td>37.57%</td><td>22.60%</td><td>7.46%</td><td>21.78%</td><td>53.93%</td><td><b>60.04%</b></td><td>50.13%</td><td>48.36%</td></tr>
+      <tr><td>CEB Filtered</td><td>59.22%</td><td>30.13%</td><td>17.93%</td><td>47.56%</td><td>56.76%</td><td>65.05%</td><td>55.34%</td><td><b>61.28%</b></td></tr>
+      <tr><td>Stack Overall</td><td>67.17%</td><td>76.90%</td><td>5.54%</td><td>15.21%</td><td>40.10%</td><td>26.77%</td><td>39.62%</td><td>32.58%</td></tr>
+      <tr><td>Stack Filtered</td><td>89.83%</td><td>82.85%</td><td>9.16%</td><td>37.38%</td><td>43.29%</td><td>87.68%</td><td>42.77%</td><td><b>93.57%</b></td></tr>
+    </tbody>
+  </div>
+  <div class="fc">关键发现：CEB 上 LS8B 最佳（因 JOB↔CEB 同 schema，SFT 知识被充分利用）；Stack 是从未见过的跨域 workload，LSG8B（SFT+QGRPO）凭借强化微调的探索性泛化能力拿到 93.57% Filtered 增益，甚至超过在 Stack 上直接训练的 LQO。</div>
+
+  <div class="data-table">
+    <caption style="color:#8b949e;padding:6px;">表 2（论文 Table 2）：动态场景性能增益 ↑</caption>
+    <thead><tr><th>Model</th><th>Overall</th><th>Filtered</th><th>Model</th><th>Overall</th><th>Filtered</th></tr></thead>
+    <tbody>
+      <tr><td>L3B</td><td>2.64%</td><td>20.11%</td><td>LS8B</td><td><b>53.25%</b></td><td><b>69.98%</b></td></tr>
+      <tr><td>L8B</td><td>15.92%</td><td>54.83%</td><td>LSG3B</td><td>33.88%</td><td>46.38%</td></tr>
+      <tr><td>LS3B</td><td>50.25%</td><td>58.65%</td><td>LSG8B</td><td>38.83%</td><td>51.38%</td></tr>
+      <tr><td colspan="3"></td><td>Bao</td><td>14.82%</td><td>31.36%</td></tr>
+    </tbody>
+  </div>
+  <div class="fc">动态场景混合 CEB/JOB/Stack 轮流出现。多数 LQO 因模型绑定训练 schema 而不支持动态负载；Bao 虽支持却显著掉队（14.82%），SEFRQO 凭借 RAG 记忆摆脱对特定 workload 的依赖，LS8B 达 53.25% Overall 增益。</div>
+
+  <div class="insight-box">
+    <h4>TPC-DS 与跨 DBMS</h4>
+    <p>用 GPT-o3-mini 替换本地小模型测 TPC-DS，Overall 增益 13.28%、Filtered 27.81%，其中模板 10 的查询加速达 90.63%。在 MySQL（CEB）上仅用一个简单 hint 翻译器（把 PostgreSQL 的 Leading 顺序转换成 MySQL 连接顺序）即获得 26.28% Overall 增益——证明知识可跨 DBMS 迁移，无需额外微调。</p>
+  </div>
+</div>
+
+<!-- ========== SEC 8 ========== -->
+<div class="section" id="sec-8">
+  <h2 class="section-title"><span class="num">8</span>敏感性分析</h2>
+  <p class="section-desc">论文通过消融与额外实验，量化了各设计选择的影响，并验证了鲁棒性。</p>
+
+  <div class="grid-2">
+    <div class="comp-card">
+      <h4>生成模式：full-plan vs JO</h4>
+      <p>LSG3B-JO 的同质性比率高达约 70%（几乎只复读默认计划），CEB Overall 增益仅 24.81%，远低于 full-plan 的 50.13%。说明仅给连接顺序约束过于受限，full-plan 模式显著更有效。</p>
+    </div>
+    <div class="comp-card">
+      <h4>参考查询数量 k</h4>
+      <p>k=1/2/3 的 CEB Overall 增益分别为 53.93% / 57.75% / 57.99%，HR 为 0.26 / 0.20 / 0.14。k 增大让 hint 更多样，但增益非单调——太少缺关键信息、太多反而迷惑 LLM。k=2~3 较优。</p>
+    </div>
+    <div class="comp-card">
+      <h4>参考查询的作用（NR 变体）</h4>
+      <p>LSG3B-NR（不检索参考）CEB Overall 仅 41.26%，低于带 RAG 的 50.13%，证明「相似查询作为 in-context 样例」确实有效。</p>
+    </div>
+    <div class="comp-card">
+      <h4>相似度计算方法</h4>
+      <p>默认余弦相似度比内积 / L2 平均高约 3% 增益；内积产生的计划多样性最高（50 轮多生成 150 个不同计划）。</p>
+    </div>
+  </div>
+
+  <div class="limit-box">
+    <h4>鲁棒性</h4>
+    <p><b>基数不准：</b>随机扰动过滤/表基数后，LSG8B 仍达 51.50% Overall 增益（仅轻微下降），与静态实验相当。<b>数据漂移：</b>在原始 IMDB 与「仅 2000 年后」缩减库间每 5 轮切换，会出现尖峰（小库反馈干扰自进化），但 LS8B 偶尔反而取得最低延迟。<b>开销：</b>LS3B 推理约 236ms(A6000)/160ms(A100)，RAG 检索平均 0.7ms；CEB 平均省时 520.67ms vs PostgreSQL 922.86ms，端到端仍更低——因此 SEFRQO 面向长时 OLAP 查询。</p>
+  </div>
+</div>
+
+<!-- ========== SEC 9 ========== -->
+<div class="section" id="sec-9">
+  <h2 class="section-title"><span class="num">9</span>代码使用与实战</h2>
+  <div class="kv-row"><div class="kv-key">开源地址</div><div class="kv-val"><a href="https://github.com/ihanwen99/SEFRQO" style="color:#14b8a6;">https://github.com/ihanwen99/SEFRQO</a></div></div>
+  <div class="kv-row"><div class="kv-key">论文</div><div class="kv-val">arXiv:2508.17556（2025-08）</div></div>
+  <div class="kv-row"><div class="kv-key">依赖</div><div class="kv-val">PostgreSQL 16.4 + pg_hint_plan；Milvus 向量库；SentenceTransformer（Paraphrase-MiniLM-L6-v2）；PyTorch + LLM（LLaMA3.1 系列）</div></div>
+
+  <div class="code-block"><pre><span class="cg"># 1) 准备环境（PostgreSQL + pg_hint_plan + Milvus）</span>
+<span class="ck">pip</span> install -r requirements.txt
+<span class="ck">conda</span> create -n sefrqo python=3.10 &amp;&amp; <span class="ck">conda</span> activate sefrqo
+
+<span class="cg"># 2) 启动 PostgreSQL 并加载 pg_hint_plan 扩展</span>
+<span class="ck">psql</span> -c "CREATE EXTENSION IF NOT EXISTS pg_hint_plan;"
+
+<span class="cg"># 3) 离线 SFT：用 Algorithm 1 从训练查询生成 (prompt, hint) 标签对</span>
+<span class="ck">python</span> prepare_sft_data.py --workload JOB --db postgres://user@localhost/imdb
+<span class="ck">python</span> train_sft.py --model meta-llama/Llama-3.1-8B --data ./data/sft
+
+<span class="cg"># 4) 离线 QGRPO：对同一 prompt 采 G 个 hint，真实执行得延迟，组内相对比较</span>
+<span class="ck">python</span> train_qgrpo.py --model ./ckpt/sft --reward_latency --group_size 8
+
+<span class="cg"># 5) 在线自进化：对每个查询动态构造 prompt（检索相似查询+历史最佳），迭代优化</span>
+<span class="ck">python</span> serve.py --model ./ckpt/qgrpo --milvus_uri ./milvus.db --workload CEB</pre></div>
+
+  <p>由于官方已开源且论文明确「SEFRQO is open-source」，复现路径清晰：先按 Algorithm 1 用 <code>EXPLAIN ANALYZE</code> 抽取 hint 标签做 SFT，再用 QGRPO 的延迟奖励做强化微调，最后启动在线服务，让 VecDB 在每轮执行后吸收反馈。若仅想快速验证，可先用论文给出的 JOB→CEB 设定（同 schema，SFT 知识最有效）。</p>
+</div>
+
+<!-- ========== SEC 10 ========== -->
+<div class="section" id="sec-10">
+  <h2 class="section-title"><span class="num">10</span>总结与未来展望</h2>
+  <div class="qa-card">
+    <div class="qa-q">Q：SEFRQO 最重要的贡献是什么？</div>
+    <div class="qa-a">它是<strong>首个把 RAG 用于查询优化</strong>的工作，并用「离线微调 + 在线自进化」两阶段范式，让 LLM 型优化器第一次同时满足「从错误学习 / 零冷启动 / 自适应变化」三大理想属性。</div>
+  </div>
+  <div class="qa-card">
+    <div class="qa-q">Q：QGRPO 相比 DPO / PPO 好在哪？</div>
+    <div class="qa-a">PPO 需额外价值模型（内存与算力开销大）；DPO 需人工构造成对偏好数据（标注成本高）。QGRPO 基于 GRPO，对同一查询生成多个 hint、用真实执行延迟做组内相对比较，<strong>既无价值模型、也无标注数据</strong>，还能借助真实执行环境提升推理能力。</div>
+  </div>
+  <div class="qa-card">
+    <div class="qa-q">Q：局限与未来？</div>
+    <div class="qa-a">当前面向 OLAP 长查询——推理 + RAG 开销对 OLTP 短查询仍偏高，留作未来工作。此外 QGRPO 的 RL 特性带来不确定性，8B 模型有时需多次微调才稳定（如 LSG8B 在某些设定下未优于 LS8B）。未来可探索与系统级 knob tuning 的结合（论文指出二者常被视作正交、少有融合）。</div>
+  </div>
+  <div class="insight-box">
+    <h4>一句话总结</h4>
+    <p>SEFRQO 把「查询优化」重新定义为 LLM 的两阶段问题——离线用 SFT+QGRPO 把模型调成「会写且写得快」的 hint 生成器，在线用 RAG 把执行反馈变成不断优化 prompt 的「记忆」，使 LLM 既能冷启动、又能随 workload 与 schema 持续进化。</p>
+  </div>
+</div>
+
+<!-- ========== SEC 11: TRANSLATION ========== -->
+<div class="section translation" id="sec-11">
+  <h2>全文中文翻译（对应嵌入图片）</h2>
+
+  <h3>摘要（Abstract）</h3>
+  <p>查询优化是数据库系统中一个已被研究数十年的关键问题。学习型查询优化器（LQO）能随时间通过吸收反馈来提升性能；然而它们存在冷启动问题，并且往往需要在 workload 漂移或 schema 变化时重新训练。近期的基于 LLM 的查询优化器利用预训练与微调的 LLM 来缓解这些挑战，但它们忽视了 LLM 的<strong>上下文学习</strong>能力以及「把执行记录作为反馈用于持续进化」的潜力。本文提出 SEFRQO——一个自进化的、基于微调 RAG 的查询优化器。SEFRQO 通过检索增强生成（RAG）框架持续从执行反馈中学习，从而缓解 LQO 的冷启动问题。我们同时采用<strong>监督微调（SFT）</strong>与<strong>强化微调（RFT）</strong>，使 LLM 能够生成语法正确且性能高效的查询 hint。此外，SEFRQO 利用 LLM 的上下文学习能力，通过动态构造「引用相似查询 + 同一查询历史执行记录」的 prompt 来持续进化，这一自进化范式迭代地优化 prompt，以最小化查询执行延迟。实验表明，SEFRQO 优于当前最优的 LQO，在 CEB 与 Stack 负载上相比 PostgreSQL 分别取得最高 65.05% 与 93.57% 的查询延迟降低。</p>
+
+  <div class="fig-note">📌 <b>对应图 1（Figure 1: System overview of SEFRQO）：</b>三阶段流程——① SFT（从标注数据学 hint 格式）；② QGRPO（用奖励函数把 LLM 输出偏好导向低延迟）；③ 在线 RAG 提示优化（用动态 prompt 生成最终 hint）。离线阶段产出 Fine-tuned LLM，在线阶段经 VecDB 与执行引擎形成自进化闭环。</div>
+
+  <h3>1. 引言（Introduction）</h3>
+  <p>查询优化是数据库系统中基础且性能关键的问题，关注于把声明式用户查询翻译成高效的查询计划。人类专家花费数十年才设计出并改进经典查询优化器（如 PostgreSQL）。为了加速优化器开发并提升查询性能，若干研究把机器学习、大模型等技术应用于查询优化。</p>
+  <p>尽管这些学习型查询优化器（LQO）令人振奋、甚至已有工业落地，我们认为现有的 LQO 最多只能捕捉三条理想属性中的两条：① 应从错误中学习，快速、主动地吸收查询计划的反馈；② 应当立即可用，无需大量训练（即「冷启动」问题）；③ 应能在 schema、workload、数据变化时自适应，而无需大量人工。</p>
+  <p>例如，Bao 能从错误中学习并适应变化，但需要数小时训练数据才能具备竞争力；Fastgres 没有冷启动问题且能从错误学习，却无法在 workload 显著变化时无需重训地适应。三个近期应用 LLM 的系统（LLM-QO、LLMOpt、LLMSteer）用微调 LLM 作为计划生成或选择的预言机，但由于微调成本高，它们无法在运行时立即从错误中学习或持续改进。</p>
+  <p>为什么没有系统同时具备所有理想属性？直觉上：不用 LLM 的 LQO 推理能力较弱，要么需要大量训练数据（→ 冷启动），要么假设 schema/workload 固定（→ 无法自适应）；用 LLM 的 LQO 能立即可用、能自适应，但用现有技术纠正其错误对 DBMS 关键路径而言过于昂贵。</p>
+  <p>本文提出 SEFRQO——一个具备全部三条属性的、基于 RAG 的查询优化器。SEFRQO 用 LLM 避免冷启动、适应变化；为从错误学习，它用一个持续更新的、存放过往查询执行的向量数据库作为优化器的「记忆」。SEFRQO 生成基于 hint 的查询计划来引导经典数据库系统（如 PostgreSQL）里的优化器，hint 由 LLM 优化并生成。SEFRQO 依赖两个互补阶段来优化 hint 生成：<strong>离线 LLM 微调</strong>与<strong>在线 LLM 上下文学习</strong>。由于这些技术比传统优化器开销更大，SEFRQO 面向长时 OLAP 查询，其性能收益可抵消增加的优化开销。</p>
+  <p>为使微调后的 LLM 能生成格式正确且高效的 hint，SEFRQO 采用「监督微调（SFT）+ 强化微调（RFT）」组合。SFT 教 LLM 期望的 hint 格式；RFT 提出一种高效的 <strong>Query Group Relative Policy Optimization（QGRPO）</strong>，基于 GRPO，把 LLM 输出偏好导向能降低延迟的 hint。QGRPO 定义了一个基于延迟的奖励模型，与数据库执行引擎交互以直接测量所生成 hint 的对应延迟；它还在同一查询生成的多个 hint 之间做组内比较，避免了像 DPO 那样需要额外标注数据集，从而鼓励 LLM 自我探索、提升应对未见过 workload 或 schema 漂移的推理与泛化能力。</p>
+  <p>另一关键创新是在线 LLM 基于 RAG 的上下文学习：LLM 通过以少量相关 RAG 样例为条件（直接放进输入上下文即 prompt 中）来适应新任务，而无需修改模型参数。关键是检索到的样例要与目标查询高度对齐。为此 SEFRQO 建立并维护一个存放「最相关查询执行记录」的专用向量数据库，并提出自进化反馈范式，让 LLM 从同一查询的历史执行记录中学习——历史最佳计划及其相对基线的性能增益提供了额外上下文，这些组件迭代地优化 prompt，促使 LLM 生成最小化执行延迟的优化 hint。</p>
+  <p>实验表明 SEFRQO 持续优于 PostgreSQL 与两个 SOTA LQO（Bao、Balsa）。在 CEB 上相比 PostgreSQL 降低 65.05% 执行时间；Stack 上某些查询最高降低 93.57%、整体 40.10%；TPC-DS 上整体降低 13.28%。凭借动态 prompt 与自进化范式，SEFRQO 在未见过的 Stack 负载上展现出惊人的跨域能力，某些指标甚至超过在该负载上直接训练的 LQO，且支持灵活 workload 切换与跨 DBMS（MySQL 上无需额外微调即降低 26.28%）。我们还观察到 SEFRQO 能在子计划层面从给定计划学习并推理出改进计划，并做了开销分析与消融实验。贡献总结为：① 首次把「基于 LLM 的 hint 优化」形式化为离线微调 + 在线上下文学习两阶段；② 提出高效 SFT 流程教 LLM hint 格式；③ 提出 QGRPO（基于延迟的奖励模型 + 组内相对优势）；④ 提出基于 RAG 的 prompt 优化（首次把 RAG 用于查询优化）；⑤ 实验证明 SEFRQO 跨多 workload / 多 DBMS 泛化且无需重训。</p>
+
+  <div class="fig-note">📌 <b>对应图 2（Figure 2）：</b>运行示例——给定 SQL 与统计（步骤 1），从 JSON 格式计划中抽取 hint（步骤 2），并简化 hint 结构（步骤 3）。右子图展示计划树的简化表示（根→叶：NL/NLIOS/HJIS/NLIS/SSIS 等节点）。论文以一条涉及 company_name 等 5 表的查询为例，给出完整 full-plan hint（含 Leading 连接顺序与各表扫描/连接类型）。</div>
+
+  <h3>2. 预备知识（Preliminaries）</h3>
+  <p><b>2.1 基于 Hint 的计划生成。</b> 许多 LQO（如集成 PostgreSQL 的 Balsa）用 pg_hint_plan 通过在 SQL 注释里写 hint 来调整执行计划。hint 支持连接顺序模式（简单，用 <code>Leading</code> 指定连接顺序，如 <code>Leading(a (b c))</code> 表示先 b⊲⊳c 再 a⊲⊳(b⊲⊳c)）与完整计划模式（额外指定扫描类型 IndexScan/SeqScan、连接类型 HashJoin/NestedLoop）。SEFRQO 两种模式都用。</p>
+  <p><b>2.2 LLM 生成。</b> prompt 含 System Prompt（定义角色/上下文）与 User Prompt（具体任务）。文本经 tokenizer 转成 token 序列 x=[x₁…xₙ]，LLM 以自回归方式逐 token 预测，输出 y=[y₁…y_T] 再还原为自然语言——在本文中 y 即 hint。生成概率 p<sub>θ</sub>(y|x) = ∏<sub>t</sub> p<sub>θ</sub>(y<sub>t</sub>|x, y<sub>1:t−1</sub>)。</p>
+  <p><b>2.3 监督微调（SFT）。</b> 用高质量标注数据 (x, h*) 调整 LLM 参数，最大化 p<sub>θ</sub>(h*|x)，即最小化负对数似然 L<sub>sft</sub>(θ)=E[−log p<sub>θ</sub>(h*|x)]，使 LLM 熟悉 hint 格式与生成逻辑。</p>
+  <p><b>2.4 强化微调（RFT）。</b> PPO 依赖价值模型（额外内存/算力）；DPO 省去价值模型但需成对偏好数据（标注复杂，且可能降低生成偏好的绝对概率）。SEFRQO 采用 GRPO——让同一 prompt 生成多个输出，用自定义奖励函数算奖励并做组内优势估计 Â，无需价值模型也无需标注数据。</p>
+  <p><b>2.5 基于嵌入相似度的检索。</b> RAG 通过从向量库检索外部知识来增强 LLM，不改变模型权重。每个参考查询 d<sub>i</sub> 经编码器 φ(·) 映射为 m 维嵌入 e<sub>i</sub>，组成矩阵 E。对查询 u 计算嵌入 e<sub>u</sub>，用余弦相似度 sim(u,d<sub>i</sub>)=e<sub>u</sub>ᵀe<sub>i</sub>/(‖e<sub>u</sub>‖‖e<sub>i</sub>‖) 排序取 top-k 构成检索集 R。</p>
+
+  <h3>3. 系统概览（System Overview）</h3>
+  <p><b>3.1 问题定义。</b> 最终目标用 LLM 生成的 hint 降低查询执行延迟，分两阶段：离线微调（让 LLM 会生成 hint）+ 在线上下文学习（让 LLM 生成最优 hint）。定义 1（离线）：最大化 E[log p<sub>correct</sub>(h)]（语法正确）且最小化 E[Latency(Q,h)]（延迟偏好）。定义 2（在线）：对固定参数 LLM，在运行时构造优化 prompt P* 使 h←LLM(P*) 最小化该查询延迟，即 argmin<sub>P</sub> Latency(Q,h)。</p>
+  <p><b>3.2 SEFRQO 概览。</b> Figure 1 展示三阶段，分别对应公式 5/6/7：① SFT（对应公式 5）从标注数据学 hint 格式，奠定系统基础；② QGRPO（对应公式 6）用执行引擎的真实延迟反馈把偏好导向低延迟 hint，作为动态环境中的 RL 过程增强未见 workload 的推理能力；③ 在线 RAG 提示优化（对应公式 7），维护持续更新的 RAG（含实时执行记录），对每个 Q 动态构造含「相似查询参考 + 本查询历史执行分析」的 prompt，重复遇到 Q 时持续优化——自进化过程进一步最小化延迟。</p>
+
+  <div class="fig-note">📌 <b>对应图 3（Figure 3: QGRPO workflow with Latency-based Reward Paradigm）：</b>输入查询 Q 与其统计 → LLM 生成 G 个 hint {h₁…h_G} → 执行引擎测真实延迟 → 相对默认计划延迟计算奖励 → 组内相对优势反馈 → 更新策略。奖励模型用「默认计划延迟 t_d」与「各 hint 实际延迟 t_i」。</div>
+
+  <h3>4. 用于学习 Hint 格式的 SFT（SFT for Learning Hint Format）</h3>
+  <p>如 §2.3，需构造训练集 D<sub>sft</sub> = {(x, h*)}。Algorithm 1 对每条训练查询 Q<sub>i</sub>：执行 Q<sub>i</sub> 取计划与统计 E<sub>i</sub>（行 2）；抽取所用表 T<sub>i</sub>（行 3）、取基数 C<sub>i</sub>（行 4）；把 Q<sub>i</sub> 与 C<sub>i</sub> 拼接成 prompt x<sub>Qi</sub>（行 5）；抽取 hint h*<sub>i</sub> 作标签（行 6）；配对加入 D<sub>sft</sub>。Figure 2 展示了中间输出：从某查询的 JSON 计划中抽取统计（如 Aggregate 算子的 Actual Rows=90、Planning Time=1.045、Execution Time=153.547），并抽出 full-plan hint 与其简化结构。得到 D<sub>sft</sub> 后最大化 LLM 的条件预测概率。</p>
+
+  <h3>5. Query Group Relative Policy Optimization</h3>
+  <p>该阶段通过把模型输出导向低延迟 hint 来进一步增强 LLM 的查询优化能力。QGRPO 基于 GRPO：对同一 prompt 生成多个 hint {h₁…h_G}，用梯度下降依据这些 hint 的组内优势（对应相对延迟改进奖励）更新参数，优化为 θ<sub>GRPO</sub>。Figure 3 展示工作流与基于延迟的奖励范式。</p>
+  <p><b>5.1 基于延迟的奖励模型（Algorithm 2）。</b> 先执行不带 hint 的查询得基线延迟 t<sub>d</sub>（行 1）；对每个 hint h<sub>i</sub> 执行得实际延迟 t<sub>i</sub>（行 3）；算改进比 Δt<sub>i</sub>=t<sub>d</sub>/t<sub>i</sub>（行 4，越大越好）；奖励 r<sub>i</sub>=R<sub>Latency</sub>(Δt<sub>i</sub>)（行 5），其中 R<sub>Latency</sub>(Δt<sub>i</sub>)=tanh(ln(Δt<sub>i</sub>))（公式 8）。ln 带来对称奖励（加速 2 倍 ln2≈0.69，变慢 2 倍 ln0.5≈−0.69），tanh 把奖励限制在 [−1,1]，降低极端偏差的敏感度、提升稳定性。若 t<sub>i</sub>&lt;t<sub>d</sub> 则 Δt<sub>i</sub>&gt;1、奖励为正，反之负。</p>
+  <p><b>5.2 组内相对优势反馈（公式 9）。</b> A<sub>i</sub>=(r<sub>i</sub>−mean(r))/std(r)。计算新策略与旧策略生成 h<sub>i</sub> 的概率比 π<sub>θ</sub>(h<sub>i</sub>|x)/π<sub>θold</sub>(h<sub>i</sub>|x) 指导更新方向。简化梯度 Ĝ<sub>GRPO</sub>=Â<sub>i</sub>+β·(π<sub>ref</sub>(h<sub>i</sub>|x)/π<sub>θ</sub>(h<sub>i</sub>|x)−1)（公式 10）。Algorithm 3 给出完整流程：初始化 π<sub>θ</sub>=π<sub>ref</sub>=π<sub>sft</sub>，每步保存旧策略、采样 G 个 hint、算奖励、算优势、用公式 10 更新。</p>
+
+  <div class="fig-note">📌 <b>对应图 4（Figure 4: Overview of SEFRQO's RAG component）：</b>自进化范式三阶段——Preparation（收集历史执行记录装入 VecDB）、Initialization（首次遇到 Q 直接执行并存基线）、Generation（检索相似查询 + 历史最佳，构造动态 prompt → LLM → hint → 执行引擎 → 更优则更新 VecDB）。形成「获取更低延迟？」的反馈闭环。</div>
+
+  <h3>6. 基于 RAG 的提示优化（RAG-based Prompt Optimization）</h3>
+  <p>离线微调后，系统需在在线阶段持续进化以生成更低延迟 hint。对固定微调 LLM，同一 Q 的不同 prompt 导致不同 hint 质量，进而影响延迟（公式 7：优化 prompt x→x* 使 LLM 生成最小化延迟的 h）。本节提出基于 RAG 的 prompt 优化方法，用历史执行记录动态构造 prompt，实现在线上下文学习的自进化。</p>
+  <p><b>6.1 自进化 RAG 架构（Figure 4）。</b> 三阶段：Preparation 收集过往执行记录（含 PostgreSQL 默认优化器计划），无需预定义 workload，全部装入 VecDB 引导系统；Initialization 首次遇到 Q 时直接执行（不加 hint）并把记录存 VecDB；Generation 后续遇到 Q 时，先发往执行引擎抽取统计 stats（不实际执行），并行发往 VecDB 做相似度检索得 k 条参考，LLM 据此生成 hint，执行后若延迟低于历史记录则替换 VecDB 中旧记录；再次遇到 Q 时检索其当前最佳历史记录算反馈信息（如相对默认计划的性能增益 η）并入动态 prompt，驱动持续自进化。</p>
+  <p><b>6.2 向量库存储设计（Figure 5）。</b> 每条记录维护 7 个属性：Id（主键）、Iteration（Preparation/Initialization 为 0，Generation 从 1 起）、Vector（SQL 文本的嵌入，用于相似度）、SQL_id（基准名+查询名如 job_33b，确保只检索相似且不同的查询）、SQL、Plan、Execution Time。新记录按其布局插入；查询 Q 经编码器（如 SentenceTransformer）编码为定长向量，按余弦相似度取 top-k 参考用于构造 prompt。Figure 5 给出了存储示例（Id=0 执行 300ms、Id=7 第 4 轮 job_33b 执行 1234ms 等）。</p>
+
+  <div class="fig-note">📌 <b>对应图 6（Figure 6: Dynamic prompt in SEFRQO）：</b>prompt x=(SP∥UP)。SP 静态（定义角色、动作、约束）；UP 动态，含 k 对相似查询-答案、查询及其统计、默认执行计划、历史最佳计划与性能增益、对 LLM 的期望（生成更好的、不重复、格式正确）。</div>
+
+  <p><b>6.3 动态 Prompt 构造。</b> Figure 6 展示 x=(SP∥UP) 完整结构。SP 不变，定义角色（数据库专家）、动作、动作约束。UP 指定 LLM 角色与动作。对查询 Q，动态 UP 初版含 k 个最相似查询及其执行计划作参考（提供强相关上下文），再追加查询统计 stats（表基数、过滤选择性）。其后是当前生成的最佳计划与相对基线的增益 η（启发 LLM 理解当前 hint 状态、瞄准更优 hint），结尾给出期望与约束（生成更好 hint、避免照抄执行引擎或自己历史 hint、保证格式正确）。</p>
+  <p><b>6.4 自进化反馈范式。</b> Figure 4 中部展示该范式：LLM 从同一 Q 的历史执行记录学习以增强当前迭代生成的 hint。例子：JOB 20a 查询，Preparation 阶段 PostgreSQL 默认计划为 NestedLoop(k mk)→NestedLoop(k mk cc)；Generation 第一轮 SEFRQO 生成 NestedLoop(mk k)→NestedLoop(mk k t)；后续迭代进化为 HashJoin(mk k)→NestedLoop(mk k cc)。SEFRQO 悟出两点：① 先 join mk 和 k 有益、用 HashJoin 比 NestedLoop 高效；② NestedLoop(mk k t) 高效应保留。Algorithm 4 给出跨迭代 prompt 优化：取上一轮 hint h 执行得 (plan,t)，取历史最佳 (plan*,t*)，若 t&lt;t* 则更新；取初始化阶段存的基线 t₀，算 η=(t₀−t*)/t₀（η&lt;0 表示比基线差），把 (plan*,η) 并入 UP，拼回 SP 得优化 prompt P*，防止 LLM 重复踩坑、持续催生最优 hint h*。</p>
+
+  <h3>7. 评估（Evaluation）</h3>
+  <p><b>7.1 实验设置。</b> 服务器 AMD Ryzen 9700X / 128GB / A6000(48GB)。PostgreSQL 16.4 + pg_hint_plan，MySQL 8.4 测跨 DBMS；Milvus 作向量库；6 个本地 LLM：LLaMA3.1-3B(L3B)/8B(L8B) 及其 SFT 版(LS3B/LS8B)、SFT+QGRPO 版(LSG3B/LSG8B)；SentenceTransformer(Paraphrase-MiniLM-L6-v2) 作嵌入；k=1。变体：默认（full-plan + 向量库参考）、JO（仅 Leading）、NR（仅本查询历史、无 RAG 参考）。基线：Bao、Balsa、LLMSteer（LLM-QO/LLMOpt 无完整代码未能复现）。指标：性能增益（Overall/Filtered，↑）、相对执行时间 RET（↓）、推理与 RAG 检索延迟、同质性比率 HR（↓，无效或照抄默认计划的占比）。Benchmark：JOB（微调+预填 RAG）、CEB、Stack、TPC-DS(SF=4)；超时阈值 JOB/CEB 10s、Stack 30s、TPC-DS 60s。</p>
+  <p><b>7.2 查询执行延迟评估。</b> 静态场景：CEB（同 schema 不同分布）、Stack（完全未见过的跨域）；动态场景：CEB/JOB/Stack 混合轮流，10 轮 episode 共 50 迭代。Table 1 显示 CEB 上 LS8B 最佳（60.04% Overall），且 SFT 至关重要（L3B/L8B 远差于 LS3B/LS8B）；有趣的是 QGRPO 在 SFT 后略降（因 JOB↔CEB 相似，SFT 知识被充分利用），但在未见 Stack 或关掉 RAG 时，SFT+QGRPO 的探索性优势显现。Stack 上 LS8B/LSG8B 的 Filtered 增益可比拟甚至超过在其上训练的 LQO，证明知识迁移能力。Figure 7 显示 SEFRQO 在所有百分位都优于 PostgreSQL，CEB 上长尾查询约 2.5× 加速。与 LLMSteer 比：CEB 上 LLMSteer Overall 45.14%、SEFRQO 60.04%。动态场景 Table 2：SEFRQO 大幅优于 Bao（14.82%），证明摆脱特定 workload 约束的能力。</p>
+
+  <div class="fig-note">📌 <b>对应图 8 / 图 9：</b>CEB / Stack 上随迭代的 RET 曲线（↓）。LS8B 在 CEB 达最低 RET 0.41 且随迭代持续下降；L3B/L8B 原始模型几乎无提升（L3B 恒定生成同一 hint）。</div>
+
+  <p><b>7.3 自进化反馈范式。</b> Figure 8 显示 CEB 上 LS8B 最佳（RET 0.41）且持续下降潜力；原始模型（L3B/L8B）几乎无增益（L3B 恒定生成同一 hint，未能利用动态 prompt）。领域微调至关重要：LS3B/LS8B 均优于原始版，但 LS3B 比 LS8B 更不稳定。与 LQO 比：Balsa 每轮内改进有限，其好查询散落在不同迭代，需更多迭代才达峰值；Figure 9 中 Stack 上 Balsa 在迭代范围内未能超过基线。Stack 上 LLM 演化更稳（因未微调于 Stack，更谨慎），使小模型能超越大模型——LSG3B（含 QGRPO）在 Stack 最佳。</p>
+  <p><b>7.4 SFT 与 QGRPO 效果。</b> 去掉 RAG 自进化（动态 prompt 仅含 PostgreSQL 记录），Figure 10 显示原始 LLM 主要复读默认计划或生成无效 hint（RET≈1、HR≈1），微调 LLM 产生更多样计划（更低 HR）、 favor 探索。3B 模型上 QGRPO 效果显著：LS3B→LSG3B 的 HR 与 RET 进一步降低，LSG3B 甚至优于更大的 LS8B——成功的 QGRPO 能把输出偏好导向比无 QGRPO 的大模型更好的任务性能。但 QGRPO 的 RL 特性带来不确定性，LSG8B 未优于 LS8B（可能 8B 推理更复杂）。</p>
+  <p><b>7.5 推理与 RAG 检索时间。</b> LS3B 推理约 236ms(A6000)/160ms(A100)，RAG 检索平均 0.7ms；主要开销来自 LLM 推理（可用强 GPU 缓解）。CEB 上 SEFRQO 计划平均 520.67ms vs PostgreSQL 922.86ms，端到端仍更低。Figure 11 展示两类典型错误：重复文本块（Repeated Text Chunks，表名重复）、括号不匹配（Bracket Mismatching）——建议推理时加校验，生成不可用 hint 立即中止以降低延迟。</p>
+  <p><b>7.6 消融实验。</b> Figure 12a 显示 LSG3B-JO 的 HR 约 70%（远高于其他），Table 3 显示 full-plan 模式（50.13%）远优于 JO 模式（24.81%）。对比 LSG3B 与 LSG3B-NR（Table 3），前者持续更优，证明参考查询设计有效。Table 4：k=1/2/3 的 CEB Overall 增益 53.93%/57.75%/57.99%，HR 0.26/0.20/0.14——k 增大使 hint 更多样，但增益非单调，太少缺信息、太多迷惑 LLM。</p>
+  <p><b>7.7 额外研究。</b> 复杂查询：用 GPT-o3-mini 测 TPC-DS 取得 13.28% Overall / 27.81% Filtered 增益，99 条查询中 28 条用了新计划，模板 10 查询加速达 90.63%（Table 5）。基数不准：随机扰动后 LSG8B 仍达 51.50% Overall（轻微下降）。数据漂移：原始 IMDB 与「2000 年后」缩减库每 5 轮切换，出现尖峰但 LS8B 偶尔取得最低延迟。相似度方法：默认余弦比内积/L2 平均高约 3% 增益，内积产生最多样计划（多 150 个）。跨 DBMS：LSG8B 在 MySQL(CEB) 用简单 hint 翻译器获 26.28% Overall 增益。</p>
+
+  <h3>8. 相关工作（Related Work）</h3>
+  <p><b>非 LLM 的 LQO。</b> 按生成范式分 steering 与 generative 两类。Steering 类（Bao、LEON、LOGER、Lero）用神经网络精修传统优化器产出的计划，优点是侵入小、保留核心逻辑、减少差计划风险，但受限于所依赖的传统优化器能力。Generative 类（Balsa、Neo、Lemo）直接控制计划生成，可探索更广计划空间，但灵活度带来更高不稳定性与潜在波动。</p>
+  <p><b>LLM 与 RAG 用于数据库。</b> LLM 已用于 knob tuning（DBBert、GPTuner）、Text-to-SQL、代码生成、schema 理解等。RAG 广泛用于文本生成、视觉问答、代码合成，近期也用于数据库领域：SQL 生成检索相似查询与 schema；查询重写（Rafe）检索重写样例；Text-to-SQL（ReFSQL）检索问题-SQL 对降幻觉。近期三个早期尝试 LLMSteer（仅用嵌入模型选 hint 集，轻量但改进有限）、LLM-QO（主要用微调，DPO 需构造成对偏好）、LLMOpt（用 LLM 替换 Bao 流程中组件做计划候选生成与选择）。SEFRQO 采取 LLM-native 视角，通过模型微调与 prompt 优化定义优化问题，其自进化 RAG 具备先前方法难以达到的持续学习能力（SERAG 是其初步工作）。</p>
+
+  <h3>9. 结论与未来工作（Conclusion and Future Work）</h3>
+  <p>本文提出 SEFRQO——一个用于查询优化的自进化 RAG 系统。它利用 LLM 微调策略避免冷启动、增强跨 workload 泛化；提出结合离线 SFT、QGRPO 与在线上下文学习的两阶段框架；动态生成 prompt 并通过执行反馈持续进化。我们探索了基于 LLM 的查询优化的知识迁移能力，并展示了实际部署潜力。大量实验证明 SEFRQO 优于先前的 LQO 与基线执行引擎，且据我们所知是首个把 RAG 用于数据库查询优化的工作，拓展了该研究领域的边界。当前 SEFRQO 面向 OLAP 查询，因其开销对 OLTP 仍是挑战，留作未来工作。</p>
+
+  <p class="fc">— 全文翻译结束 —</p>
+</div>
+
+<div class="footer">SEFRQO 深度解读 · 基于 arXiv:2508.17556 · 翻译与解读仅供学习交流</div>
+
+</div>
+</body>
+</html>

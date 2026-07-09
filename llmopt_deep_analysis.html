@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>深度解读 — LLMOPT: Learning to Define and Solve General Optimization Problems</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{
+  font-family:'Noto Sans SC',system-ui,-apple-system,sans-serif;
+  background:#0d1117;color:#c9d1d9;
+  line-height:1.8;font-size:16px;
+  min-height:100vh;
+}
+.container{
+  max-width:1400px;margin:0 auto;padding:0 24px;
+  background:#0d1117;position:relative;
+}
+.back-btn{
+  position:fixed;top:16px;left:16px;z-index:9999;
+  background:rgba(20,20,35,.75);color:#c9d1d9;
+  border:1px solid rgba(255,255,255,.15);border-radius:10px;
+  padding:8px 16px;font-size:14px;cursor:pointer;
+  backdrop-filter:blur(6px);transition:all .3s;
+  text-decoration:none;display:flex;align-items:center;gap:6px;
+}
+.back-btn:hover{background:rgba(30,30,55,.9);border-color:rgba(255,255,255,.3);}
+.hero{padding:80px 0 40px;text-align:center;}
+.hero-title{
+  font-size:2.2rem;font-weight:700;
+  background:linear-gradient(135deg,#475569,#64748b,#64748b);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  background-clip:text;margin-bottom:12px;line-height:1.3;
+}
+.hero-sub{font-size:1.1rem;color:#8b949e;margin-bottom:8px;}
+.venue{font-size:.95rem;color:#8b949e;margin-top:8px;}
+.venue a{color:#475569;text-decoration:none;}
+.venue a:hover{text-decoration:underline;}
+.tag-row{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:16px;}
+.tag{
+  display:inline-block;padding:4px 14px;border-radius:20px;font-size:.85rem;
+  border:1px solid rgba(71,85,105,.3);color:#475569;
+  background:rgba(71,85,105,.06);
+}
+.divider{border:none;border-top:1px solid rgba(255,255,255,.08);margin:48px 0;}
+.section{margin:40px 0;}
+.section-title{
+  font-size:1.75rem;font-weight:700;margin-bottom:20px;
+  color:#e6edf3;display:flex;align-items:center;gap:10px;
+}
+.section-title .num{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:36px;height:36px;border-radius:50%;
+  background:linear-gradient(135deg,#475569,#64748b);
+  color:#0d1117;font-size:1rem;font-weight:700;flex-shrink:0;
+}
+.section-desc{font-size:16px;line-height:1.9;color:#c9d1d9;margin-bottom:16px;}
+.toc{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:16px;padding:28px 36px;margin:30px 0;
+}
+.toc h3{font-size:1.2rem;color:#e6edf3;margin-bottom:14px;}
+.toc ol{list-style:none;counter-reset:toc;padding:0;}
+.toc li{counter-increment:toc;margin:8px 0;}
+.toc li::before{content:counter(toc) ".";color:#475569;font-weight:600;margin-right:8px;}
+.toc a{color:#8b949e;text-decoration:none;transition:color .2s;}
+.toc a:hover{color:#475569;}
+.module-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:24px;margin:18px 0;transition:all .3s;
+}
+.module-card:hover{border-color:rgba(71,85,105,.3);transform:translateY(-2px);}
+.module-card h3{font-size:1.15rem;font-weight:600;margin-bottom:10px;color:#475569;}
+.module-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.arch-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:22px;margin:14px 0;transition:all .3s;
+}
+.arch-card:hover{border-color:rgba(71,85,105,.3);}
+.arch-card h4{font-size:1.05rem;font-weight:600;color:#64748b;margin-bottom:8px;}
+.arch-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.step-flow{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:22px;margin:14px 0;
+}
+.step-flow h4{font-size:1.05rem;font-weight:600;color:#475569;margin-bottom:8px;}
+.step-flow p{font-size:15px;line-height:1.8;color:#8b949e;}
+.data-table{
+  width:100%;border-collapse:collapse;margin:18px 0;
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;overflow:hidden;font-size:14px;
+}
+.data-table th{
+  background:rgba(71,85,105,.1);color:#475569;
+  padding:12px 16px;text-align:left;font-weight:600;
+}
+.data-table td{
+  padding:10px 16px;border-top:1px solid rgba(255,255,255,.06);
+  color:#c9d1d9;
+}
+.data-table tr:hover td{background:rgba(71,85,105,.04);}
+.formula-box{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;padding:20px 24px;margin:16px 0;
+  font-size:18px;text-align:center;color:#e6edf3;
+  font-family:'JetBrains Mono',monospace;
+}
+.code-block{
+  background:rgba(20,20,35,.8);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;padding:18px 22px;margin:16px 0;
+  overflow-x:auto;
+}
+.code-block pre{
+  font-family:'JetBrains Mono',monospace;font-size:14px;
+  line-height:1.7;color:#c9d1d9;white-space:pre;
+}
+.ck{color:#475569;}.cs{color:#64748b;}.cf{color:#d2a8ff;}.cg{color:#8b949e;}.cv{color:#79c0ff;}
+.qa-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:24px;margin:16px 0;
+}
+.qa-q{font-size:1.05rem;font-weight:600;color:#475569;margin-bottom:12px;}
+.qa-a{font-size:15px;line-height:1.9;color:#8b949e;}
+.highlight-box{
+  background:rgba(71,85,105,.06);border:1px solid rgba(71,85,105,.2);
+  border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;
+}
+.warn-box{
+  background:rgba(240,136,62,.08);border:1px solid rgba(240,136,62,.25);
+  border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;
+}
+.info-box{
+  background:rgba(71,85,105,.06);border:1px solid rgba(71,85,105,.2);
+  border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;
+}
+.prompt-box{
+  background:rgba(20,20,35,.8);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;padding:18px 22px;margin:16px 0;
+  font-family:'JetBrains Mono',monospace;font-size:13px;
+  line-height:1.7;color:#c9d1d9;white-space:pre-wrap;
+}
+.prompt-label{
+  display:inline-block;padding:2px 10px;border-radius:6px;
+  font-size:.85rem;font-weight:600;margin-bottom:8px;
+  background:rgba(71,85,105,.15);color:#475569;
+}
+.fc{font-size:14px;color:#8b949e;text-align:center;margin:10px 0;line-height:1.6;}
+.comp-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:22px;margin:14px 0;transition:all .3s;
+}
+.comp-card:hover{border-color:rgba(71,85,105,.3);}
+.comp-card h4{font-size:1.05rem;font-weight:600;color:#64748b;margin-bottom:8px;}
+.comp-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.insight-box{
+  background:rgba(71,85,105,.06);border:1px solid rgba(71,85,105,.2);
+  border-radius:12px;padding:18px 22px;margin:16px 0;
+}
+.insight-box h4{color:#475569;font-size:1.05rem;margin-bottom:8px;}
+.insight-box p{font-size:15px;line-height:1.8;color:#c9d1d9;}
+.limit-box{
+  background:rgba(240,136,62,.08);border:1px solid rgba(240,136,62,.25);
+  border-radius:12px;padding:18px 22px;margin:16px 0;
+}
+.limit-box h4{color:#64748b;font-size:1.05rem;margin-bottom:8px;}
+.limit-box p{font-size:15px;line-height:1.8;color:#c9d1d9;}
+.kv-row{
+  display:flex;border-bottom:1px solid rgba(255,255,255,.06);padding:8px 0;
+}
+.kv-row:last-child{border-bottom:none;}
+.kv-key{width:180px;flex-shrink:0;color:#475569;font-weight:500;font-size:14px;}
+.kv-val{color:#c9d1d9;font-size:14px;line-height:1.7;}
+.footer{text-align:center;color:#555;font-size:14px;padding:48px 0 32px;}
+/* SVG architecture */
+.svg-container{
+  background:rgba(20,20,35,.4);border:1px solid rgba(255,255,255,.06);
+  border-radius:14px;padding:20px;margin:24px 0;overflow-x:auto;
+  text-align:center;
+}
+.svg-container svg{max-width:100%;height:auto;}
+/* Phase badge */
+.phase-badge{
+  display:inline-block;padding:3px 12px;border-radius:8px;
+  font-size:.85rem;font-weight:600;margin-right:8px;
+}
+.phase-1{background:rgba(99,102,241,.15);color:#818cf8;}
+.phase-2{background:rgba(71,85,105,.15);color:#64748b;}
+.phase-3{background:rgba(34,197,94,.15);color:#4ade80;}
+/* Grid layout */
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
+.grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;}
+@media(max-width:900px){
+  .grid-2,.grid-3{grid-template-columns:1fr;}
+  .hero-title{font-size:1.6rem;}
+  .kv-row{flex-direction:column;}
+  .kv-key{width:auto;}
+}
+/* Animated arrow */
+@keyframes flowPulse{
+  0%,100%{opacity:.6;}
+  50%{opacity:1;}
+}
+.flow-arrow{animation:flowPulse 2s ease-in-out infinite;}
+
+</style>
+</head>
+<body>
+<div class="container">
+
+<a class="back-btn" href="index.html">&#8592; 返回目录</a>
+
+<a href="llmopt_full_translation.html" style="display:block;max-width:860px;margin:18px auto 0;padding:13px 22px;background:linear-gradient(90deg,rgba(31,111,235,.16),rgba(137,87,227,.16));border:1px solid rgba(137,87,227,.5);border-radius:12px;color:#e6edf3;text-decoration:none;font-weight:500;font-size:15px;text-align:center;box-shadow:0 2px 14px rgba(0,0,0,.35);">阅读本文逐段完整中文翻译（Full Translation）</a>
+
+<!-- ========== HERO ========== -->
+<div class="hero">
+  <h1 class="hero-title">LLMOPT: Learning to Define and Solve General Optimization Problems</h1>
+  <p class="hero-sub">用 LLM 从自然语言自动形式化并求解通用优化问题</p>
+  <div class="venue">ICLR 2025 &nbsp;|&nbsp; <a href='https://arxiv.org/abs/2502.04300'>arXiv:2502.04300</a></div>
+  <div class="tag-row">
+    <span class="tag">LLM</span><span class="tag">Optimization</span><span class="tag">Problem Formulation</span><span class="tag">SFT</span><span class="tag">ECNU</span>
+  </div>
+</div>
+
+<!-- ========== TOC ========== -->
+<div class="toc">
+  <h3>目录</h3>
+  <ol>
+    <li><a href="#sec-1">研究动机</a></li>
+    <li><a href="#sec-2">框架概览</a></li>
+    <li><a href="#sec-3">五元素统一建模框架</a></li>
+    <li><a href="#sec-4">多指令微调与对齐</a></li>
+    <li><a href="#sec-5">自纠正机制</a></li>
+    <li><a href="#sec-6">建模与求解的整合</a></li>
+    <li><a href="#sec-7">实验评估</a></li>
+    <li><a href="#sec-8">敏感性分析</a></li>
+    <li><a href="#sec-9">代码使用与实战（含 GitHub 源码、安装命令、使用示例）</a></li>
+    <li><a href="#sec-10">总结与未来展望</a></li>
+  </ol>
+</div>
+
+<hr class="divider">
+
+<hr class="divider">
+
+<!-- ========== 1. MOTIVATION ========== -->
+<div class="section" id="sec-1">
+  <h2 class="section-title"><span class="num">1</span> 研究动机：自然语言优化问题的泛化难题</h2>
+  <p class="section-desc">从自然语言定义并求解优化问题需专家知识；现有 prompt / learning 方法"优化泛化"有限（准确性 + 问题类型通用性不足）。核心问题：如何提升 LLM 在多样化优化问题上的定义与求解泛化能力？</p>
+  <div class="grid-2">
+    <div class="module-card">
+      <h3>现有方法局限</h3>
+      <p>prompt 法（如 OptiMUS）与 learning 法在问题类型通用性上不足，跨领域（约 20 领域 7 类问题）求解精度有限。</p>
+    </div>
+    <div class="module-card">
+      <h3>本文主张</h3>
+      <p>LLMOPT 提出五元素统一建模框架 + 多指令微调 + KTO 对齐 + 自纠正，实现端到端自动定义与求解通用优化问题。</p>
+    </div>
+  </div>
+  <div class="insight-box">
+    <h4>核心创新</h4>
+    <p>用 Sets / Parameters / Variables / Objective / Constraints 五要素把自然语言映射为统一结构，挖掘隐含约束，再经多指令 SFT + KTO 对齐 + 自纠正，在 6 个真实数据集上比 SOTA 平均提升 11.08% 求解精度。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 2. OVERVIEW ========== -->
+<div class="section" id="sec-2">
+  <h2 class="section-title"><span class="num">2</span> 框架概览：定义 + 求解 + 自纠正</h2>
+  <p class="section-desc">LLMOPT 三组件：数据（五元素定义 + 专家 / GPT-4 协同标注 + 增强）、学习（多指令 SFT + KTO 对齐）、自动测试（五元素 → 求解代码 → 执行 → 自纠正）。基座 Qwen1.5-14B。</p>
+  <div class="svg-container">
+    <svg viewBox="0 0 920 250" xmlns="http://www.w3.org/2000/svg" font-family="Noto Sans SC, sans-serif">
+      <defs><marker id="loO" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#64748b"/></marker></defs>
+      <rect x="20" y="95" width="140" height="60" rx="12" fill="rgba(71,85,105,.12)" stroke="#64748b" stroke-width="1.5"/>
+      <text x="90" y="130" text-anchor="middle" fill="#c9d1d9" font-size="14" font-weight="600">自然语言</text>
+      <rect x="190" y="55" width="200" height="130" rx="12" fill="rgba(71,85,105,.18)" stroke="#64748b" stroke-width="2"/>
+      <text x="290" y="88" text-anchor="middle" fill="#e6edf3" font-size="13" font-weight="700">五元素定义</text>
+      <text x="290" y="110" text-anchor="middle" fill="#8b949e" font-size="10">Sets/Params</text>
+      <text x="290" y="128" text-anchor="middle" fill="#8b949e" font-size="10">Variables/Obj</text>
+      <text x="290" y="146" text-anchor="middle" fill="#8b949e" font-size="10">Constraints</text>
+      <text x="290" y="164" text-anchor="middle" fill="#8b949e" font-size="10">挖掘隐含约束</text>
+      <rect x="440" y="55" width="200" height="130" rx="12" fill="rgba(71,85,105,.18)" stroke="#64748b" stroke-width="2"/>
+      <text x="540" y="88" text-anchor="middle" fill="#e6edf3" font-size="13" font-weight="700">多指令 SFT + KTO</text>
+      <text x="540" y="110" text-anchor="middle" fill="#8b949e" font-size="10">Df_SFT / Ds_SFT</text>
+      <text x="540" y="128" text-anchor="middle" fill="#8b949e" font-size="10">KTO 对齐</text>
+      <text x="540" y="146" text-anchor="middle" fill="#8b949e" font-size="10">抑制幻觉</text>
+      <text x="540" y="164" text-anchor="middle" fill="#8b949e" font-size="10">Pyomo 代码</text>
+      <rect x="690" y="55" width="210" height="130" rx="12" fill="rgba(71,85,105,.12)" stroke="#64748b" stroke-width="1.5"/>
+      <text x="795" y="88" text-anchor="middle" fill="#e6edf3" font-size="13" font-weight="700">自动测试 + 自纠正</text>
+      <text x="795" y="110" text-anchor="middle" fill="#8b949e" font-size="10">执行求解</text>
+      <text x="795" y="128" text-anchor="middle" fill="#8b949e" font-size="10">日志分析</text>
+      <text x="795" y="146" text-anchor="middle" fill="#8b949e" font-size="10">回退定义/代码</text>
+      <text x="795" y="164" text-anchor="middle" fill="#8b949e" font-size="10">上限 12 次</text>
+      <line x1="160" y1="120" x2="185" y2="120" stroke="#64748b" stroke-width="2" marker-end="url(#loO)"/>
+      <line x1="390" y1="120" x2="435" y2="120" stroke="#64748b" stroke-width="2" marker-end="url(#loO)"/>
+      <line x1="640" y1="120" x2="685" y2="120" stroke="#64748b" stroke-width="2" marker-end="url(#loO)"/>
+    </svg>
+  </div>
+  <div class="step-flow">
+    <h4>端到端流程</h4>
+    <p>自然语言 → 五元素定义（SFT）→ 求解代码生成（SFT）→ KTO 对齐 → 执行 Pyomo → 日志分析 → 必要时回退定义或代码步自纠正，循环至最优解。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 3. FIVE ========== -->
+<div class="section" id="sec-3">
+  <h2 class="section-title"><span class="num">3</span> 五元素统一建模框架</h2>
+  <p class="section-desc">五元素：Sets / Parameters / Variables / Objective / Constraints，把自然语言映射为统一结构，并挖掘隐含约束（如正整数约束），提升求解准确率。</p>
+  <div class="module-card">
+    <h3>中间结构的作用</h3>
+    <p>五元素作为中间结构显式捕获隐含约束，使生成的求解代码更准确（以牺牲少量 ER 为代价换 SA）。消融显示去掉五元素 SA 明显下降（如 Mamo C 64% vs 68%）。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 4. SFT ========== -->
+<div class="section" id="sec-4">
+  <h2 class="section-title"><span class="num">4</span> 多指令微调与对齐</h2>
+  <p class="section-desc">学习阶段含多指令 SFT 与 KTO 对齐。Df_SFT（问题 → 五元素）与 Ds_SFT（问题 / 五元素 → Pyomo 代码）联合训练，最大化条件概率。</p>
+  <div class="grid-2">
+    <div class="module-card">
+      <h3>多指令 SFT</h3>
+      <p>两个 SFT 数据集联合训练，分别学习"定义"与"求解代码生成"两个子任务，基座 Qwen1.5-14B。</p>
+    </div>
+    <div class="module-card">
+      <h3>KTO 模型对齐</h3>
+      <p>用 GPT-4 生成 + 专家标注 desirability 的 DKTO 数据做 Kahneman-Tversky 优化对齐，免奖励模型、数据需求低，抑制幻觉。优于 PPO / DPO。</p>
+    </div>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 5. SELFCORRECT ========== -->
+<div class="section" id="sec-5">
+  <h2 class="section-title"><span class="num">5</span> 自纠正机制</h2>
+  <div class="module-card">
+    <h3>运行日志触发自纠正</h3>
+    <p>自动测试中以运行日志触发自纠正（上限 12 次）：识别执行错误后回退到定义或代码步修正。表 11 显示其优于 GPT-4o 纠正与 12 次重复采样——识别并纠错比重复执行更关键。</p>
+  </div>
+  <div class="arch-card">
+    <h4>必要性的实证</h4>
+    <p>去掉自纠正 ER 暴跌（ComplexOR 94.7%→18.2%）；去掉 KTO 则 SA 与 AST 均劣；去掉五元素 SA 下降。三者缺一不可。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 6. INTEGRATION ========== -->
+<div class="section" id="sec-6">
+  <h2 class="section-title"><span class="num">6</span> 建模与求解的整合</h2>
+  <div class="arch-card">
+    <h4>端到端数据流</h4>
+    <p>自然语言 → 五元素定义（SFT）→ 求解代码生成（SFT）→ KTO 对齐 → 执行 Pyomo → 日志分析 → 必要时回退定义或代码步自纠正，循环至最优解。三个组件（定义 / 学习 / 测试）串成完整闭环，无显著 seesaw 效应（10 通用任务均 +0.3%）。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 7. EXPERIMENT ========== -->
+<div class="section" id="sec-7">
+  <h2 class="section-title"><span class="num">7</span> 实验评估：6 数据集 + 20 领域</h2>
+  <div class="module-card">
+    <h3>设置与基线</h3>
+    <p>6 真实数据集（NL4Opt、Mamo Easy/Complex、IndustryOR、NLP4LP、ComplexOR，约 20 领域 7 类问题）；指标 ER / SA / AST。对比 ORLM（learning 法）与 OptiMUS 等 prompt 法。</p>
+  </div>
+  <div class="highlight-box">
+    <p><b>主结果</b>：SA 对比，LLMOPT 93.0/97.0/68.0/46.0%，较 ORLM 平均 +11.08%；对比 prompt 法在 NL4Opt / NLP4LP / ComplexOR 提升 +14.2/+11.8/+6.0%；全部 SOTA。Qwen2-72B 比 14B 更优但成本权衡选 14B。</p>
+  </div>
+  <table class="data-table">
+    <tr><th>数据集</th><th>LLMOPT SA</th><th>较 ORLM</th></tr>
+    <tr><td>NL4Opt</td><td>93.0%</td><td>+14.2%</td></tr>
+    <tr><td>Mamo Easy</td><td>97.0%</td><td>平均 +11.08%</td></tr>
+    <tr><td>Mamo Complex</td><td>68.0%</td><td>64%→68%</td></tr>
+    <tr><td>ComplexOR</td><td>46.0%</td><td>+6.0%</td></tr>
+  </table>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 8. SENSITIVITY ========== -->
+<div class="section" id="sec-8">
+  <h2 class="section-title"><span class="num">8</span> 敏感性分析：组件消融</h2>
+  <div class="module-card">
+    <h3>三组件消融</h3>
+    <p>去掉五元素 SA 降（Mamo C 64% vs 68%）；去掉 KTO SA 与 AST 均劣；去掉自纠正 ER 暴跌（ComplexOR 94.7%→18.2%）。Qwen2-72B 比 14B 更优但成本权衡选 14B；无显著 seesaw 效应（10 通用任务均 +0.3%）。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 9. INSIGHT ========== -->
+<div class="section" id="sec-9">
+  <h2 class="section-title"><span class="num">9</span> 代码使用与实战（含 GitHub 源码、安装命令、使用示例）</h2>
+  <div class="module-card">
+    <h3>官方仓库</h3>
+    <p>代码仓库：<a href="https://github.com/caigaojiang/LLMOPT" style="color:#64748b;">https://github.com/caigaojiang/LLMOPT</a>（华东师大 + 蚂蚁 + 南大，ICLR 2025，arXiv:2410.13213）。SFT / KTO 代码分别基于 QwenLM/Qwen 与 huggingface/trl，8×A100-80G 训练。</p>
+  </div>
+  <div class="code-block"><pre># 1) 克隆仓库
+git clone https://github.com/caigaojiang/LLMOPT.git
+cd LLMOPT
+
+# 2) 多指令 SFT（定义 + 求解代码）
+python sft.py --model Qwen1.5-14B --data Df_SFT,Ds_SFT \
+    --base QwenLM/Qwen
+
+# 3) KTO 对齐（desirability 二值标签）
+python kto.py --model sft_ckpt --data DKTO --base trl
+
+# 4) 自动测试 + 自纠正（Pyomo 执行）
+python solve.py --problem nl.txt --max_retry 12</pre></div>
+  <div class="highlight-box">
+    <p>复现要点：五元素是提升准确的关键中间结构；KTO 免奖励模型、数据需求低；自纠正上限 12 次，识别并纠错比重复执行更关键。基座 14B 在成本 / 精度间取得平衡。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 10. SUMMARY ========== -->
+<div class="section" id="sec-10">
+  <h2 class="section-title"><span class="num">10</span> 总结与未来展望</h2>
+  <p class="section-desc">LLMOPT 用五元素统一建模 + 多指令 SFT + KTO 对齐 + 自纠正，从自然语言端到端自动定义并求解通用优化问题，在 6 个真实数据集上比 SOTA 平均提升 11.08% 求解精度，开源且训推成本低。</p>
+  <div class="qa-card">
+    <div class="qa-q">Q1：五元素为何提升准确？</div>
+    <div class="qa-a">作为中间结构显式捕获隐含约束，使代码更准确（以牺牲少量 ER 为代价换 SA）。</div>
+  </div>
+  <div class="qa-card">
+    <div class="qa-q">Q2：KTO 比 PPO/DPO 好在哪？</div>
+    <div class="qa-a">免奖励模型、数据需求低，用 desirability 二值标签直接对齐。</div>
+  </div>
+  <div class="qa-card">
+    <div class="qa-q">Q3：自纠正必要吗？</div>
+    <div class="qa-a">必要——表 11 显示其优于 GPT-4o 纠正与 12 次重复采样，识别并纠错比重复执行更关键。</div>
+  </div>
+  <div class="limit-box">
+    <h4>局限与未来</h4>
+    <p>依赖高质量专家标注（费时）；自然语言优化数据稀缺；大规模问题数据常以库 / 文件存而非文本。未来可探索自动标注与更大规模问题。</p>
+  </div>
+</div>
+
+<div class="footer">论文深度解读 · 生成自 LLMOPT: Learning to Define and Solve General Optimization Problems · 阅读时间约 30 分钟</div>
+
+</div>
+</body>
+</html>

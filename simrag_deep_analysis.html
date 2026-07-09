@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>深度解读 — SimRAG: Self-Improving RAG for Specialized Domains</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{
+  font-family:'Noto Sans SC',system-ui,-apple-system,sans-serif;
+  background:#0d1117;color:#c9d1d9;
+  line-height:1.8;font-size:16px;
+  min-height:100vh;
+}
+.container{
+  max-width:1400px;margin:0 auto;padding:0 24px;
+  background:#0d1117;position:relative;
+}
+.back-btn{
+  position:fixed;top:16px;left:16px;z-index:9999;
+  background:rgba(20,20,35,.75);color:#c9d1d9;
+  border:1px solid rgba(255,255,255,.15);border-radius:10px;
+  padding:8px 16px;font-size:14px;cursor:pointer;
+  backdrop-filter:blur(6px);transition:all .3s;
+  text-decoration:none;display:flex;align-items:center;gap:6px;
+}
+.back-btn:hover{background:rgba(30,30,55,.9);border-color:rgba(255,255,255,.3);}
+.hero{padding:80px 0 40px;text-align:center;}
+.hero-title{
+  font-size:2.4rem;font-weight:700;
+  background:linear-gradient(135deg,#0cebeb,#20e3b2,#29ffc6);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  background-clip:text;margin-bottom:12px;line-height:1.3;
+}
+.hero-sub{font-size:1.1rem;color:#8b949e;margin-bottom:8px;}
+.venue{font-size:.95rem;color:#8b949e;margin-top:8px;}
+.venue a{color:#0cebeb;text-decoration:none;}
+.venue a:hover{text-decoration:underline;}
+.tag-row{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:16px;}
+.tag{
+  display:inline-block;padding:4px 14px;border-radius:20px;font-size:.85rem;
+  border:1px solid rgba(12,235,235,.3);color:#0cebeb;
+  background:rgba(12,235,235,.06);
+}
+.divider{
+  border:none;border-top:1px solid rgba(255,255,255,.08);
+  margin:48px 0;
+}
+.section{margin:40px 0;}
+.section-title{
+  font-size:1.75rem;font-weight:700;margin-bottom:20px;
+  color:#e6edf3;display:flex;align-items:center;gap:10px;
+}
+.section-title .num{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:36px;height:36px;border-radius:50%;
+  background:linear-gradient(135deg,#0cebeb,#20e3b2);
+  color:#0d1117;font-size:1rem;font-weight:700;flex-shrink:0;
+}
+.section-desc{font-size:16px;line-height:1.9;color:#c9d1d9;margin-bottom:16px;}
+.toc{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:16px;padding:28px 36px;margin:30px 0;
+}
+.toc h3{font-size:1.2rem;color:#e6edf3;margin-bottom:14px;}
+.toc ol{list-style:none;counter-reset:toc;padding:0;}
+.toc li{counter-increment:toc;margin:8px 0;}
+.toc li::before{content:counter(toc) ".";color:#0cebeb;font-weight:600;margin-right:8px;}
+.toc a{color:#8b949e;text-decoration:none;transition:color .2s;}
+.toc a:hover{color:#0cebeb;}
+.module-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:24px;margin:18px 0;transition:all .3s;
+}
+.module-card:hover{border-color:rgba(12,235,235,.3);transform:translateY(-2px);}
+.module-card h3{
+  font-size:1.15rem;font-weight:600;margin-bottom:10px;
+  color:#0cebeb;
+}
+.module-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.arch-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:22px;margin:14px 0;transition:all .3s;
+}
+.arch-card:hover{border-color:rgba(12,235,235,.3);}
+.arch-card h4{font-size:1.05rem;font-weight:600;color:#20e3b2;margin-bottom:8px;}
+.arch-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.step-flow{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:22px;margin:14px 0;
+}
+.step-flow h4{font-size:1.05rem;font-weight:600;color:#0cebeb;margin-bottom:8px;}
+.step-flow p{font-size:15px;line-height:1.8;color:#8b949e;}
+.data-table{
+  width:100%;border-collapse:collapse;margin:18px 0;
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;overflow:hidden;font-size:14px;
+}
+.data-table th{
+  background:rgba(12,235,235,.1);color:#0cebeb;
+  padding:12px 16px;text-align:left;font-weight:600;
+}
+.data-table td{
+  padding:10px 16px;border-top:1px solid rgba(255,255,255,.06);
+  color:#c9d1d9;
+}
+.data-table tr:hover td{background:rgba(12,235,235,.04);}
+.formula-box{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;padding:20px 24px;margin:16px 0;
+  font-size:18px;text-align:center;color:#e6edf3;
+  font-family:'JetBrains Mono',monospace;
+}
+.code-block{
+  background:rgba(20,20,35,.8);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;padding:18px 22px;margin:16px 0;
+  overflow-x:auto;
+}
+.code-block pre{
+  font-family:'JetBrains Mono',monospace;font-size:14px;
+  line-height:1.7;color:#c9d1d9;white-space:pre;
+}
+.ck{color:#0cebeb;}.cs{color:#f0883e;}.cf{color:#d2a8ff;}.cg{color:#8b949e;}.cv{color:#79c0ff;}
+.qa-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:24px;margin:16px 0;
+}
+.qa-q{font-size:1.05rem;font-weight:600;color:#0cebeb;margin-bottom:12px;}
+.qa-a{font-size:15px;line-height:1.9;color:#8b949e;}
+.highlight-box{
+  background:rgba(12,235,235,.06);border:1px solid rgba(12,235,235,.2);
+  border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;
+}
+.warn-box{
+  background:rgba(240,136,62,.08);border:1px solid rgba(240,136,62,.25);
+  border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;
+}
+.info-box{
+  background:rgba(12,235,235,.06);border:1px solid rgba(12,235,235,.2);
+  border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;
+}
+.prompt-box{
+  background:rgba(20,20,35,.8);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;padding:18px 22px;margin:16px 0;
+  font-family:'JetBrains Mono',monospace;font-size:14px;
+  line-height:1.7;color:#c9d1d9;white-space:pre-wrap;
+}
+.prompt-label{
+  display:inline-block;padding:2px 10px;border-radius:6px;
+  font-size:.85rem;font-weight:600;margin-bottom:8px;
+  background:rgba(12,235,235,.15);color:#0cebeb;
+}
+.comp-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:22px;margin:14px 0;transition:all .3s;
+}
+.comp-card:hover{border-color:rgba(12,235,235,.3);}
+.comp-card h4{font-size:1.05rem;font-weight:600;color:#20e3b2;margin-bottom:8px;}
+.comp-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.insight-box{
+  background:rgba(12,235,235,.06);border:1px solid rgba(12,235,235,.2);
+  border-radius:12px;padding:18px 22px;margin:16px 0;
+}
+.insight-box h4{color:#0cebeb;font-size:1.05rem;margin-bottom:8px;}
+.insight-box p{font-size:15px;line-height:1.8;color:#c9d1d9;}
+.limit-box{
+  background:rgba(240,136,62,.08);border:1px solid rgba(240,136,62,.25);
+  border-radius:12px;padding:18px 22px;margin:16px 0;
+}
+.limit-box h4{color:#f0883e;font-size:1.05rem;margin-bottom:8px;}
+.limit-box p{font-size:15px;line-height:1.8;color:#c9d1d9;}
+.kv-row{
+  display:flex;gap:12px;padding:8px 0;
+  border-bottom:1px solid rgba(255,255,255,.05);
+}
+.kv-key{color:#8b949e;min-width:120px;font-weight:500;}
+.kv-val{color:#e6edf3;}
+.footer{
+  text-align:center;padding:40px 0;color:#8b949e;font-size:.9rem;
+  border-top:1px solid rgba(255,255,255,.06);margin-top:60px;
+}
+.svg-wrap{
+  background:rgba(20,20,35,.4);border:1px solid rgba(255,255,255,.06);
+  border-radius:14px;padding:20px;margin:20px 0;overflow-x:auto;
+}
+.svg-wrap svg{width:100%;height:auto;display:block;}
+@media(max-width:768px){
+  .hero-title{font-size:1.6rem;}
+  .section-title{font-size:1.3rem;}
+  .container{padding:0 14px;}
+  .toc{padding:18px 22px;}
+  .data-table{font-size:13px;}
+  .data-table th,.data-table td{padding:8px 10px;}
+}
+</style>
+</head>
+<body>
+<div class="container">
+
+<a href="index.html" class="back-btn">← 返回主页</a>
+
+<a href="simrag_full_translation.html" style="display:block;max-width:860px;margin:18px auto 0;padding:13px 22px;background:linear-gradient(90deg,rgba(31,111,235,.16),rgba(137,87,227,.16));border:1px solid rgba(137,87,227,.5);border-radius:12px;color:#e6edf3;text-decoration:none;font-weight:500;font-size:15px;text-align:center;box-shadow:0 2px 14px rgba(0,0,0,.35);">阅读本文逐段完整中文翻译（Full Translation）</a>
+
+<!-- ====== HERO ====== -->
+<section class="hero">
+  <h1 class="hero-title">SimRAG: Self-Improving RAG for Specialized Domains</h1>
+  <p class="hero-sub">让同一个 LLM 既会「问答」又会「出题」——用自生成的伪标签数据把通用 RAG 低成本适配到专业领域</p>
+  <p class="venue">
+    <span>📄 NAACL 2025 (Volume 1: Long Papers)</span> &nbsp;|&nbsp;
+    <span>Emory University &amp; Amazon</span>
+  </p>
+  <div class="tag-row">
+    <span class="tag">RAG</span>
+    <span class="tag">Domain Adaptation</span>
+    <span class="tag">Self-Training</span>
+    <span class="tag">Synthetic Data</span>
+    <span class="tag">Question Generation</span>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- ====== TOC ====== -->
+<div class="toc">
+  <h3>目录</h3>
+  <ol>
+    <li><a href="#sec-1">研究动机：专业领域 RAG 的数据稀缺困境</a></li>
+    <li><a href="#sec-2">整体架构总览：两阶段自提升框架</a></li>
+    <li><a href="#sec-3">核心组件一：Stage-I 检索导向微调</a></li>
+    <li><a href="#sec-4">核心组件二：Stage-II 领域自适应自训练</a></li>
+    <li><a href="#sec-5">核心组件三：多样化问题类型与质量过滤</a></li>
+    <li><a href="#sec-6">集成机制：QA 与 QG 双任务互增强闭环</a></li>
+    <li><a href="#sec-7">实验评估：11 数据集 × 3 领域</a></li>
+    <li><a href="#sec-8">敏感性分析：消融、检索器与伪标签质量</a></li>
+    <li><a href="#sec-9">代码使用与实战</a></li>
+    <li><a href="#sec-10">总结与未来展望</a></li>
+  </ol>
+</div>
+
+<hr class="divider">
+
+<!-- ====== 1. 研究动机 ====== -->
+<section class="section" id="sec-1">
+  <h2 class="section-title"><span class="num">1</span> 研究动机：专业领域 RAG 的数据稀缺困境</h2>
+  <p class="section-desc">
+    把通用 RAG 迁移到医学、科学、计算机等专业领域时，会遇到 <strong>分布偏移（distribution shift）</strong> 与 <strong>领域标注数据稀缺</strong> 的双重挑战。要让 RAG 在专业场景真正生效，必须对 LLM 做领域微调——但高质量的微调数据从何而来？
+  </p>
+
+  <div class="module-card">
+    <h3>现有方案的三大不足</h3>
+    <p>
+      <strong>① 持续预训练 / 领域 SFT：</strong>依赖专业语料或指令数据，但这些通用任务与「领域特定 QA」存在错配，无法充分激活 RAG 所需的上下文利用能力（如 SciTulu、MedLlama 在 RAG 评测中反而落后于通用 RAG 模型）。<br>
+      <strong>② GPT-4 合成数据：</strong>近期方法（RAFT、EvidenceRAG）用强模型生成 QA 微调数据，但<strong>昂贵、低效、缺乏显式质量控制</strong>；且直接用私有语料调用黑盒 LLM（GPT-4）会引入<strong>隐私风险</strong>，不适合敏感领域。<br>
+      <strong>③ 自训练尚未被充分探索：</strong>自训练（伪标签）虽在 NLP 多任务成功，但<strong>从未被广泛用于 RAG 场景</strong>；其核心缺陷是易受标签噪声影响。
+    </p>
+  </div>
+
+  <div class="insight-box">
+    <h4>SimRAG 的核心思想</h4>
+    <p>受自训练启发，SimRAG 让<strong>同一个 LLM 同时掌握「带上下文问答（QA）」与「基于上下文出题（QG）」</strong>两种互补能力。两者都要求从上下文中抽取与概括关键信息，因而能<strong>相互强化</strong>。模型先学会这两件事，再用它从<strong>无标签领域语料</strong>自生成高质量 (问题, 段落, 答案) 伪标签，持续微调自己——整个过程<strong>无需 GPT-4、保护隐私、成本极低</strong>。</p>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- ====== 2. 整体架构总览 ====== -->
+<section class="section" id="sec-2">
+  <h2 class="section-title"><span class="num">2</span> 整体架构总览：两阶段自提升框架</h2>
+  <p class="section-desc">
+    SimRAG 是一个两阶段流程：Stage-I 在通用领域做「检索导向微调」，让 LLM 具备基础指令遵循与上下文利用能力；Stage-II 利用无标签领域语料做「领域自适应自训练」，生成伪标签并过滤后持续微调模型。
+  </p>
+
+  <div class="svg-wrap">
+    <svg viewBox="0 0 1200 400" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="g1" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#0cebeb"/><stop offset="100%" stop-color="#20e3b2"/>
+        </linearGradient>
+        <linearGradient id="g2" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#20e3b2"/><stop offset="100%" stop-color="#29ffc6"/>
+        </linearGradient>
+        <filter id="sh"><feDropShadow dx="0" dy="3" stdDeviation="5" flood-color="#000" flood-opacity=".35"/></filter>
+        <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 1 L 9 5 L 0 9 z" fill="#0cebeb"/>
+        </marker>
+      </defs>
+
+      <!-- Stage I -->
+      <rect x="20" y="40" width="560" height="150" rx="16" fill="#0d1520" stroke="#0cebeb" stroke-width="1.5" filter="url(#sh)"/>
+      <rect x="20" y="40" width="560" height="42" rx="16" fill="url(#g1)"/>
+      <text x="300" y="68" text-anchor="middle" fill="#0d1117" font-size="15" font-weight="700">Stage-I · 检索导向微调 (Retrieval-oriented SFT)</text>
+      <text x="60" y="108" fill="#8b949e" font-size="12">① 通用指令 SFT（OpenAssistant, Dolly, SODA…）</text>
+      <text x="60" y="132" fill="#8b949e" font-size="12">② 通用领域上下文 QA（DROP, NQ, SQuAD, …）</text>
+      <text x="60" y="156" fill="#8b949e" font-size="12">③ 检索相关数据：Answer Gen + Query Gen</text>
+
+      <line x1="580" y1="115" x2="640" y2="115" stroke="#0cebeb" stroke-width="2" marker-end="url(#arr)"/>
+
+      <!-- Stage II left: gen -->
+      <rect x="640" y="40" width="540" height="150" rx="16" fill="#0d1520" stroke="#20e3b2" stroke-width="1.5" filter="url(#sh)"/>
+      <rect x="640" y="40" width="540" height="42" rx="16" fill="url(#g2)"/>
+      <text x="910" y="68" text-anchor="middle" fill="#0d1117" font-size="15" font-weight="700">Stage-II · 领域自适应自训练 (Self-Training)</text>
+      <text x="680" y="104" fill="#8b949e" font-size="12">a) 候选答案生成：a ∼ p_θ(· | d_i)</text>
+      <text x="680" y="128" fill="#8b949e" font-size="12">b) 答案条件出题：q ∼ p_θ(· | a_i, d_i)</text>
+      <text x="680" y="152" fill="#8b949e" font-size="12">c) 往返一致性过滤 → 伪标签元组 𝒯′</text>
+
+      <!-- loop back -->
+      <path d="M 910 190 C 910 250, 300 250, 300 195" fill="none" stroke="#0cebeb" stroke-width="2" stroke-dasharray="6 5" marker-end="url(#arr)"/>
+      <text x="600" y="245" text-anchor="middle" fill="#0cebeb" font-size="12" font-weight="600">用 𝒯′ 持续微调 → 领域自提升闭环</text>
+
+      <!-- corpus -->
+      <rect x="640" y="290" width="540" height="70" rx="14" fill="#111118" stroke="#29ffc6" stroke-width="1"/>
+      <text x="910" y="318" text-anchor="middle" fill="#20e3b2" font-size="13" font-weight="600">无标签领域语料 𝒞</text>
+      <text x="910" y="342" text-anchor="middle" fill="#8b949e" font-size="11">医学(教科书/Wiki/PubMed) · 科学(Wiki) · CS(Wiki+arXiv)</text>
+      <line x1="910" y1="290" x2="910" y2="200" stroke="#29ffc6" stroke-width="1.5" marker-end="url(#arr)"/>
+    </svg>
+  </div>
+
+  <div class="arch-card">
+    <h4>目标形式化</h4>
+    <p>给定查询 q，检索器 ℛ 从大规模语料 𝒞 取回 top-k 上下文 D；LLM M_θ 基于 D 生成答案 a。SimRAG 的目标是在<strong>仅有无标签领域语料</strong>的情况下，用 Stage-I 的检索导向数据 𝒯 与 Stage-II 自生成的伪标签 𝒯′，把 M_θ 适配到专业领域：在 𝒯 ∪ 𝒯′ 上训练。</p>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- ====== 3. 核心组件一 ====== -->
+<section class="section" id="sec-3">
+  <h2 class="section-title"><span class="num">3</span> 核心组件一：Stage-I 检索导向微调</h2>
+  <p class="section-desc">
+    以指令微调后的 LLM（如 Llama-3-8B-Instruct）为基座。尽管已指令微调，它们仍不擅长利用上下文回答领域问题，因此需用三类数据进一步微调。
+  </p>
+
+  <div class="step-flow">
+    <h4>① 通用指令 SFT 数据</h4>
+    <p>OpenAssistant、Dolly、SODA、ELI5、Self-Instruct、Unnatural Instructions 等，保持模型遵循指令的基础能力，并确保与目标任务测试集无重叠。</p>
+  </div>
+  <div class="step-flow">
+    <h4>② 通用领域上下文 QA 数据</h4>
+    <p>DROP、NQ、SQuAD、NarrativeQA、Quoref、ROPES、OpenbookQA、LogiQA、TAT-QA、WebGLM、StrategyQA、BoolQ、FaVIQ、FEVER 等——训练模型基于相关上下文生成准确答案。</p>
+  </div>
+  <div class="step-flow">
+    <h4>③ 通用检索相关数据（关键）</h4>
+    <p>为 Stage-II 生成高质量伪标签做准备，特地训练两种技能：<br>
+    <strong>Answer Generation</strong>：给定段落，生成可能成为答案的候选片段（SQuAD 1.1/2.0、DROP、WebQuestions）；<br>
+    <strong>Query Generation</strong>：给定答案与段落，基于答案生成问题（NQ、SQuAD 1.1、StrategyQA、WebQuestions、FaVIQ、FEVER）。</p>
+  </div>
+
+  <div class="insight-box">
+    <h4>为什么 Stage-I 如此重要？</h4>
+    <p>消融显示（表 4），去掉 Stage-I 整体表现大幅下降（医学平均 66.04 → 61.87）。它一方面赋予模型「从上下文抽取答案」与「依据答案反推问题」的双向能力，另一方面正是这两种能力让 Stage-II 的伪标签生成变得可行且高质量。</p>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- ====== 4. 核心组件二 ====== -->
+<section class="section" id="sec-4">
+  <h2 class="section-title"><span class="num">4</span> 核心组件二：Stage-II 领域自适应自训练</h2>
+  <p class="section-desc">
+    经过 Stage-I 的模型仍只在通用领域训练。面对专业领域分布偏移，SimRAG 用<strong>自训练</strong>从无标签领域语料生成伪标签样本，实现领域适配。
+  </p>
+
+  <div class="step-flow">
+    <h4>步骤 a · 候选答案生成</h4>
+    <p>对语料中每篇文档 d_i，提示微调后的 LLM 生成若干候选答案片段：<code>a^i_j ∼ p_θ(· | d_i), j = 1..m</code>。</p>
+  </div>
+  <div class="step-flow">
+    <h4>步骤 b · 答案条件出题</h4>
+    <p>对每个候选答案 a^i_j 及其文档 d_i，再提示 LLM 生成候选问题：<code>q^i_j ∼ p_θ(· | a^i_j, d_i)</code>，以 a^i_j 为真实答案、d_i 为支撑上下文，得到伪标签对 (q^i_j, a^i_j)。</p>
+  </div>
+  <div class="step-flow">
+    <h4>步骤 c · 往返一致性过滤（Round-trip Consistency）</h4>
+    <p>仅保留「用生成问题 q′_i 检索出的 top-k 文档中包含真实答案 a′_i」的样本，即 <code>a′_i ∈ D′_{k,i}</code>。据此构造伪标签训练元组 <code>𝒯′ = {(q′_i, D′_i, a′_i)}</code>。</p>
+  </div>
+
+  <div class="formula-box">
+    𝒯′ = { (q′_i, D′_i, a′_i) }_{i=1}^n &nbsp;→&nbsp; 与 SFT 数据 𝒯_SFT、通用 QA 数据 𝒯_gen 混合，持续微调
+  </div>
+
+  <div class="highlight-box">
+    <strong>「往返一致性」的妙处：</strong>它等价于用强检索器（如 Dragon）做一次独立验证——只有当模型生成的问题能把自己「带回到」含答案的文档时，这对 QA 才被保留。这在不调用 GPT-4 的前提下，提供了<strong>低成本、可解释的伪标签质量控制</strong>。
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- ====== 5. 核心组件三 ====== -->
+<section class="section" id="sec-5">
+  <h2 class="section-title"><span class="num">5</span> 核心组件三：多样化问题类型与质量过滤</h2>
+  <p class="section-desc">
+    为提升伪标签的泛化能力、避免模型过拟合单一输出格式，SimRAG 在 Stage-II 注入<strong>多种问题类型</strong>，并与过滤策略配合。
+  </p>
+
+  <div class="comp-card">
+    <h4>① 短答案 QA（Short-span QA）</h4>
+    <p>遵循前述「答案生成→出题」流水线，生成实体/短语类问题。消融显示<strong>移除短答案 QA 带来最大性能跌幅</strong>，说明它是适配专业领域的核心。</p>
+  </div>
+  <div class="comp-card">
+    <h4>② 多选 QA（Multiple-choice QA）</h4>
+    <p>用同语料中其它候选答案作为干扰项构造选项。对 MedQA、MedMCQA、MMLU 等选择题型增益明显。</p>
+  </div>
+  <div class="comp-card">
+    <h4>③ 论断验证（Claim Verification）</h4>
+    <p>绕过答案生成步骤，直接让 LLM 生成「可由文档支持或反驳」的论断。对 PubMedQA、BioASQ 等验证型任务帮助最大。</p>
+  </div>
+
+  <div class="insight-box">
+    <h4>过滤带来的双重收益</h4>
+    <p>图 3 显示：移除低质量数据不仅提升整体表现，还<strong>加速了训练过程</strong>。值得注意的是，即便<strong>不做过滤</strong>，SimRAG 也能取得强表现——因为经过 Stage-I 微调的 LLM 生成的合成问题本身已高度贴合上下文。</p>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- ====== 6. 集成机制 ====== -->
+<section class="section" id="sec-6">
+  <h2 class="section-title"><span class="num">6</span> 集成机制：QA 与 QG 双任务互增强闭环</h2>
+  <p class="section-desc">
+    SimRAG 的精髓在于把「问答」与「出题」设计为<strong>一个 LLM 的两个互补任务</strong>，二者都围绕「从上下文中抽取与概括关键信息」，因而形成自提升闭环。
+  </p>
+
+  <div class="arch-card">
+    <h4>互增强逻辑</h4>
+    <p>
+      ① Stage-I 让模型先学会「读上下文答问题」与「读答案反推问题」；<br>
+      ② 这两个能力让 Stage-II 能自举式地从无标签语料产出 (q, D, a) 三元组；<br>
+      ③ 用这些<strong>自产自消</strong>的高质量伪标签再微调同一模型，使其在领域 QA 上更进一步；<br>
+      ④ 模型越强，生成的伪标签质量越高，形成正向循环。
+    </p>
+  </div>
+
+  <div class="formula-box">
+    自提升： M_θ  --Stage-I-->  会 QA + 会 QG  --Stage-II 自生成 𝒯′-->  持续微调  ⇒  领域适配的 M_θ*
+  </div>
+
+  <div class="info-box">
+    <strong>与 RAFT / EvidenceRAG 的本质区别：</strong>后两者用<strong>昂贵的 GPT-4</strong> 生成合成数据，且通常只训练「问答」单一任务；SimRAG 用<strong>同一个待训练 LLM</strong> 同时做 QA 与 QG，既省成本又通过双任务互增强获得更贴合上下文的合成样本——这是其下游表现全面占优的根因。
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- ====== 7. 实验评估 ====== -->
+<section class="section" id="sec-7">
+  <h2 class="section-title"><span class="num">7</span> 实验评估：11 数据集 × 3 领域</h2>
+  <p class="section-desc">
+    在 <strong>11 个数据集、3 大领域</strong>评测：医学（MIRAGE 基准的 PubMedQA/BioASQ/MedQA/MedMCQA/MMLU-med + LiveQA/MedicationQA）、科学（ARC、SciQ、MMLU-sci 14 子任务）、计算机科学（CS-Bench）。基座为 Llama-3-8B-Instruct 与 Gemma-2-27B-Instruct。
+  </p>
+
+  <table class="data-table">
+    <thead>
+      <tr><th>对比组</th><th>代表方法</th><th>结论</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>通用 LLM（参考）</td><td>GPT-3.5 / GPT-4 / Llama3-8B / Gemma2-27B</td><td>SimRAG 用 Gemma2-27B 达 GPT-4 的 93.99% / 98.95% / 86.66%</td></tr>
+      <tr><td>领域专用 LLM</td><td>MedLlama、SciTulu、BioMistral</td><td>未针对 RAG 优化，利用检索上下文能力差，弱于 SimRAG</td></tr>
+      <tr><td>通用 RAG LLM</td><td>Self-RAG、ChatQA</td><td>面临分布偏移，难以准确整合领域知识</td></tr>
+      <tr><td>领域 RAG LLM</td><td>RAFT、EvidenceRAG（GPT-4 造数据）</td><td>仍次优；SimRAG 平均超越 1.2%–8.6%</td></tr>
+    </tbody>
+  </table>
+
+  <div class="insight-box">
+    <h4>关键发现</h4>
+    <p>
+      ① 医学 / 科学 / CS 三领域，相比 Llama 变体平均提升 <strong>8.01% / 6.37% / 8.61%</strong>，相比 Gemma 变体提升 <strong>1.19% / 3.50% / 3.20%</strong>；<br>
+      ② 领域专用 LLM（如 SciTulu、MedLlama）虽在相关语料微调，但因未针对 RAG 优化而落后于 SimRAG；<br>
+      ③ 即便 RAFT/EvidenceRAG 用昂贵的 GPT-4 造数据，SimRAG 仍全面更优——证明其「QA+QG 双任务」生成的数据更准、更贴合上下文；<br>
+      ④ 即便是较新的 CS 领域，SimRAG 也展现出良好潜力，证明可迁移到新兴领域。
+    </p>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- ====== 8. 敏感性分析 ====== -->
+<section class="section" id="sec-8">
+  <h2 class="section-title"><span class="num">8</span> 敏感性分析：消融、检索器与伪标签质量</h2>
+
+  <div class="arch-card">
+    <h4>① Stage-I / Stage-II 的贡献</h4>
+    <p>检索导向微调（Stage-I）相对原始基座显著提升；进一步在自合成元组上微调（Stage-II）再平均提升 <strong>Llama +2.21%、Gemma +3.50%</strong>，证明「有领域语料即可自生成高质量数据、实现自提升」。</p>
+  </div>
+
+  <div class="arch-card">
+    <h4>② 不同检索器的鲁棒性</h4>
+    <p>换用 Dragon 作为检索器（表 5），SimRAG 相对基座仍稳定提升，说明其自提升机制对<strong>检索器选择不敏感</strong>，具有跨检索器的鲁棒性。</p>
+  </div>
+
+  <div class="arch-card">
+    <h4>③ 伪标签质量研究</h4>
+    <p>
+      <strong>生成模型对比：</strong>用 Stage-I 微调模型自生成 &gt; 用现成 T5-Large QG 模型 &gt; 用原始 Llama3-8B-it 基座，验证「让微调模型自己造数据」的明显优势；<br>
+      <strong>过滤的作用：</strong>过滤既提性能又加速训练，但不过滤也已很强；<br>
+      <strong>问题类型：</strong>三类全用时最佳；<strong>移除短答案 QA 跌幅最大</strong>，论断验证对 PubMedQA/BioASQ 增益大，多选对 MedQA/MedMCQA/MMLU 增益大。
+    </p>
+  </div>
+
+  <div class="insight-box">
+    <h4>④ 案例研究：为什么自生成数据更好？</h4>
+    <p>对比 Stage-I 后模型与原始 Llama3-8B-it 生成的伪标签：原始模型要么直接抄句子（任务太简单），要么生成过度依赖原文的冗长问题甚至误解上下文；而 Stage-I 微调后的 SimRAG 生成<strong>自包含、脱离原文也能理解、且更具挑战性</strong>的 QA 对，为 Stage-II 提供了更难也更有效的高质量训练数据。</p>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- ====== 9. 代码使用与实战 ====== -->
+<section class="section" id="sec-9">
+  <h2 class="section-title"><span class="num">9</span> 代码使用与实战</h2>
+  <div class="kv-row"><span class="kv-key">基座模型</span><span class="kv-val">Llama-3-8B-Instruct / Gemma-2-27B-Instruct</span></div>
+  <div class="kv-row"><span class="kv-key">微调方式</span><span class="kv-val">Gemma2 用 LoRA(r=32, α=32)；全局 batch 64，梯度累积 8，训 1 epoch</span></div>
+  <div class="kv-row"><span class="kv-key">学习率</span><span class="kv-val">Stage-I 5e-7；Stage-II Llama 2e-7 / Gemma 5e-7；AdamW(β1=0.9, β2=0.95)</span></div>
+  <div class="kv-row"><span class="kv-key">检索器</span><span class="kv-val">Dragon（扩展上下文长度以增强 RAG 鲁棒性）</span></div>
+  <div class="kv-row"><span class="kv-key">硬件</span><span class="kv-val">8 × NVIDIA A100</span></div>
+  <div class="kv-row"><span class="kv-key">数据混合</span><span class="kv-val">Stage-I/II 多源 interleave 混合；伪标签占比最高(短答案 26.25% + 论断 17.5%)</span></div>
+
+  <div class="code-block"><pre><span class="cg"># Stage-II 出题提示（核心两步走）</span>
+<span class="ck">[Answer Generation]</span>  Based on the context, generate several candidate spans
+                    within the passage that are likely to be answers ...
+<span class="ck">[Query Generation]</span>  Based on the context, please generate a question
+                    that is relevant to the information provided.
+                    The question should stand alone ... The answer: [Answer]</pre></div>
+
+  <div class="info-box">
+    <strong>实战提示：</strong>SimRAG 的最大卖点是<strong>完全不依赖 GPT-4</strong>——同一个待训练 LLM 既当「老师」造数据、又当「学生」被训练，在隐私敏感（医疗/金融）与预算受限场景尤为适用。Stage-II 不增加推理时间复杂度（与同基座 RAG 相同）。
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- ====== 10. 总结 ====== -->
+<section class="section" id="sec-10">
+  <h2 class="section-title"><span class="num">10</span> 总结与未来展望</h2>
+  <p class="section-desc">
+    SimRAG 提出了一个指令微调框架，通过赋予 LLM「问答 + 出题」双重能力，使其能从无标签领域语料自生成多样化、高质量的合成问题，从而高效适配专业领域——这正是分布偏移与领域数据稀缺场景的关键难题。在 3 领域 11 数据集上的实验一致表明 SimRAG 优于各类基线。
+  </p>
+
+  <div class="limit-box">
+    <h4>局限性（论文自述）</h4>
+    <p>
+      ① <strong>单轮伪标签生成：</strong>目前仅从语料做一轮查询生成，可能限制伪标签质量的进一步提升；迭代式精炼生成或可更进一步。<br>
+      ② <strong>额外训练时间：</strong>合成查询生成与过滤增加了训练复杂度，在算力受限环境需权衡；但<strong>不增加推理时间复杂度</strong>。<br>
+      ③ <strong>更强的出题模型：</strong>用更大模型（如 Llama-3.1-70B）作出题器可能带来进一步增益，但超出当前预算。
+    </p>
+  </div>
+
+  <div class="insight-box">
+    <h4>未来方向</h4>
+    <p>迭代式伪标签精炼、结合更强（但更贵）的出题模型，以及把「QA+QG 自提升」推广到更多检索增强场景。对于「如何用最少外部依赖把通用 RAG 变成领域专家」这一问题，SimRAG 给出了一条自包含、隐私友好、可落地的路径，与 R2AG（桥接检索器-LLM 语义鸿沟）、Emulating RAG（免检索器提示模拟）共同构成了 RAG 增强研究的互补视角。</p>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-q">Q：SimRAG 和 RAFT 都是「用合成数据微调 RAG」，区别在哪？</div>
+    <div class="qa-a">A：RAFT 用 <strong>GPT-4</strong> 等强模型生成领域 QA 数据（昂贵且有隐私风险），且只训练「问答」单一任务；SimRAG 让<strong>同一个待训练 LLM</strong> 同时做「问答」与「出题」双任务，通过二者互增强产出更贴合上下文的伪标签，且完全不调用外部强模型——成本更低、隐私更安全，下游表现也全面更优。</div>
+  </div>
+</section>
+
+<div class="footer">论文深度解读 · 生成自 SimRAG (NAACL 2025) · 阅读时间约 30 分钟</div>
+
+</div>
+</body>
+</html>

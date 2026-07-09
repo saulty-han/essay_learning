@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>深度解读 — Reasoning Bank: Scaling Agent Self-Evolving with Reasoning Memory</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{
+  font-family:'Noto Sans SC',system-ui,-apple-system,sans-serif;
+  background:#0d1117;color:#c9d1d9;
+  line-height:1.8;font-size:16px;
+  min-height:100vh;
+}
+.container{
+  max-width:1400px;margin:0 auto;padding:0 24px;
+  background:#0d1117;position:relative;
+}
+.back-btn{
+  position:fixed;top:16px;left:16px;z-index:9999;
+  background:rgba(20,20,35,.75);color:#c9d1d9;
+  border:1px solid rgba(255,255,255,.15);border-radius:10px;
+  padding:8px 16px;font-size:14px;cursor:pointer;
+  backdrop-filter:blur(6px);transition:all .3s;
+  text-decoration:none;display:flex;align-items:center;gap:6px;
+}
+.back-btn:hover{background:rgba(30,30,55,.9);border-color:rgba(255,255,255,.3);}
+.hero{padding:80px 0 40px;text-align:center;}
+.hero-title{
+  font-size:2.2rem;font-weight:700;
+  background:linear-gradient(135deg,#db2777,#ec4899,#ec4899);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  background-clip:text;margin-bottom:12px;line-height:1.3;
+}
+.hero-sub{font-size:1.1rem;color:#8b949e;margin-bottom:8px;}
+.venue{font-size:.95rem;color:#8b949e;margin-top:8px;}
+.venue a{color:#db2777;text-decoration:none;}
+.venue a:hover{text-decoration:underline;}
+.tag-row{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:16px;}
+.tag{
+  display:inline-block;padding:4px 14px;border-radius:20px;font-size:.85rem;
+  border:1px solid rgba(219,39,119,.3);color:#db2777;
+  background:rgba(219,39,119,.06);
+}
+.divider{border:none;border-top:1px solid rgba(255,255,255,.08);margin:48px 0;}
+.section{margin:40px 0;}
+.section-title{
+  font-size:1.75rem;font-weight:700;margin-bottom:20px;
+  color:#e6edf3;display:flex;align-items:center;gap:10px;
+}
+.section-title .num{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:36px;height:36px;border-radius:50%;
+  background:linear-gradient(135deg,#db2777,#ec4899);
+  color:#0d1117;font-size:1rem;font-weight:700;flex-shrink:0;
+}
+.section-desc{font-size:16px;line-height:1.9;color:#c9d1d9;margin-bottom:16px;}
+.toc{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:16px;padding:28px 36px;margin:30px 0;
+}
+.toc h3{font-size:1.2rem;color:#e6edf3;margin-bottom:14px;}
+.toc ol{list-style:none;counter-reset:toc;padding:0;}
+.toc li{counter-increment:toc;margin:8px 0;}
+.toc li::before{content:counter(toc) ".";color:#db2777;font-weight:600;margin-right:8px;}
+.toc a{color:#8b949e;text-decoration:none;transition:color .2s;}
+.toc a:hover{color:#db2777;}
+.module-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:24px;margin:18px 0;transition:all .3s;
+}
+.module-card:hover{border-color:rgba(219,39,119,.3);transform:translateY(-2px);}
+.module-card h3{font-size:1.15rem;font-weight:600;margin-bottom:10px;color:#db2777;}
+.module-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.arch-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:22px;margin:14px 0;transition:all .3s;
+}
+.arch-card:hover{border-color:rgba(219,39,119,.3);}
+.arch-card h4{font-size:1.05rem;font-weight:600;color:#ec4899;margin-bottom:8px;}
+.arch-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.step-flow{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:22px;margin:14px 0;
+}
+.step-flow h4{font-size:1.05rem;font-weight:600;color:#db2777;margin-bottom:8px;}
+.step-flow p{font-size:15px;line-height:1.8;color:#8b949e;}
+.data-table{
+  width:100%;border-collapse:collapse;margin:18px 0;
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;overflow:hidden;font-size:14px;
+}
+.data-table th{
+  background:rgba(219,39,119,.1);color:#db2777;
+  padding:12px 16px;text-align:left;font-weight:600;
+}
+.data-table td{
+  padding:10px 16px;border-top:1px solid rgba(255,255,255,.06);
+  color:#c9d1d9;
+}
+.data-table tr:hover td{background:rgba(219,39,119,.04);}
+.formula-box{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;padding:20px 24px;margin:16px 0;
+  font-size:18px;text-align:center;color:#e6edf3;
+  font-family:'JetBrains Mono',monospace;
+}
+.code-block{
+  background:rgba(20,20,35,.8);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;padding:18px 22px;margin:16px 0;
+  overflow-x:auto;
+}
+.code-block pre{
+  font-family:'JetBrains Mono',monospace;font-size:14px;
+  line-height:1.7;color:#c9d1d9;white-space:pre;
+}
+.ck{color:#db2777;}.cs{color:#ec4899;}.cf{color:#d2a8ff;}.cg{color:#8b949e;}.cv{color:#79c0ff;}
+.qa-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:24px;margin:16px 0;
+}
+.qa-q{font-size:1.05rem;font-weight:600;color:#db2777;margin-bottom:12px;}
+.qa-a{font-size:15px;line-height:1.9;color:#8b949e;}
+.highlight-box{
+  background:rgba(219,39,119,.06);border:1px solid rgba(219,39,119,.2);
+  border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;
+}
+.warn-box{
+  background:rgba(240,136,62,.08);border:1px solid rgba(240,136,62,.25);
+  border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;
+}
+.info-box{
+  background:rgba(219,39,119,.06);border:1px solid rgba(219,39,119,.2);
+  border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;
+}
+.prompt-box{
+  background:rgba(20,20,35,.8);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;padding:18px 22px;margin:16px 0;
+  font-family:'JetBrains Mono',monospace;font-size:13px;
+  line-height:1.7;color:#c9d1d9;white-space:pre-wrap;
+}
+.prompt-label{
+  display:inline-block;padding:2px 10px;border-radius:6px;
+  font-size:.85rem;font-weight:600;margin-bottom:8px;
+  background:rgba(219,39,119,.15);color:#db2777;
+}
+.fc{font-size:14px;color:#8b949e;text-align:center;margin:10px 0;line-height:1.6;}
+.comp-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:22px;margin:14px 0;transition:all .3s;
+}
+.comp-card:hover{border-color:rgba(219,39,119,.3);}
+.comp-card h4{font-size:1.05rem;font-weight:600;color:#ec4899;margin-bottom:8px;}
+.comp-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.insight-box{
+  background:rgba(219,39,119,.06);border:1px solid rgba(219,39,119,.2);
+  border-radius:12px;padding:18px 22px;margin:16px 0;
+}
+.insight-box h4{color:#db2777;font-size:1.05rem;margin-bottom:8px;}
+.insight-box p{font-size:15px;line-height:1.8;color:#c9d1d9;}
+.limit-box{
+  background:rgba(240,136,62,.08);border:1px solid rgba(240,136,62,.25);
+  border-radius:12px;padding:18px 22px;margin:16px 0;
+}
+.limit-box h4{color:#ec4899;font-size:1.05rem;margin-bottom:8px;}
+.limit-box p{font-size:15px;line-height:1.8;color:#c9d1d9;}
+.kv-row{
+  display:flex;border-bottom:1px solid rgba(255,255,255,.06);padding:8px 0;
+}
+.kv-row:last-child{border-bottom:none;}
+.kv-key{width:180px;flex-shrink:0;color:#db2777;font-weight:500;font-size:14px;}
+.kv-val{color:#c9d1d9;font-size:14px;line-height:1.7;}
+.footer{text-align:center;color:#555;font-size:14px;padding:48px 0 32px;}
+/* SVG architecture */
+.svg-container{
+  background:rgba(20,20,35,.4);border:1px solid rgba(255,255,255,.06);
+  border-radius:14px;padding:20px;margin:24px 0;overflow-x:auto;
+  text-align:center;
+}
+.svg-container svg{max-width:100%;height:auto;}
+/* Phase badge */
+.phase-badge{
+  display:inline-block;padding:3px 12px;border-radius:8px;
+  font-size:.85rem;font-weight:600;margin-right:8px;
+}
+.phase-1{background:rgba(99,102,241,.15);color:#818cf8;}
+.phase-2{background:rgba(219,39,119,.15);color:#ec4899;}
+.phase-3{background:rgba(34,197,94,.15);color:#4ade80;}
+/* Grid layout */
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
+.grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;}
+@media(max-width:900px){
+  .grid-2,.grid-3{grid-template-columns:1fr;}
+  .hero-title{font-size:1.6rem;}
+  .kv-row{flex-direction:column;}
+  .kv-key{width:auto;}
+}
+/* Animated arrow */
+@keyframes flowPulse{
+  0%,100%{opacity:.6;}
+  50%{opacity:1;}
+}
+.flow-arrow{animation:flowPulse 2s ease-in-out infinite;}
+
+</style>
+</head>
+<body>
+<div class="container">
+
+<a class="back-btn" href="index.html">&#8592; 返回目录</a>
+
+<a href="reasoning_bank_full_translation.html" style="display:block;max-width:860px;margin:18px auto 0;padding:13px 22px;background:linear-gradient(90deg,rgba(31,111,235,.16),rgba(137,87,227,.16));border:1px solid rgba(137,87,227,.5);border-radius:12px;color:#e6edf3;text-decoration:none;font-weight:500;font-size:15px;text-align:center;box-shadow:0 2px 14px rgba(0,0,0,.35);">阅读本文逐段完整中文翻译（Full Translation）</a>
+
+<!-- ========== HERO ========== -->
+<div class="hero">
+  <h1 class="hero-title">Reasoning Bank: Scaling Agent Self-Evolving with Reasoning Memory</h1>
+  <p class="hero-sub">用推理记忆扩展 Agent 自我进化——从成功与失败中提取可泛化的推理策略</p>
+  <div class="venue">arXiv 2025 &nbsp;|&nbsp; <a href='https://arxiv.org/abs/2505.21485'>arXiv:2505.21485</a></div>
+  <div class="tag-row">
+    <span class="tag">Agent Memory</span><span class="tag">Self-Evolving</span><span class="tag">Test-Time Scaling</span><span class="tag">Reasoning Strategy</span><span class="tag">UIUC</span>
+  </div>
+</div>
+
+<!-- ========== TOC ========== -->
+<div class="toc">
+  <h3>目录</h3>
+  <ol>
+    <li><a href="#sec-1">研究动机</a></li>
+    <li><a href="#sec-2">框架概览</a></li>
+    <li><a href="#sec-3">推理记忆的提取与组织</a></li>
+    <li><a href="#sec-4">MaTTS：记忆与测试时扩展协同</a></li>
+    <li><a href="#sec-5">自我进化循环</a></li>
+    <li><a href="#sec-6">记忆与进化的整合</a></li>
+    <li><a href="#sec-7">实验评估</a></li>
+    <li><a href="#sec-8">敏感性分析</a></li>
+    <li><a href="#sec-9">代码使用与实战（含 GitHub 源码、安装命令、使用示例）</a></li>
+    <li><a href="#sec-10">总结与未来展望</a></li>
+  </ol>
+</div>
+
+<hr class="divider">
+
+<hr class="divider">
+
+<!-- ========== 1. MOTIVATION ========== -->
+<div class="section" id="sec-1">
+  <h2 class="section-title"><span class="num">1</span> 研究动机：持久化智能体无法从经验学习</h2>
+  <p class="section-desc">持久化 LLM 智能体持续遇到任务流，但无法从累积经验学习：会重复过去错误、丢弃有用洞察、缺乏自演化能力。现有记忆方法只存原始轨迹（trajectory memory）或仅成功例程（workflow memory），有两个缺陷：① 不能提炼可迁移的高层推理模式；② 过度强调成功、忽视失败教训。</p>
+  <div class="grid-2">
+    <div class="module-card">
+      <h3>原始轨迹 / 成功流程的不足</h3>
+      <p>trajectory memory 存原始交互，难以复用；workflow memory 只存成功流程，无法从失败中获益。两者都缺"提炼通用推理策略"的能力。</p>
+    </div>
+    <div class="module-card">
+      <h3>失败的价值被忽视</h3>
+      <p>仅从成功学习会错过失败中的反事实信号与陷阱。ReasoningBank 主张同时从成功与失败中提炼可泛化的推理策略。</p>
+    </div>
+  </div>
+  <div class="insight-box">
+    <h4>本文主张：推理记忆</h4>
+    <p>把经验蒸馏为带 title / description / content 的结构化记忆项（memory items），并用 MaTTS（memory-aware test-time scaling）建立记忆与测试时扩展的双向协同，实现智能体的自我进化。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 2. OVERVIEW ========== -->
+<div class="section" id="sec-2">
+  <h2 class="section-title"><span class="num">2</span> 框架概览：记忆蒸馏闭环</h2>
+  <p class="section-desc">ReasoningBank 把经验蒸馏为结构化记忆项，闭环运行：新任务 → 检索相关记忆 → 指导交互 → 提取新记忆 → 整合回 Bank。智能体策略 π_L(·|M,A) 以 ReasoningBank M 为额外系统指令。</p>
+  <div class="svg-container">
+    <svg viewBox="0 0 920 250" xmlns="http://www.w3.org/2000/svg" font-family="Noto Sans SC, sans-serif">
+      <defs><marker id="rbB" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#ec4899"/></marker></defs>
+      <rect x="20" y="95" width="140" height="60" rx="12" fill="rgba(219,39,119,.12)" stroke="#ec4899" stroke-width="1.5"/>
+      <text x="90" y="130" text-anchor="middle" fill="#c9d1d9" font-size="14" font-weight="600">新任务</text>
+      <rect x="190" y="55" width="200" height="130" rx="12" fill="rgba(219,39,119,.18)" stroke="#ec4899" stroke-width="2"/>
+      <text x="290" y="88" text-anchor="middle" fill="#e6edf3" font-size="13" font-weight="700">Memory Retrieval</text>
+      <text x="290" y="110" text-anchor="middle" fill="#8b949e" font-size="10">embedding 相似度</text>
+      <text x="290" y="128" text-anchor="middle" fill="#8b949e" font-size="10">top-k 记忆注入</text>
+      <text x="290" y="146" text-anchor="middle" fill="#8b949e" font-size="10">系统指令</text>
+      <text x="290" y="164" text-anchor="middle" fill="#8b949e" font-size="10">指导交互</text>
+      <rect x="440" y="55" width="200" height="130" rx="12" fill="rgba(219,39,119,.18)" stroke="#ec4899" stroke-width="2"/>
+      <text x="540" y="88" text-anchor="middle" fill="#e6edf3" font-size="13" font-weight="700">LLM-as-Judge</text>
+      <text x="540" y="110" text-anchor="middle" fill="#8b949e" font-size="10">无 GT 标注</text>
+      <text x="540" y="128" text-anchor="middle" fill="#8b949e" font-size="10">success / failure</text>
+      <text x="540" y="146" text-anchor="middle" fill="#8b949e" font-size="10">提取记忆项</text>
+      <text x="540" y="164" text-anchor="middle" fill="#8b949e" font-size="10">多步提炼</text>
+      <rect x="690" y="55" width="210" height="130" rx="12" fill="rgba(219,39,119,.12)" stroke="#ec4899" stroke-width="1.5"/>
+      <text x="795" y="88" text-anchor="middle" fill="#e6edf3" font-size="13" font-weight="700">Consolidation</text>
+      <text x="795" y="110" text-anchor="middle" fill="#8b949e" font-size="10">加法并入 Bank</text>
+      <text x="795" y="128" text-anchor="middle" fill="#8b949e" font-size="10">MaTTS 协同</text>
+      <text x="795" y="146" text-anchor="middle" fill="#8b949e" font-size="10">正反馈循环</text>
+      <text x="795" y="164" text-anchor="middle" fill="#8b949e" font-size="10">演化仓库</text>
+      <line x1="160" y1="120" x2="185" y2="120" stroke="#ec4899" stroke-width="2" marker-end="url(#rbB)"/>
+      <line x1="390" y1="120" x2="435" y2="120" stroke="#ec4899" stroke-width="2" marker-end="url(#rbB)"/>
+      <line x1="640" y1="120" x2="685" y2="120" stroke="#ec4899" stroke-width="2" marker-end="url(#rbB)"/>
+    </svg>
+  </div>
+  <div class="step-flow">
+    <h4>测试时学习（streaming）</h4>
+    <p>任务 q1→q2→…→qN 顺序到达无 GT。每个任务：检索 top-k 记忆 → 注入系统指令 → ReAct 式交互 → judge 标注 → 提取成功 / 失败记忆项 → consolidation 加法并入 Bank。MaTTS 时生成 k 条轨迹，parallel 用 self-contrast 筛选、sequential 用 self-refinement 丰富记忆。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 3. SCHEMA ========== -->
+<div class="section" id="sec-3">
+  <h2 class="section-title"><span class="num">3</span> 推理记忆的提取与组织</h2>
+  <p class="section-desc">记忆项三字段：title（标题）、description（一句话描述）、content（提炼的推理步骤 / 决策依据）。集成三步：检索、提取、整合。</p>
+  <div class="module-card">
+    <h3>三阶段集成</h3>
+    <p>(i) Memory Retrieval——用当前查询上下文做 embedding 相似度检索 top-k 记忆项注入系统指令；(ii) Memory Extraction——用 LLM-as-a-Judge 无 GT 标注判定轨迹成功 / 失败，成功贡献已验证策略、失败提供反事实信号 / 陷阱；(iii) Memory Consolidation——以简单加法操作并入 ReasoningBank，维持演化仓库。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 4. JUDGE ========== -->
+<div class="section" id="sec-4">
+  <h2 class="section-title"><span class="num">4</span> MaTTS：记忆与测试时扩展协同</h2>
+  <p class="section-desc">LLM-as-a-Judge 在测试时无 GT 下为轨迹提供代理正确性信号（success/failure），judge 准确率约 72.7%（baseline），且在 50%–100% 准确率下性能稳定。</p>
+  <div class="grid-2">
+    <div class="module-card">
+      <h3>Parallel Scaling</h3>
+      <p>同一查询生成 k 条轨迹，跨轨迹 self-contrast 对比筛选出一致模式、过滤虚假解，Best-of-N 选最终。利用同题冗余探索的对比信号做记忆筛选。</p>
+    </div>
+    <div class="module-card">
+      <h3>Sequential Scaling</h3>
+      <p>单轨迹内 self-refinement 迭代精炼，中间笔记也作为记忆信号。缩放因子 k = 并行轨迹数 / 串行精炼步数。</p>
+    </div>
+  </div>
+  <div class="arch-card">
+    <h4>双向协同</h4>
+    <p>高质量记忆引导扩展走向更有希望的路径（BoN 从 39.0 升到 55.1），而多样轨迹又反哺筛选出更高质量记忆，形成正循环。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 5. EVOLVE ========== -->
+<div class="section" id="sec-5">
+  <h2 class="section-title"><span class="num">5</span> 自我进化循环</h2>
+  <div class="module-card">
+    <h3>失败利用的实证</h3>
+    <p>仅成功时 ReasoningBank 46.5，加入失败达 49.7；而 Synapse 40.6→41.7、AWM 44.4→42.2（下降）——证明失败信号对 ReasoningBank 是增益、对仅存成功的方法则无益。</p>
+  </div>
+  <div class="highlight-box">
+    <p>emergent behavior：记忆项从执行策略 → 自适应自反思 → 自适应检查 → 组合策略演化，体现记忆随任务流不断精炼。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 6. INTEGRATION ========== -->
+<div class="section" id="sec-6">
+  <h2 class="section-title"><span class="num">6</span> 记忆与进化的整合</h2>
+  <div class="arch-card">
+    <h4>端到端数据流</h4>
+    <p>每个任务：检索 top-k 记忆 → 注入系统指令 → ReAct 交互 → judge 标注 → 提取成功 / 失败记忆项 → consolidation 加法并入 Bank。MaTTS 时：在检索记忆引导下生成 k 条轨迹，parallel 用 self-contrast 筛选可靠记忆、sequential 用 self-refinement 丰富记忆，形成"高质量记忆引导扩展、丰富扩展反哺记忆"的正反馈。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 7. EXPERIMENT ========== -->
+<div class="section" id="sec-7">
+  <h2 class="section-title"><span class="num">7</span> 实验评估：WebArena / SWE / Mind2Web</h2>
+  <div class="module-card">
+    <h3>设置与基线</h3>
+    <p>基准：WebArena（5 子集共 684 题）、Mind2Web（cross-task/website/domain）、SWE-Bench-Verified（500 题）。基座 Gemini-2.5-flash/pro、Claude-3.7-sonnet；基线 No Memory、Synapse、AWM。</p>
+  </div>
+  <div class="highlight-box">
+    <p><b>主结果</b>（WebArena 整体 SR）：Gemini-2.5-flash 下 No Memory 40.5 / Synapse 42.1 / AWM 44.1 / ReasoningBank 48.8 / +MaTTS 51.8；Gemini-2.5-pro：46.7/47.7/47.6/53.9/56.3；Claude-3.7：41.7/42.6/40.8/46.3/48.8。步数最多降 1.4–1.6 / 任务。</p>
+  </div>
+  <table class="data-table">
+    <tr><th>方法（Gemini-2.5-flash）</th><th>WebArena SR</th><th>SWE Resolve</th></tr>
+    <tr><td>No Memory</td><td>40.5</td><td>54.0</td></tr>
+    <tr><td>AWM</td><td>44.1</td><td>—</td></tr>
+    <tr><td>ReasoningBank</td><td>48.8</td><td>57.4</td></tr>
+    <tr><td>+ MaTTS</td><td>51.8</td><td>—</td></tr>
+  </table>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 8. SENSITIVITY ========== -->
+<div class="section" id="sec-8">
+  <h2 class="section-title"><span class="num">8</span> 敏感性分析：消融与鲁棒性</h2>
+  <div class="module-card">
+    <h3>失败轨迹与 judge 鲁棒性</h3>
+    <p>① 失败轨迹消融证明能从失败提炼结构而非噪声；② judge 鲁棒性（Figure 8）：50%–100% 准确率内性能稳定；③ 效率（Table 4）：成功实例步数降幅最大（Shopping 6.8→4.7，降 26.9%）。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 9. INSIGHT ========== -->
+<div class="section" id="sec-9">
+  <h2 class="section-title"><span class="num">9</span> 代码使用与实战（含 GitHub 源码、安装命令、使用示例）</h2>
+  <div class="module-card">
+    <h3>官方仓库</h3>
+    <p>代码仓库：<a href="https://github.com/google-research/reasoning-bank" style="color:#ec4899;">https://github.com/google-research/reasoning-bank</a>（UIUC & Google Cloud AI）。基于 Gemini-2.5 / Claude-3.7 通过 BrowserGym + ReAct 构建；数据集 WebArena、Mind2Web、SWE-Bench-Verified 均公开。</p>
+  </div>
+  <div class="code-block"><pre># 1) 克隆仓库
+git clone https://github.com/google-research/reasoning-bank.git
+cd reasoning-bank
+
+# 2) 安装依赖（BrowserGym + ReAct 环境）
+pip install -r requirements.txt
+
+# 3) 运行 WebArena 自演化（检索 + judge + consolidation）
+python run_reasoning_bank.py --benchmark webarena \
+    --model gemini-2.5-flash --top_k 5
+
+# 4) 启用 MaTTS（parallel / sequential scaling）
+python run_matts.py --mode parallel --k 5 --benchmark webarena</pre></div>
+  <div class="highlight-box">
+    <p>复现要点：Memory Retrieval 用 embedding 相似度；LLM-as-a-Judge 提供无 GT 的成功 / 失败信号；Consolidation 用加法并入；MaTTS 通过 self-contrast / self-refinement 放大收益。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 10. SUMMARY ========== -->
+<div class="section" id="sec-10">
+  <h2 class="section-title"><span class="num">10</span> 总结与未来展望</h2>
+  <p class="section-desc">ReasoningBank 把经验蒸馏为带 title/description/content 的推理记忆，从成功与失败双向学习，并用 MaTTS 建立记忆与测试时扩展的双向协同。在 WebArena / SWE-Bench / Mind2Web 上显著提升效果并降低交互步数。</p>
+  <div class="qa-card">
+    <div class="qa-q">Q1：ReasoningBank 和普通记忆有何不同？</div>
+    <div class="qa-a">不只存原始轨迹或成功流程，而是提炼带 title/description/content 的通用推理策略，并从失败中提取反事实教训。</div>
+  </div>
+  <div class="qa-card">
+    <div class="qa-q">Q2：MaTTS 怎么让扩展更有效？</div>
+    <div class="qa-a">并行用 self-contrast 跨轨迹筛选一致模式，串行用 self-refinement 把中间笔记转为记忆信号，把冗余探索变成对比信号。</div>
+  </div>
+  <div class="qa-card">
+    <div class="qa-q">Q3：为什么失败也有用？</div>
+    <div class="qa-a">LLM-as-a-Judge 标为失败的轨迹提供陷阱 / 反事实信号，蒸馏成 guardrail，使记忆更鲁棒（Synapse/AWM 因只用成功无法受益）。</div>
+  </div>
+  <div class="limit-box">
+    <h4>局限与未来</h4>
+    <p>依赖 LLM-as-a-Judge 质量（虽鲁棒但非完美）；记忆以简单加法整合（可进一步用更精细检索 / 整合）；主要在 web / SWE 两类任务验证。</p>
+  </div>
+</div>
+
+<div class="footer">论文深度解读 · 生成自 Reasoning Bank: Scaling Agent Self-Evolving with Reasoning Memory · 阅读时间约 30 分钟</div>
+
+</div>
+</body>
+</html>

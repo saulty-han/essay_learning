@@ -1,0 +1,1659 @@
+=== PAGE 1 ===
+SEFRQO: A Self-Evolving Fine-Tuned RAG-Based Query
+Optimizer
+Hanwen Liu∗
+University of Southern
+California
+Los Angeles, USA
+hanwen_liu@usc.edu
+Qihan Zhang∗
+University of Southern
+California
+Los Angeles, USA
+qihanzha@usc.edu
+Ryan Marcus
+University of Pennsylvania
+Philadelphia, USA
+rcmarcus@seas.upenn.edu
+Ibrahim Sabek
+University of Southern
+California
+Los Angeles, USA
+sabek@usc.edu
+Abstract
+Query optimization is a crucial problem in database systems that
+has been studied for decades. Learned query optimizers (LQOs) can
+improve performance over time by incorporating feedback; how-
+ever, they suffer from cold-start issues and often require retraining
+when workloads shift or schemas change. Recent LLM-based query
+optimizers leverage pre-trained and fine-tuned LLMs to mitigate
+these challenges. Nevertheless, they neglect LLMs’ in-context learn-
+ing and execution records as feedback for continuous evolution.
+In this paper, we present SEFRQO, a Self-Evolving Fine-tuned
+RAG-based Query Optimizer. SEFRQO mitigates the cold-start
+problem of LQOs by continuously learning from execution feed-
+back via a Retrieval-Augmented Generation (RAG) framework. We
+employ both supervised fine-tuning and reinforcement fine-tuning
+to prepare the LLM to produce syntactically correct and perfor-
+mance efficient query hints. Moreover, SEFRQO leverages the LLM’s
+in-context learning capabilities by dynamically constructing prompts
+with references to similar queries and the historical execution
+record of the same query. This self-evolving paradigm iteratively
+optimizes the prompt to minimize query execution latency. Evalua-
+tions show that SEFRQO outperforms state-of-the-art LQOs, achiev-
+ing up to 65.05% and 93.57% reductions in query latency on the CEB
+and Stack workloads, respectively, compared to PostgreSQL.
+1 Introduction
+Query optimization is a fundamental and performance-critical prob-
+lem in database systems that focuses on translating declarative user
+queries into efficient query plans. Human experts take decades to de-
+sign and improve classical query optimizers (e.g., PostgreSQL [40]).
+To try and accelerate optimizer development and improve query per-
+formance, several studies have applied different techniques to query
+optimization, such as machine learning [11, 30, 31, 61, 63, 65, 69]
+and large language models [50, 62].
+While these learned query optimizers (LQOs) represent exciting
+work and have even seen some industry adoption [68], we argue
+that existing LQOs capture at most two of three desirable properties:
+(1) An LQO should learn from its mistakes, quickly and actively
+incorporating feedback from query plans.
+(2) An LQO should work immediately, without requiring exten-
+sive training (i.e., the “cold start” problem).
+(3) An LQO should adapt to changes in schema, workload, and
+data, without significant human effort.
+For example, the Bao [30] system learns from its mistakes and
+adapts to changes, but requires several hours of training data before
+∗Both authors contributed equally to this work.
+becoming competitive. The Fastgres system [ 59] does not suffer
+from the cold start problem and can learn from its mistakes, but it
+cannot adapt to changes in query workload with significant retrain-
+ing. Three recent systems applying LLMs (or their components)
+to query optimization [ 2, 50, 62] employ fine-tuned LLMs as an
+oracle for either plan generation or plan selection. However, due
+to the high cost of fine-tuning an LLM, these approaches cannot
+immediately learn from their mistakes or continuously improve
+during runtime.
+Why is there no existing system with all the desired properties?
+Intuitively, LQOs that do not use LLMs tend to have below-par
+reasoning skills: they must simplify the problem by either requiring
+large amounts of training data (and therefore having a “cold start”)
+or by assuming the schema and workload are fixed (and therefore
+not being able to adapt). LQOs that do use LLMs can work imme-
+diately and adapt to changes, but correcting their mistakes using
+current techniques is too costly for the critical path of a DBMS.
+In this paper, we propose SEFRQO, a RAG-based query optimizer
+that has all three of our desired properties. SEFRQO uses an LLM to
+avoid the cold start problem and adapt to changes. To learn from its
+mistakes, SEFRQO uses a continuously-updated vector database of
+past query executions that serve as the query optimizer’s “memory”.
+SEFRQO generates a hint-based query plan to guide the query opti-
+mizer in a classical database system (e.g., PostgreSQL [40]), where
+such a hint is optimized and generated using an LLM. SEFRQO re-
+lies on two complementary phases to optimize the hint generation
+process: offline LLM fine-tuning and online LLM in-context learning .
+Since these techniques have higher overhead than traditional query
+optimizers, SERFQO targets long-running OLAP queries where
+performance gains can outweigh increased optimization overhead.
+To prepare a fine-tuned LLM capable of generating correctly for-
+matted and efficient query plan hints, SEFRQO adopts a combined
+supervised fine-tuning (SFT) [14] and reinforcement fine-tuning
+(RFT) [57] technique. Using SFT, SEFRQO teaches the LLM the ex-
+pected hint format. For RFT, SEFRQO introduces an efficient Query
+Group Relative Policy Optimization (Q𝐺𝑅𝑃𝑂 ) approach, based on
+GRPO [46], to steer the LLM’s output preferences toward hints that
+reduce query execution latency. Q 𝐺𝑅𝑃𝑂 defines a latency-based
+reward model that interacts with the database execution engine to
+directly measure the corresponding latency of the generated query
+hint. Besides, Q𝐺𝑅𝑃𝑂 performs an in-group comparison among mul-
+tiple hints generated for the same query; it obviates the need for
+additional labeled datasets as in other RFT algorithms, such as DPO
+(e.g. [50]). By not relying on a limited labeled dataset, Q𝐺𝑅𝑃𝑂 ’s fine-
+tuning encourages LLMs’ self-exploration, which further inspires
+1
+arXiv:2508.17556v1  [cs.DB]  24 Aug 2025
+
+=== PAGE 2 ===
+Liu et al.
+their reasoning and generalization capabilities to handle previously
+unseen workloads or shifting database schemas.
+Another key innovation of SEFRQO lies in leveraging online
+LLM RAG-based in-context learning, in which LLMs adapt to new
+tasks by conditioning on a few relevant RAG-based examples that
+are retrieved and provided directly within the input context (i.e.,
+the prompt) without modifying model parameters. These examples
+allow the model to better understand tasks and generate more
+appropriate outputs [1, 3, 58, 60]. Importantly, in-context learning
+is most effective when the retrieved examples closely align with
+the target query. To facilitate this, SEFRQO builds and maintains a
+special vector database of the most relevant query execution records.
+Additionally, SEFRQO introduces a self-evolving feedback paradigm
+that enables the LLM to learn from historical execution records
+of the same query. The historical best plan generated by SEFRQO
+and its corresponding performance gain over the baseline provide
+additional contextual information. These components iteratively
+optimize the prompt, motivating the LLM to generate an optimized
+hint that minimizes the execution latency.
+Our experimental results show that SEFRQO consistently out-
+performs both PostgreSQL and two state-of-the-art LQOs, namely
+Bao [30] and Balsa [61]. Our evaluations are based on four work-
+loads: JOB [24], CEB [36], Stack [30], and TPC-DS [ 4]. On CEB,
+SEFRQO achieves a 65.05% reduction in query execution time com-
+pared to PostgreSQL, and outperforms LQOs. On Stack, it can reduce
+up to 93.57% of the execution time for certain queries and 40.10%
+for overall performance. On TPC-DS, SEFRQO reduces 13.28% exe-
+cution time for all queries. By leveraging a dynamic prompt with a
+self-evolving paradigm and successful fine-tuning, SEFRQO demon-
+strates surprising cross-domain capability on the previously unseen
+Stack workload, even surpassing LQOs directly trained on that
+workload in some metric. SEFRQO also supports flexible workload
+shifts that current LQOs find challenging.SEFRQO also supports the
+cross-DBMS scenario. On MySQL, it achieves a 26.28% reduction in
+execution time without requiring extra fine-tuning. Additionally,
+we observe that SEFRQO can learn from the provided query plan
+at the sub-plan level and generate an improved query plan through
+further reasoning and analysis. Furthermore, we conduct overhead
+analysis and ablation studies to evaluate several configurations.
+Finally, we conduct deeper investigations across various scenarios
+to test robustness and effects.
+We summarize our contributions as follows:
+(1) We are the first to formally define hint-based query opti-
+mization with LLMs as a two-phase process: offline LLM
+fine-tuning and online in-context learning.
+(2) We propose an efficient supervised fine-tuning workflow
+to teach LLMs the hint format using a labeled dataset.
+(3) We introduce Query Group Relative Policy Optimization
+that incorporates a latency-based reward model based on
+actual query execution and group relative advantage feed-
+back, enhancing LLM reasoning in unseen scenarios.
+(4) We present RAG-based prompt optimization, which lever-
+ages similar references and historical feedback to dynami-
+cally construct prompts and drive continuous self-evolution
+of SEFRQO. To our knowledge, this is the first application
+of RAG systems to query optimization.
+(5) Our experiments demonstrate that SEFRQO outperforms
+both LQOs and PostgreSQL and generalizes effectively across
+multiple workloads and DBMSes without retraining.
+2 Preliminaries
+LLMs are transformer-based models [16] with billions of parameters
+that generalize well across a wide range of tasks (e.g., question-
+answering [21] and code generation [20]). During the pre-training
+stage, LLMs learn from a vast corpus of knowledge and capture gen-
+eral understanding capabilities. To address the query optimization
+task, we exploit the LLM to generate a hint-based query plan, and
+to adapt the LLM to this specific task, we rely on fine-tuning and
+RAG-based prompting procedures. First, we provide a brief back-
+ground on the hint-based query optimization process (Section 2.1).
+Then, we describe how the LLM’s generation (inference) process
+works (Section 2.2). Finally, we provide an overview of the two
+main LLM fine-tuning paradigms, namely supervised fine-tuning
+(Section 2.3) and reinforcement fine-tuning (Section 2.4), as well as
+the RAG retrieval workflow (Section 2.5) we use in our system.
+2.1 Hint-based Query Plan Generation
+Hint-based plan generation is a commonly employed method in
+many learned query optimizers (LQOs) (e.g., [61, 69]). For example,
+LQOs (e.g., [61]) that are integrated with PostgreSQL [41] employ
+pg_hint_plan [38] to tweak the PostgreSQL [41] execution plans
+by incorporating “hint” in SQL comments. The hints support both
+a join-order mode (simple mode) and a full-plan mode (complete
+mode). In join-order mode, the hint is represented by a clause
+beginning with “Leading” to specify the join order of relations.
+For example, the hint: Leading (a (b c)) indicates that 𝑏 ⊲ ⊳𝑐 is
+performed first, followed by 𝑎 ⊲ ⊳(𝑏 ⊲ ⊳𝑐). Then, PostgreSQL will
+decide the detailed operators plan (e.g., operator type for each join).
+In full-plan mode, the hint conveys additional information, such
+as the scan types for tables (e.g., “IndexScan”, “SeqScan”) and the
+join types between tables (e.g., “HashJoin”, “NestedLoop”). This
+hint format is interpreted by PostgreSQL to precisely control query
+planning and execution. An example of a full-plan mode hint is
+shown in the following section (see the third part in Figure 2). In our
+paper, we employ both modes as different query plan generation
+settings. Once a hint is accepted by the query optimizer, it is turned
+into a query plan and subsequently used for actual execution.
+2.2 LLM Generation
+Prompts are commonly used to interact with LLMs. A prompt is a
+piece of text that guides the model in generating more content. It
+may include a System Prompt , which defines the model’s role or
+context (e.g., “You are a database expert performing query optimiza-
+tion task”), and aUser Prompt , which specifies particular questions
+or tasks (e.g., “Generate a query plan for this query:” followed by de-
+tailed query information). When processing this natural-language
+prompt, the tokenizer separates the raw text into words and con-
+verts them into a sequence of discrete tokens. Each token is then
+mapped to an integer according to the model’s vocabulary, after
+which the LLM can begin processing. The most fundamental input
+can be represented as a sequence of tokens x = [𝑥1, . . . , 𝑥𝑛].
+2
+
+=== PAGE 3 ===
+SEFRQO: A Self-Evolving Fine-Tuned RAG-Based Query Optimizer
+LLMs often adopt an auto-regressive approach to generate re-
+sponse sequences [16]. Their inference processes are typically based
+on next-token prediction. Specifically, the original input tokens and
+the previously generated output tokens from the previous steps
+are fed into the model to generate a new token at the current step.
+Assume an input sequence x is sent to an LLM parameterized by 𝜃.
+The corresponding output token sequence can be expressed as
+y = [𝑦1, . . . , 𝑦𝑇 ], containing 𝑇 tokens. This token sequence y is
+then converted back to natural language by the tokenizer. In our
+context, y represents a query hint (See Section 2.1). Mathematically,
+the LLM’s generation process can be expressed by the probability
+𝑝𝜃 (y | x), which factorizes into the product of conditional proba-
+bilities for each token 𝑦𝑡 in the output sequence:
+𝑝𝜃 (y | x) = 𝑝𝜃
+ 𝑦1, 𝑦2, . . . , 𝑦𝑇 | x =
+𝑇Ö
+𝑡 =1
+𝑝𝜃
+ 𝑦𝑡
+ x, 𝑦 1:𝑡 −1
+ (1)
+For clarity in the rest of the paper, we simplify the token-related
+notions and hide the tokenizer workflow in the LLM generation
+process by describing the whole process at the natural-language
+level. We use the notation x instead of x to represent the prompt,
+and use ℎ instead of y to directly denote the generated hint.
+2.3 Supervised Fine-tuning for LLMs
+Supervised fine-tuning (SFT) [14] adjusts the parameters of LLMs
+by training them on high-quality, labeled data to enhance their
+ability to perform specific tasks. To improve LLM performance
+in our hint-based query plan generation task, a training set Dsft
+comprising pairs of prompt x and corresponding pre-generated
+hint output ℎ∗ needs to be constructed (We describe the details
+in Section 4). Here, ℎ∗ denotes the reference hint, distinguishing
+it from the LLM-generated hint ℎ. During supervised fine-tuning,
+we maximize the conditional predictive probability 𝑝𝜃 (ℎ∗ | x) by
+minimizing the expectation E of the negative log-likelihood:
+Lsft(𝜃 ) = E(x,ℎ∗ )∼Dsft
+
+− log 𝑝𝜃 (ℎ∗ | x)
+
+(2)
+Using SFT, the LLM is expected to become familiar with our task,
+i.e., learn the format of the query hint output and internal logic for
+generating an effective query plan.
+2.4 Reinforcement Fine-tuning for LLMs
+Reinforcement fine-tuning (RFT) provides an alternative method for
+enhancing the specific capabilities of LLMs by employing reinforce-
+ment learning to update their parameters. RFT has been proven
+effective in further improving the reasoning abilities of LLMs after
+the SFT stage (e.g., [57]). In our task, reasoning ability reflects an im-
+proved generalization capability when handling previously unseen
+queries. This implies that, in cross-domain scenarios (e.g., switching
+between completely different query workloads, such as Stack [30]
+and CEB [36]), LLMs with RFT are expected to generate hints in-
+dicating better query plans than those without RFT. Several RFT
+algorithms have been developed, such as Proximal Policy Optimiza-
+tion (PPO) [45], Direct Preference Optimization (DPO) [42], and the
+recently proposed Group Relative Policy Optimization (GRPO) [46].
+During fine-tuning, PPO relies on a trained value model to objec-
+tively determine whether the generated output is preferred or
+non_preferred. This value model introduces additional memory
+requirements and computational overhead [46]. While DPO elim-
+inates the need for a separate value model to reduce complexity,
+it requires paired preference data (consisting of preferred and
+non_preferred output) to guide the LLM’s optimization process.
+Constructing such a preference-pair dataset before fine-tuning in-
+troduces an additional workload for data labeling, which is complex
+for our query optimization task. Moreover, although DPO increases
+the relative probability of preferred completions compared to dis-
+preferred ones, it may reduce the model’s absolute likelihood of
+generating preferred completions [39].
+To avoid these limitations, we rely on GRPO [46], a variant of
+PPO that enhances computational efficiency and robustness. GRPO
+incorporates group-based comparisons among generated responses
+to eliminate the need for an explicit value model, as required by
+PPO, and also removes the need for labeled data, as in DPO. GRPO
+generates multiple outputs from the same prompt, computes re-
+wards for these outputs based on the user-defined reward function,
+and then evaluates their in-group advantages ˆ𝐴. Specifically, the
+GRPO algorithm first fixes the current policy model1 as 𝜋𝜃old. This
+naming distinguishes it from the policy model to be updated, 𝜋𝜃 .
+Then, for each prompt x in the GRPO training dataset DGRPO, an
+LLM generates a group of 𝐺 hint plans {ℎ1, ℎ2, . . . , ℎ𝐺 } based on
+𝜋𝜃old. Then, these hints are executed with a database engine, and
+their corresponding execution latencies are used to optimize the
+policy model 𝜋𝜃 by maximizing the following objective:
+JGRPO (𝜃 ) ≈ Ex∼DGRPO,{ℎ𝑖 }∼𝜋𝜃old
+1
+𝐺
+𝐺∑︁
+𝑖=1
+(
+𝑓
+ 𝜋𝜃 (ℎ𝑖 | x)
+𝜋𝜃old (ℎ𝑖 | x) , 𝜖
+
+ˆ𝐴𝑖 − 𝛽 DKL [𝜋𝜃 ∥𝜋ref]
+)
+(3)
+where function 𝑓 and hyperparameter 𝜖 are employed to stabilize
+fine-tuning [45]. To prevent the updated policy𝜋𝜃 from excessively
+deviating from the initial policy denoted as reference policy 𝜋ref,
+a Kullback–Leibler (KL) divergence regularization [ 22, 46] term
+weighted by the hyperparameter 𝛽 is applied.
+2.5 Retrieval via Embedding Similarity
+Retrieval-augmented generation (RAG) [ 49] enhances large lan-
+guage models (LLMs) by incorporating external knowledge re-
+trieved from a vector database [ 56], thereby supplementing the
+prompt with relevant information without altering the model’s
+weights. This approach effectively mitigates the limitations im-
+posed by the static knowledge of standalone LLMs. Consequently,
+the selection of the most relevant content from the vector data-
+base is critical to performance. To facilitate finer-grained control,
+the retrieved content can be segmented into smaller, semantically
+meaningful snippets when necessary [29, 43]. In our context, each
+snippet corresponds to a reference query 𝑑𝑖, and we define the
+full set of reference queries as follows: D = {𝑑1, 𝑑2, . . . , 𝑑𝑁 }. For
+each reference query 𝑑𝑖, we use an encoder 𝜙 (·) to map it into a
+𝑚-dimensional embedding space as: e𝑖 = 𝜙 (𝑑𝑖 ) ∈ R𝑚 . All embed-
+dings can be organized into a matrix:E = [e1, e2, . . . , e𝑁 ] ∈ R𝑚×𝑁 .
+Given an query u for vector database, its embedding is computed
+as: eu = 𝜙 (u) ∈ R𝑚 . The similarity between u and each 𝑑𝑖 can be
+1RFT treats the prompt as the environment state and each token generation as an
+action. So we use the reinforcement learning policy model𝜋𝜃 notation rather than 𝑝𝜃 .
+3
+
+=== PAGE 4 ===
+Liu et al.
+computed using cosine similarity as follows:
+sim(u, 𝑑𝑖 ) = e⊤u e𝑖
+∥eu ∥ ∥ e𝑖 ∥ . (4)
+Based on these similarity scores, we rank and pick the top 𝑘 refer-
+ences to form the retrieved set R, where: R ⊂ D , |R | = 𝑘.
+3 System Overview
+In this section, we first formalize the definition of optimizing queries
+using SEFRQO (Section 3.1). Then, we give an overview of the
+SEFRQO’s workflow and its key components (Section 3.2).
+3.1 Problem Statement
+Our ultimate goal is to reduce query execution latency using hints
+generated by LLMs. We achieve this through two complementary
+phases: offline fine-tuning for the LLM abilities to generate hints , and
+online in-context learning for the LLM to generate optimal hints .
+Definition 1: Offline LLM Fine-tuning for Hints Generation.
+In this phase, we aim at fine-tuning an LLM, parameterized by
+𝜃LLM, such that, for any input SQL query 𝑄 ∈ Q and the relevant
+database statistics stats that help plan the execution of this query
+(e.g., table cardinalities), the LLM is able to generate a hint ℎ that
+optimizes the execution of 𝑄, with the objectives of (1) ensuring
+correct hint syntax (valid to become a plan) and (2) steering the
+LLM’s preference towards generating hints that minimize query
+execution latency. These objectives can be formally defined as:
+arg max
+𝜃LLM
+EQ,stats
+
+log 𝑝correct (ℎ)
+
+(Syntax Correctness) (5)
+arg min
+𝜃LLM
+EQ,stats
+
+Latency(𝑄, ℎ)
+
+(Latency Preference) (6)
+where EQ,stats denotes the expectation over the joint data distri-
+bution of input SQL queries Q and database statistics stats. This
+offline fine-tuning phase is achieved using SFT (see Section 2.3) and
+GRPO (see Section 2.4) as shown later.
+Definition 2: Online LLM In-context Learning for Hints Gen-
+eration. In this phase, for any input SQL query 𝑄 ∈ Q and its
+relevant database statistics stats mentioned in Definition 1, we
+aim at constructing an optimized prompt x∗ (noted as 𝑃 in this
+section), during the runtime, that guides the fixed-parameter LLM
+to generate a hint ℎ that minimizes the execution latency of this
+query (i.e., ℎ ← LLM𝜃LLM (𝑃)). Formally, this corresponds to solving
+the following optimization problem:
+arg min
+𝑃
+Latency(𝑄, ℎ) (Prompt Optimization) (7)
+The optimized prompt 𝑃 for any query is constructed based on the
+relevant database statistics stats of this query and a few relevant
+query references K that are dynamically retrieved from an up-to-
+date RAG vector database (see Section 2.5), as shown later.
+3.2 Overview of SEFRQO
+Figure 1 shows the overview of SEFRQO, which comprises three
+stages, each mapping to an optimization problem in Section 3.1.
+Corresponding to Equation 5, the first stage is Supervised Fine-
+Tuning (SFT) (see Section 4). SFT teaches the model the correct
+format of query hints by training LLMs on a pre-constructed dataset
+containing pairs of input prompts (user prompt as in Section 2.2)
+Pre-T rained
+LLM
+Supervised
+Fine-tuning
+Learn Hint
+Format From
+Prepared Labels 
+Q GRPO
+Fine-tuning
+Steer LLM Output
+Preference with
+Reward Functions 
+Of fline Phase
+V ecDB
+Execution Engine (e.g., PostgreSQL)
+Latency
+Fine-tuning
+Online  Phase
+Fine-tuned
+LLM
+Dynamic
+Prompt
+Get Feedback,
+Store Results
+1 2
+3
+Self-evolving
+Figure 1: System overview of SEFRQO.
+and output hints (training set Dsft in Section 2.3). SFT lays the foun-
+dation of our system because any further improvements depend on
+LLMs’ ability to generate syntactically correct hints that a database
+execution engine (e.g., PostgreSQL) can accept. Corresponding to
+Equation 6, the second stage is Query Group Relative Policy
+Optimization (Q𝐺𝑅𝑃𝑂 ) fine-tuning (see Section 5). In Q 𝐺𝑅𝑃𝑂 ,
+we incorporate latency feedback from actual query executions us-
+ing the database engine (training dataset DGRPO in Section 2.4).
+By designing a latency-based reward model and employing group
+relative advantage feedback, we steer LLMs’ preferences toward
+generating hints with lower latency. As a reinforcement-learning
+process in a dynamic environment, Q 𝐺𝑅𝑃𝑂 enhances reasoning
+ability for unseen workloads. These first two stages occur during
+the offline phase. Corresponding to Equation 7, the third stage is a
+RAG-based Prompt Optimization online phase, where the out-
+put prompt will be used to generate the final hint used for the query
+optimization. In this phase, we maintain a continuously updated
+RAG system incorporating live execution records (see Section 6).
+For each query 𝑄, we dynamically construct a prompt containing
+execution records of similar queries as references and the historical
+execution analysis (see Section 6.4). Upon repeated encounters with
+𝑄, the prompt is continuously optimized. This self-evolving proce-
+dure enables SEFRQO to further minimize the execution latency.
+4 SFT for Learning Hint Format
+In this section, we primarily focus on employing supervised fine-
+tuning to enable LLMs to understand the query optimization task
+and to learn the expected hint format.
+As mentioned in Section 2.3, we need to construct a training set
+Dsft that consists of pairs of prompt x and corresponding generated
+hint output ℎ∗ (i.e., labeled data). We define the Dsft collection
+process in Algorithm 1. It shows the sequence of operations we
+perform for each query 𝑄𝑖 ∈ Q 𝑡𝑟𝑎𝑖𝑛 to build the training set. Also,
+Figure 2 shows a running example of the intermediate outputs of
+these different operations. First, we execute the query 𝑄𝑖 using the
+database execution engine to retrieve the detailed query execution
+plan and its intermediate statistics E𝑖 (line 2) (using commands
+like EXPLAIN ANALYZE in PostgreSQL). We return the plan in
+a structured and nested JSON format to easily parse its details.
+Figure 2 (Part 2) shows an example of the JSON output of only
+some statistics of the “Aggregate” operator in the example query
+(Note that the remaining statistics for the Aggregate operator and
+4
+
+=== PAGE 5 ===
+SEFRQO: A Self-Evolving Fine-Tuned RAG-Based Query Optimizer
+V isualization:
+HJ : Hash Join
+NL : Nested Loop Join
+IS : Index Scan
+SS : Sequential Scan
+IOS : Index Only Scan
+SQL  Query:
+SELECT  ... FROM  
+company_name AS cn, 
+company_type AS ct, 
+movie_companies AS mc, 
+role_type AS rt, title AS t 
+WHERE ct.id = mc.type_id ...
+AND cn.country_code   = '[ru]';
+Hint:
+/*+ NestedLoop(mc cn t rt ct)
+ NestedLoop(mc cn t rt)
+ HashJoin(mc cn t) \n NestedLoop(mc cn)
+ SeqScan(mc) \n IndexScan(cn)
+ IndexScan(t) \n  SeqScan(rt)
+ IndexOnlyScan(ct)
+ Leading(((((mc cn) t) rt) ct)) */
+Plan in JSON Format:
+"Plan": {
+    "Node T ype": "Aggregate",
+    "Plans": [ Nested Children Node Plans ] },
+     · · ·
+    "Actual Rows":  90,     
+    "Planning T ime": 1.045,
+    "Execution T ime" : 153.547}
+1 2 3
+2
+3
+Root
+Leaves
+NL
+NLIOS
+HJIS
+NLIS
+SSIS
+Figure 2: Given the SQL text and other information (Step 1), we extract the query hint from the query plan in the JSON format
+(Step 2) and simplify the hint structure (Step 3). The rightmost sub-figure shows how we simplify the plan representation.
+other operators are summarized in red as “Nested Children Node
+Plans” for clarity). Then, we extract the tables T𝑖 used in 𝑄𝑖 and
+get their cardinalities C𝑖 from the JSON output (lines 3 and 4).
+Next, the original query 𝑄𝑖 is concatenated with the extracted
+cardinalities C𝑖 to construct the prompt x𝑄𝑖 (line 5). Finally, we
+obtain the generated hint ℎ∗ (i.e., labeled output) for the query 𝑄𝑖
+(line 6), pair it with the constructed prompt x𝑄𝑖 , and add them
+to the training set Dsft. Figure 2 (Part 3) shows an example of
+the constructed hint for the plan tree structure highlighted in the
+rightmost part of the figure. After obtaining Dsft = {( x𝑄𝑖 , ℎ∗
+𝑖 )},
+we maximize the conditional predictive probability 𝑝𝜃 (ℎ∗|x) of the
+LLM as described in Section 2.3.
+Algorithm 1 Supervised Fine-tuning Dataset Preparation
+Input: Database engine DB , Training query set Q𝑡𝑟𝑎𝑖𝑛 =
+{𝑄1, 𝑄2, . . . , 𝑄𝑛 }
+Output: SFT training dataset Dsft = {( x𝑄𝑖 , ℎ∗
+𝑖 )}
+1: for each 𝑄𝑖 ∈ Q 𝑡𝑟𝑎𝑖𝑛 do
+2: E𝑖 ← DB (𝑄𝑖 ) ⊲ Generate execution record for 𝑄𝑖
+3: T𝑖 ← ExtractTables(E𝑖 ) ⊲ Extract used tables
+4: C𝑖 ← GetCardinalities(T𝑖, E𝑖 ) ⊲ Retrieve table cardinalities
+5: x𝑄𝑖 ← ConstructPromptsft(𝑄𝑖, C𝑖 ) ⊲ Construct SFT prompt
+6: ℎ∗
+𝑖 ← ExtractHint(E𝑖 ) ⊲ Extract hint as label
+7: Append (𝑥𝑖, ℎ∗
+𝑖 ) to Dsft
+8: Return Dsft
+5 Query Group Relative Policy Optimization
+This optimization stage further enhances the LLM’s ability to per-
+form query optimization tasks by steering the model’s output
+toward a query hint with reduced latency. We propose Query
+Group Relative Policy Optimization (Q𝐺𝑅𝑃𝑂 ) based on GRPO [46]
+to use reinforcement learning to continuously fine-tune 𝜃sft, which
+was obtained from the previous supervised fine-tuning stage. The
+key intuition is to have the LLM generate multiple hint outputs
+{ℎ1, ℎ2, . . . , ℎ𝐺 } for a given promptx. Then, we use gradient descent
+to update the model’s parameters by computing the in-group ad-
+vantages of these hint outputs, which correspond to relative latency
+improvement rewards in our context. As a result, the policy model
+is optimized to an updated parameter set𝜃GRPO. Figure 3 illustrates
+the Q𝐺𝑅𝑃𝑂 workflow and the latency-based reward paradigm.
+5.1 Latency-based Reward Model
+For a given query, the ultimate objective of query optimization
+is to reduce the latency of the query plan. To directly leverage
+LLM
+Execution
+Engine
+Prompt
+Input Queries
+Q 1 Q 2
+DB
+Statistic
+Query , Related
+T able Information
+h 1
+h 2
+...
+h G
+Same Query
+Reward
+Model
+Latency of Default Plan
+Actual
+Latency
+Latency Reward Paradigm
+Multiple Query
+Hint Outputs
+Group Relative Advantage Feedback
+Figure 3: Overview of the Q 𝐺𝑅𝑃𝑂 workflow with Latency-
+based Reward Paradigm.
+Algorithm 2 Latency-based Reward Model
+Input: Query 𝑄, corresponding multiple LLM outputs as hint
+plans{ℎ1, ℎ2, . . . , ℎ𝐺 }, latency reward function 𝑅Latency
+Output: Rewards {𝑟1, 𝑟2, . . . , 𝑟𝐺 }
+1: Baseline latency: 𝑡𝑑 ← ExecEngine(𝑄) ⊲ without hint
+2: for each Hint Output 𝑖 ∈ { 1, 2, . . . , 𝐺} do
+3: Actual latency: 𝑡𝑖 ← ExecEngine(𝑄, ℎ𝑖 ) ⊲ with hint
+4: latency improvement ratio: △𝑡𝑖 ← 𝑡𝑑
+𝑡𝑖 ⊲ Improvement rate
+5: Latency reward: 𝑟𝑖 ← 𝑅Latency (△𝑡𝑖 )
+6: Return: {𝑟1, 𝑟2, . . . , 𝑟𝐺 }
+feedback on query execution latency, we propose a latency-based
+reward model derived from real query execution and integrated
+with reinforcement fine-tuning for LLMs.
+Algorithm 2 illustrates the latency-based reward model used
+in Q𝐺𝑅𝑃𝑂 . We compute the reward based on the actual latency
+speedup relative to the baseline latency obtained by executing the
+same query without any query hint. First, we execute the query
+without applying a query hint on the database execution engine to
+obtain the baseline latency𝑡𝑑 (line 1). Each LLM-generated hint out-
+put ℎ𝑖 is concatenated with the query 𝑄 and executed to record the
+actual latency 𝑡𝑖 (line 3). We then calculate the latency improvement
+ratio △𝑡𝑖 as the ratio between the baseline latency 𝑡𝑑 and the actual
+latency 𝑡𝑖 (line 4). A larger value of △𝑡𝑖 indicates a better query hint.
+Finally, the latency reward 𝑟𝑖 is derived using the designed latency
+reward function 𝑅Latency (line 5), which is defined as follows:
+𝑅Latency (△𝑡𝑖 ) = tanh  ln(△𝑡𝑖 ) (8)
+where the logarithmic function ln is introduced to achieve symme-
+try reward. For example, a two-fold improvement (Δ𝑡𝑖 = 2) yields
+ln(2) ≈ 0.693, while a two-fold degradation ( Δ𝑡𝑖 = 0.5) results
+in ln(0.5) ≈ − 0.693. Although the logarithmic function dampens
+5
+
+=== PAGE 6 ===
+Liu et al.
+the effect of huge differences—since some excellent plans or poor
+plans can lead to order-of-magnitude speedups or slowdowns—a
+hyperbolic tangent function tanh is further employed to restrict
+the reward range to the interval [−1, 1]. Even when the subsequent
+procedure computes advantages based on in-group comparisons
+along with the normalization in Equation 9, reducing the sensitiv-
+ity of the reward to extreme deviations can improve the overall
+stability of the fine-tuning procedure.
+Suppose the current latency𝑡𝑖 is smaller than the baseline latency
+𝑡𝑑. In that case, the latency improvement ratio is larger than 1
+(△𝑡𝑖 > 1), leading to a positive reward in the end for this LLM-
+generated output, and vice versa. These rewards guide the LLM’s
+preferences toward generating hints that reduce query latency.
+5.2 Group Relative Advantage Feedback
+Another key process in Q𝐺𝑅𝑃𝑂 is the group relative advantage feed-
+back. Based on the previously calculated rewards {𝑟1, 𝑟2, . . . , 𝑟𝐺 },
+we compute the advantage 𝐴𝑖 for each hint response ℎ𝑖, reflecting
+how much better or worse it is compared to others in the group:
+𝐴𝑖 = 𝑟𝑖 − mean({𝑟1, 𝑟2, . . . , 𝑟𝐺 })
+std({𝑟1, 𝑟2, . . . , 𝑟𝐺 }) (9)
+Here, mean({𝑟1, 𝑟2, . . . , 𝑟𝐺 }) denotes the average reward of the
+group, and std({𝑟1, 𝑟2, . . . , 𝑟𝐺 }) denotes the standard deviation of
+rewards within the group. Subsequently, we compute the ratio of
+the probability of generating the response ℎ𝑖 under the new policy
+𝜋𝜃 to that under the old policy 𝜋𝜃old, denoted as 𝜋𝜃 (ℎ𝑖 |x)
+𝜋𝜃old (ℎ𝑖 |x) . This
+ratio indicates the degree to which the new policy diverges from
+the old policy for a given response, thereby guiding the direction
+of policy updates. Q𝐺𝑅𝑃𝑂 employs gradient descent to iteratively
+maximize the optimization objective defined in Equation 3. The
+simplified gradient2 used for updating model can be expressed as:
+𝐺𝐶GRPO (x, ℎ, 𝜋𝜃 , 𝜋ref) = ˆ𝐴𝑖 + 𝛽
+ 𝜋ref(ℎ𝑖 | x)
+𝜋𝜃 (ℎ𝑖 | x) − 1
+
+(10)
+Algorithm 3 presents the complete fine-tuning process of Q𝐺𝑅𝑃𝑂 .
+This algorithm first initializes the policy model𝜋𝜃 and the reference
+policy model 𝜋ref as 𝜋sft (line 1), and iterates over batches to update
+𝜋𝜃 (lines 2–9). Specifically, we first save the current policy model as
+𝜋𝜃old to distinguish it from an updating model 𝜋𝜃 (line 3). Then, the
+LLM generates 𝐺 query hints as outputs {ℎ𝑖 }𝐺
+𝑖=1 ∼ 𝜋𝜃old sampling
+from the saved policy model 𝜋𝜃old (line 6). Next, we compute the
+rewards {𝑟𝑖 }𝐺
+𝑖=1 for each generated hint using the latency-based
+reward model described in Section 5.1 (line 7). Then, we calculate
+the group relative advantage {𝐴𝑖 }𝐺
+𝑖=1 for each generation according
+to Equation 9 (line 8). After computing these values for the batch,
+we update the LLM parameters via gradient descent with 𝜋ref and
+𝜋𝜃 by using Equation 10 (line 9).
+6 RAG-based Prompt Optimization
+After the previous offline fine-tuning procedures, we expect our
+system to continuously evolve during the online stage to generate
+query hints, which lead to lower query execution latency. For a fixed
+fine-tuned LLM, different input prompts for the same query 𝑄 can
+result in varying qualities of hint outputs, which in turn influence
+2This simplified gradient assumes 𝜋𝜃old = 𝜋𝜃 , as in [46].
+Algorithm 3 Query Group Relative Policy Optimization
+Input: Initial policy model 𝜋𝜃sft, reward function 𝑟𝜙 , prompts P
+Output: Optimized policy model 𝜋𝜃GRPO
+1: 𝜋𝜃 ← 𝜋𝜃sft, 𝜋ref ← 𝜋𝜃sft ⊲ Initialization
+2: for step = 1, . . . , 𝑀 do
+3: Save current policy model by 𝜋𝜃old ← 𝜋𝜃
+4: Sample a batch P𝑏 from P
+5: for (query, table information) pair x = (𝑄, T ) ∈ P 𝑏 do
+6: Sample G generated hints {ℎ𝑖 }𝐺
+𝑖=1 ∼ 𝜋𝜃old (· | x)
+7: Compute rewards {𝑟𝑖 }𝐺
+𝑖=1 through 𝑟𝑖 = 𝑟𝜙 (ℎ𝑖 )
+8: Compute relative advantage {𝐴𝑖 }𝐺
+𝑖=1 via Equation 9
+9: Update 𝜋𝜃 by maximizing the GRPO objective ⊲ via gradi-
+ent descent in Equation 10, using 𝜋ref
+10: Return: 𝜋𝜃 as 𝜋𝜃GRPO
+Self-evolving Paradigm
+VecDBSimilar Queries,
+Statistics, Hints
+LLM Execution
+Engine
+Plan HintDynamic
+Prompts
+Statistics
+GetLower
+Latency?
+PerformanceFeedback
+User QueriesQ1 Q2 ... Q1
+Store Execution Records
+FirstIteration?
+Yes
+No
+InitialResults
+Preparation      
+Previous
+Records
+Initialization and Generation
+Figure 4: Overview of SEFRQO’s RAG component.
+the execution latency of the resulting query plans. As formalized
+in Equation 7, by improving the prompt x to an optimized prompt
+x∗, the LLM generates a query hint ℎ that minimizes the execution
+latency for 𝑄. In this section, we present a RAG-based prompt
+optimization method. Our RAG workflow dynamically constructs
+the prompt x for the LLM based on historical execution records
+of previously generated query plans. This self-evolving paradigm
+enables online in-context learning for hint generation.
+6.1 Architecture of Self-evolving RAG
+Figure 4 illustrates the complete pipeline of SEFRQO’s RAG-based
+prompt optimization (the self -evolving phase in Section 3.2). It
+comprises three stages: Preparation, Initialization, and Generation.
+During the Preparation stage, we collect previous query execu-
+tion records (e.g., execution times and corresponding query plans
+generated by PostgreSQL’s default optimizer). Notably, SEFRQO
+does not require a predefined workload for this stage. All collected
+records are loaded into the vector database (VecDB) to bootstrap the
+system. These execution records serve as reference examples that
+can be incorporated into the prompt x to enhance LLM generation.
+After the Preparation stage, when a query 𝑄 is encountered for
+the first time by our RAG system, it triggers the Initialization stage
+(denoted by the dashed line). In this stage,𝑄 is executed directly on
+the database engine (e.g., PostgreSQL without applying any query
+hint ℎ), and the corresponding execution record is stored in VecDB.
+For subsequent encounters with 𝑄, our RAG system enters the
+Generation stage. Here, 𝑄 is sent to the database engine to extract
+necessary statistics 𝑠𝑡𝑎𝑡𝑠 (e.g., table cardinalities and filter selectivi-
+ties) without actual execution. These statistics are then incorporated
+6
+
+=== PAGE 7 ===
+SEFRQO: A Self-Evolving Fine-Tuned RAG-Based Query Optimizer
+Id: 0
+Execution Time: 300 ms
+Vector: [0.1, 0.2, 0, ..., 0.2, 0.6]
+Iteration: 0
+SQL: 'select count(*) from ... AND 1925 < t.production_year'
+Plan: '/*+ NestedLoop(mi1 it1 tkt ci rt n)\n ...  Leading(((((((mi1 it1) t) kt) ci)rt) n)) */'
+SQL_id: 'ceb_1a'
+Execution Time: 1234 ms
+Vector: [0.3, 0.1, 0, ..., 0.9, 0.3]
+SQL: 'select MIN(cn1.name)  ...= mc2.movie_id '
+Plan: '/*+ NestedLoop(mi_idx it2mc ct t cn mi it1)\n...
+ Leading((((((((mi_idx it2) mc)ct) t) cn) mi) it1)) */'
+Id: 7Iteration: 4SQL_id: 'job_33b'
+Figure 5: A visual example of storing execution records.
+into the prompt x to provide additional context for better planning.
+In parallel, 𝑄 is sent to VecDB to retrieve 𝑘 reference queries via
+similarity search (as in Section 2.5), along with their execution
+records. These reference records are also used to dynamically con-
+struct the prompt x (see Section 6.3). Next, the LLM generates a
+query hint ℎ based on this prompt. The query 𝑄, together with the
+generated hint ℎ, is executed on the database engine. If the new
+execution record achieves lower latency than the historical record
+for 𝑄, the latest record replaces the old one in VecDB. If our RAG
+system encounters the same query 𝑄 again, the stored current best
+history record for 𝑄 is retrieved from VecDB and used to compute
+feedback information (e.g., performance gain 𝜂 over PostgreSQL’s
+default plan for 𝑄), which is then incorporated into the dynamic
+prompt. This feedback paradigm drives continuous self-evolution,
+iteratively improving future plan generation (see Section 6.4).
+6.2 Vector Database Storage Design
+Figure 5 shows how we store execution records in VecDB. For
+each record, we maintain seven properties: Id, Iteration, Vector,
+SQL_id, SQL, Plan, and Execution Time . Id serves as the primary
+key. Iteration denotes the current iteration of the online pipeline;
+for the Preparation and Initialization stages, it is set to 0 to distin-
+guish them from the Generation stage, whose iterations begin at 1.
+Vector contains the embedding of the originalSQL used for similar-
+ity search. SQL_id is a unique identifier for each query, comprising
+the benchmark name and the internal query name (e.g., job_33b).
+It is used to distinguish the current query from its reference queries
+during similarity search, ensuring that only similar yet distinct
+queries are retrieved from the vector database. SQL denotes the raw
+query text. Plan represents the query plan extracted from the exe-
+cution record using the workflow in Figure 2. Finally,Execution
+Time stores the actual execution latency.
+When a new record arrives, our VecDB inserts it according to the
+layout described above. To extract relevant information, the input
+query 𝑄 is first encoded as a fixed-length vector using an encoder
+model (e.g., SentenceTransformer [17]). Then, VecDB retrieves the 𝑘
+most related queries {𝑄1, 𝑄2, . . . , 𝑄𝑘 } (or fewer if only fewer similar
+queries exist) based on cosine similarity of their embeddings. Finally,
+these queries and their associated execution records are used to
+construct the dynamic prompt x.
+## Y ou ar e a database expert performing the query optimization task
+Description of query optimization task.
+## Y ou can perform the following actions: Definition of actions.
+## Y ou have these r estrictions on your  actions: Constraints on actions.
+𝑆 𝑃 : System Prompt
+## Her e is the {k} similar  query-answer  pairs you can r efer ence:
+k pairs of reference query and corresponding execution plan
+## Her e is the query and its corr esponding statistics:
+Query SQL  and corresponding database statistics.
+## The default execution plan pr ovided by the database engine:
+Default execution plan of this query (without applying hints).
+## The best historical query plan you generated and performance gain:
+Best historical query plan and performance gain.
+## Please generate a better query plan than provided references.
+Not repetition, Stick to the correct format, .etc.
+𝑈 𝑃 : User Prompt
+Figure 6: Dynamic prompt in SEFRQO.
+6.3 Dynamic Prompt Construction
+Figure 6 illustrates the complete structure of the dynamic prompt
+x = (SP ∥ UP). It begins with a static system prompt, SP, which
+will not change. UP specifies the LLM’s role (e.g., database expert),
+the actions the LLM should perform, and the regulations of these
+actions in the context of our query optimization task. For a query𝑄,
+SEFRQO generates a dynamic user prompt, UP, which initially
+includes the 𝑘 most similar queries and their execution plans as
+references. These records provide the LLM with strongly correlated
+contextual information, as they represent the queries most similar
+to 𝑄 in the embedding space derived from the SQL text. The LLM
+can learn from these existing plans, even those for other queries,
+to better construct a query hint ℎ for the input query 𝑄. Finally,
+the query statistics 𝑠𝑡𝑎𝑡𝑠 , containing table cardinalities and filter
+selectivities, are appended to the prompt as additional context.
+The following part of the user prompt contains the currently
+generated best query plan for query 𝑄 and the corresponding per-
+formance gain 𝜂 relative to the baseline execution record (i.e., 𝑄
+executed without any hint ℎ during the Initialization stage). These
+two items serve as heuristics for the LLM to understand the status
+(i.e., relative performance gain) of the current hint ℎ and to target
+an optimized hint ℎ∗. At the end of the user prompt, we add ex-
+pectations and regulations for the LLM, including (1) generating a
+better hint, (2) avoiding copying the plan provided by the execution
+engine or its own historical hints, and (3) ensuring output in the
+correct format so that the hint constitutes a valid plan.
+6.4 Self-evolving Feedback Paradigm
+The middle part of Figure 4 depicts the self-evolving feedback par-
+adigm of SEFRQO. This paradigm enables the LLM to learn from
+historical execution records of the same query 𝑄, thereby enhanc-
+ing the current iteration’s generated hint ℎ. For example, when
+we run the JOB 20a query [ 24] with SEFRQO, the partial default
+query plan obtained from PostgreSQL during the Preparation stage
+is NestedLoop(k mk) → NestedLoop(k mk cc) . Then, in the Gen-
+eration stage (first iteration), SEFRQO generates a hint for the plan
+NestedLoop(mk k) → NestedLoop(mk k t) . In later iterations
+during the feedback process, the hint evolves toHashJoin(mk k) →
+NestedLoop(mk k cc) . In this example, we observe that SEFRQO
+identifies two key insights: (1) joining mk and k first is beneficial,
+and performing this join with a HashJoin while adjusting the join
+7
+
+=== PAGE 8 ===
+Liu et al.
+Algorithm 4 Prompt Optimization in our RAG System
+1: Input: Input query 𝑄, Previous prompt 𝑃𝑟𝑜𝑚𝑝𝑡
+2: Output: Optimized prompt for current iteration 𝑃𝑟𝑜𝑚𝑝𝑡 ∗
+3: ℎ ← LLM(𝑃𝑟𝑜𝑚𝑝𝑡 ) ⊲ Previous generated hint
+4: 𝑝𝑙𝑎𝑛, 𝑡 ← ExecEngine(𝑄, ℎ) ⊲ Previous execution record
+5: 𝑝𝑙𝑎𝑛 ∗, 𝑡∗ ← 𝐺𝑒𝑡𝐻𝑖𝑠𝑡𝑜𝑟𝑖𝑐𝑎𝑙𝐵𝑒𝑠𝑡𝐸𝑥𝑒𝑐𝑢𝑡𝑖𝑜𝑛𝑇 𝑖𝑚𝑒 (𝑄)
+6: if 𝑡 < 𝑡 ∗ then
+7: 𝑝𝑙𝑎𝑛 ∗ ← 𝑝𝑙𝑎𝑛 ⊲ Update historical best plan
+8: 𝑡 ∗ ← 𝑡 ⊲ Update historical best execution time
+9: 𝑡𝑜 ← GetBaselineExecutionTime(𝑄) ⊲ Retrieve execution time
+from record stored in the initialization stage from VecDB
+10: Compute the performance gain: 𝜂 ← 𝑡𝑜 −𝑡 ∗
+𝑡𝑜
+11: UP ← UP ∪ {( 𝑝𝑙𝑎𝑛 ∗, 𝜂 )} ⊲ Insert historical best plan and its per-
+formance gain into user prompt
+12: 𝑃𝑟𝑜𝑚𝑝𝑡 ∗ ← ConstrcutPrompt(𝑆𝑃, 𝑈 𝑃)
+13: Return 𝑃𝑟𝑜𝑚𝑝𝑡 ∗
+order yields better efficiency than a NestedLoop; and (2) the nested
+loop join NestedLoop(mk k t) is efficient and should be retained.
+Algorithm 4 illustrates the cross-iteration prompt optimization
+process (the straight line below line 8 indicates the separation
+between previous and current iterations). Here, we use𝑃𝑟𝑜𝑚𝑝𝑡 and
+𝑃𝑟𝑜𝑚𝑝𝑡 ∗ in place of the original notation x to denote the prompt
+from the previous iteration and the optimized prompt used in the
+current iteration, respectively. In the previous iteration part, we
+obtain the generated hint ℎ by sending 𝑃𝑟𝑜𝑚𝑝𝑡 to LLM. Then, we
+execute query 𝑄 with ℎ on the database engine to retrieve the
+resulting query plan and its execution time (lines 3–4). We then
+retrieve the historical best plan𝑝𝑙𝑎𝑛 ∗ and its execution time𝑡 ∗ from
+VecDB (line 5). Finally, we compare the current iteration’s result
+with the historical record, updating 𝑝𝑙𝑎𝑛 ∗ and 𝑡 ∗ if the current
+execution is superior (lines 6–8).
+After that, we retrieve the baseline execution time 𝑡𝑜 for query
+𝑄 from VecDB (line 9). This time is stored during the Initialization
+stage, representing the query executed without applying any hint.
+We then compute the performance gain 𝜂 of the historical best
+execution time 𝑡 ∗ over the baseline, 𝜂 = (𝑡𝑜 − 𝑡 ∗)/𝑡𝑜 (line 10). Note
+that if 𝑡 ∗ > 𝑡𝑜, then 𝜂 < 0, indicating that the current best plan
+performs worse than the baseline. We merge the best plan plan∗
+and 𝜂 into the user prompt 𝑈 𝑃 (as in Section 6.3) to provide useful
+information guiding LLM generation (line 11). Finally, we construct
+the optimized prompt 𝑃𝑟𝑜𝑚𝑝𝑡 ∗ by concatenating the static system
+prompt 𝑆𝑃 and the dynamically updated user prompt 𝑈 𝑃 (line 12).
+This optimized prompt, 𝑃𝑟𝑜𝑚𝑝𝑡 ∗, prevents the LLM from re-
+peating the performance pitfall encountered with the previously
+generated hint ℎ and continuously inspires the LLM to produce
+an optimal hint ℎ∗. As the pipeline runs iteratively, feedback from
+hints generated in earlier iterations drives the self -evolving pro-
+cess. Meanwhile, the reference queries stored in VecDB are continu-
+ously updated, further enhancing the effectiveness of the references.
+These components iteratively optimize the prompt 𝑃𝑟𝑜𝑚𝑝𝑡 ∗, mo-
+tivating the LLM to generate an optimized hint ℎ∗ that minimizes
+the execution latency for query 𝑄.
+7 Evaluation
+We first introduce our experimental setup in Section 7.1. Then, we
+evaluate SEFRQO using different benchmarks and multiple LLMs
+to address the following questions: (1) What is the performance
+gain over PostgreSQL and current LQOs in static and dynamic sce-
+narios (Section 7.2)? (2) How effective is SEFRQO’s self-evolving
+RAG feedback paradigm (Section 7.3)? (3) What is the effect of SFT
+and Q𝐺𝑅𝑃𝑂 on the quality of generated plans (Sections 7.4)? (4)
+What is the overhead of SEFRQO and which factors influence it
+(Section 7.5)? (5) How do different system settings affect the perfor-
+mance of SEFRQO (Section 7.6)? (6) How does SEFRQO perform
+under various scenarios (Section 7.7)? SEFRQO is open-source 3.
+7.1 Experiment Setup
+Environment. Unless mentioned otherwise, we run all our ex-
+periments on one server with an AMD Ryzen 9700X CPU, 128 GB
+of RAM, and an NVIDIA A6000 GPU with 48GB of memory. We
+conducted the majority of our experiments on PostgreSQL (version
+16.4) with the corresponding pg_hint_plan version, and employed
+MySQL (version 8.4) [33] to assess SEFRQO’s cross-DBMS capabil-
+ity. We use the Milvus [56] vector database for our RAG process.
+We evaluated SEFRQO using 6 local LLMs: LLaMA3.1-3B ( L3B),
+LLaMA3.1-8B (L8B), their two SFT versions (LS3B, LS8B), and their
+two SFT-plus-Q𝐺𝑅𝑃𝑂 versions (LSG3B, LSG8B). We warm up the
+machine before running the experiments to mitigate caching issues.
+We use SentenceTransformer4 as the embedding model to embed
+the plain SQL to a vector representation in our retrieval process.
+SEFRQO Variants. We evaluate three variants of SEFRQO: (1) the
+default configuration, which leverages the full-plan hint in combi-
+nation with reference queries retrieved from the vector database;
+(2) a variant that utilizes only the join order component of the hint
+(the “Leading” clause as detailed in Section 2.1), referred to asJO;
+and (3) a variant that relies exclusively on the historical execution
+records of the current query 𝑄 itself, without incorporating any
+reference queries from the RAG, referred to as NR. For clarity, we
+denote models using these configurations with suffixes, e.g., an
+LSG3B model employing the NR variant is denoted as LSG3B-NR.
+Unless mentioned, the number of retrieved reference queries is
+fixed at 𝑘 = 1. The effect of varying 𝑘 is investigated in Section 7.6.
+LQO Baselines. We compare SEFRQO with two state-of-the-art
+LQOs: Bao [30] and Balsa [61]. Bao is a steering LQO that tunes
+query plans generated by traditional optimizers through a learned
+model that selects different hint sets to enable/disable some op-
+erators like Hash Join, Index Scan, etc. Balsa is a generative LQO
+that learns a model to construct the query plan from scratch. For
+LLM-based LQOs, due to the lack of available complete code for
+LLM-QO [50] and LLMOpt [ 62], we were unable to successfully
+reproduce their experiments. The only available LLM-based LQO
+implementation is LLMSteer [2], which we use as our primary base-
+line for evaluation in this category. LLMSteer uses a text-embedding
+LLM to generate an embedding vector for the input SQL query and
+performs predictions using simple neural networks. To have a fair
+3https://github.com/ihanwen99/SEFRQO
+4Paraphrase-MiniLM-L6-v2 Model.
+8
+
+=== PAGE 9 ===
+SEFRQO: A Self-Evolving Fine-Tuned RAG-Based Query Optimizer
+comparison, we follow the best configurations of all baselines as
+mentioned in their papers5.
+Evaluation Metrics. We focus mainly on the following metrics:
+(1) Performance Gain in Query Execution Latency: In this metric, we
+measure the performance gain over PostgreSQL. We compute this
+performance gain in two modes. The first mode is Overall Per-
+formance Gain, where we calculate the weighted sum of the per-
+formance gains in “all” the workload queries using SEFRQO (or
+any LQO) over using PostgreSQL. The weight of each query is
+the ratio between its corresponding execution time and the to-
+tal time of all workload queries when running with PostgreSQL.
+The second mode is Filtered Performance gain , where the gain is
+calculated the same way, yet over the queries that have been ac-
+celerated “only”. (2)Relative Execution Time (RET): In this metric,
+we compute the ratio between the overall execution time of all
+the queries using SEFRQO (or any LQO) and using PostgreSQL.
+(3) Inference and RAG Retrieval Latency: These metrics measure the
+latency overhead of the LLM inference and the RAG retrieval from
+the vector database. (4) Homogeneous Rate (HR): We assess the di-
+versity of LLM-generated hints by calculating the ratio between (i)
+the number of invalid hints or hints identical to those plans gener-
+ated by the PostgreSQL and (ii) the total number of generated hints.
+A higher HR indicates that the model is either generating invalid
+hints (rejected by the database as plans) or producing repetitive
+hints that copy the execution engine’s own plans. Note that we do
+not distinguish between invalid hints and the execution engine’s
+default plans because invalid hints result in the same default plans,
+making them indistinguishable in practice. Evaluating the diversity
+of hints generated by LLMs is essential because only distinct hints
+can effectively influence the database’s execution behavior.
+For all evaluation metrics, we use ↑ to denote “the higher, the
+better, ” and↓ to denote “the lower, the better. ” These symbols will
+be consistently used across all figures and tables.
+Benchmarks. We use the Join Order Benchmark (JOB) [24] work-
+load to (1) fine-tune the LS3B, LS8B, LSG3B, and LSG8B models and
+(2) pre-populate the retrieval corpus in the RAG system with query-
+answer examples during the preparation phase. Subsequently, we
+evaluate SEFRQO on two workloads: the Cardinality Estimation
+Benchmark (CEB) [36] and Stack [30]. Both JOB and CEB are con-
+structed on the IMDB movie database schema and data, with CEB
+containing more complex query patterns and a wider range of
+cardinality estimation challenges than JOB. The Stack workload
+is derived from the Stack Overflow dataset; while its query style
+bears similarity to the IMDB-based workloads, it features a greater
+number of slow queries. Additionally, TPC-DS benchmark [4] is
+used to test SEFRQO on complex workloads. We use a scale factor
+of 4, consistent with prior work [6]. For CEB, we use two queries
+per template; for Stack, five queries per template; and for TPC-DS,
+one query per template. To prevent poorly optimized plans from
+excessively blocking the benchmarking, we enforce the following
+timeout thresholds for different benchmark: 10s for the JOB and
+CEB workloads, 30s for Stack, and 60s for TPC-DS.
+5Balsa disables Bitmap Scan, Tid Scan, and Genetic Query Optimizer.
+7.2 Query Execution Latency Evaluation
+In this section, we focus on the performance gain in query execution
+latency for each query during a 50-iteration run of SEFRQO. We
+evaluate on both static and dynamic scenarios. In static scenarios,
+we keep using the same workload for all iterations during the online
+stage. The first static scenario employs the CEB workload, which
+is used to test SEFRQO under a different setup while retaining
+the same schema and data distribution. The second static scenario
+employs the Stack workload, which is entirely different from the
+JOB workload that is used for fine-tuning, and is used to verify
+SEFRQO’s cross-domain transfer capability (i.e., workload switch).
+The dynamic scenario comprises a mixture of the CEB, JOB, and
+Stack workloads, alternating across different episodes. For each
+episode, one workload is selected randomly and executed for a
+number of iterations. We set 10 episodes and randomly allocate
+iterations to each episode, enforcing a total of 50 iterations.
+p0 p25 p50 p75 p90 p95 p99 p100
+Percentile
+101
+102
+103
+Query latency (ms)
+11
+100
+363
+499
+1053
+1219
+2024
+2431
+13
+159
+462
+1195
+2864
+4042
+6590 6921
+SEFRQO
+PostgreSQL
+(a) LS8B (CEB)
+p0 p25 p50 p75 p90 p95 p99 p100
+Percentile
+101
+102
+103
+Query latency (ms)
+12
+100
+362
+596
+1354
+2261
+2656 2733
+13
+152
+449
+1190
+2849
+3984
+6414 6674
+SEFRQO
+PostgreSQL (b) LSG8B (CEB)
+p0 p25 p50 p75 p90 p95 p99 p100
+Percentile
+101
+102
+103
+104
+Query latency (ms)
+3
+18
+60
+289
+732
+4318
+13369
+18124
+6
+21
+78
+321
+1288
+10152
+13891
+19701
+SEFRQO
+PostgreSQL
+(c) LS8B (Stack)
+p0 p25 p50 p75 p90 p95 p99 p100
+Percentile
+101
+102
+103
+104
+Query latency (ms)
+3
+18
+60
+309
+801
+4277
+13545
+18896
+6
+23
+92
+347
+1463
+10948
+16803
+22605
+SEFRQO
+PostgreSQL (d) LSG8B (Stack)
+Figure 7: Query latency distributions on CEB and Stack.
+Performance on Static Workloads. Table 1 presents the perfor-
+mance gains achieved on static workloads. The comparison baseline
+is PostgreSQL’s default query plan. For LQOs, both Balsa and Bao
+are trained and evaluated on the same workload (either CEB or
+Stack). On the CEB workload, SEFRQO with the LS8B model ex-
+hibits superior performance relative to the other models, and it
+outperforms LQOs. This result also suggests that fine-tuning is
+crucial, as the vanilla models (L3B and L8B) show significantly less
+improvement compared with models that have undergone super-
+vised fine-tuning (LS3B and LS8B). Interestingly, a slight perfor-
+mance degradation is observed when applying Q 𝐺𝑅𝑃𝑂 after the
+SFT process. This is because SFT-based LLMs benefit the most (i.e.,
+leverage the maximum of the fine-tuned knowledge) when they get
+fine-tuned and tested on similar workloads, such as JOB and CEB.
+However, when SEFRQO confronts an unseen workload that differs
+significantly from the fine-tuning workload (as shown right below
+with the Stack workload) or when the RAG support is disabled
+(as shown in Section 7.4), SFT-plus-Q 𝐺𝑅𝑃𝑂 models demonstrate
+their advantages that stem from the exploratory nature of rein-
+forcement fine-tuning, which enhance the reasoning capabilities
+of larger LLMs to handle such challenging situations. On Stack
+9
+
+=== PAGE 10 ===
+Liu et al.
+Table 1: Performance gain in static scenarios ↑.
+Workload Performance Gain Balsa Bao L3B L8B LS3B LS8B LSG3B LSG8B
+CEB Overall 37.57% 22.60% 7.46% 21.78% 53.93% 60.04% 50.13% 48.36%
+Filtered 59.22% 30.13% 17.93% 47.56% 56.76% 65.05% 55.34% 61.28%
+Stack Overall 67.17% 76.90% 5.54% 15.21% 40.10% 26.77% 39.62% 32.58%
+Filtered 89.83% 82.85% 9.16% 37.38% 43.29% 87.68% 42.77% 93.57%
+10 20 30 40 50
+Iteration
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0Relative Execution Time
+Balsa
+L3B
+L8B
+LS3B
+LS8B
+LSG3B
+LSG8B
+Figure 8: RET on CEB workload across iterations ↓.
+10 20 30 40 50
+Iteration
+1
+2
+3
+4
+5
+6Relative Execution Time
+Balsa
+L3B
+L8B
+LS3B
+LS8B
+LSG3B
+LSG8B Figure 9: RET on Stack workload across iterations ↓.
+workload, both the SFT and SFT-plus-Q𝐺𝑅𝑃𝑂 models exhibit good
+performance. Even though the LLMs have never seen this workload
+before, the filtered performance gains for LS8B and LSG8B are com-
+parable to those of Balsa or outperform it. Notably, these LQOs are
+trained on Stack for 50 iterations. This scenario also demonstrates
+the remarkable knowledge-transfer capabilities of SEFRQO with the
+SFT and SFT-plus-Q𝐺𝑅𝑃𝑂 models, as evidenced by the substantial
+performance gains they achieve over their vanilla counterparts.
+Figure 7 compares the query latency distributions on both CEB
+and Stack workloads. SEFRQO consistently outperforms PostgreSQL
+across all percentiles, indicating that it benefits the majority of
+queries and steadily reduces their latency. In particular, on the CEB
+workload, SEFRQO is especially effective at optimizing long-tail
+(high-percentile) queries, achieving approximately 2.5× speedup.
+Comparison against LLM-based LQOs. As mentioned in Section 7.1,
+we experiment with LLMSteer [2] as a representative for LLM-based
+LQOs. However, it is not fully integrated into a database engine
+and requires workloads to be preprocessed into a specific format
+(CSV files containing the SQL file name, raw SQL text, a mapping
+between hint lists and runtime lists, and a special representation
+of the query plan), without publicly available source code for that
+preprocessing. The authors only provided preprocessed files for
+the JOB and CEB workloads. Therefore, we only reproduced LLM-
+Steer under the same setup as the first static scenario: training on
+the JOB workload and evaluating on the CEB workload. LLMSteer
+achieves an Overall Performance Gain (i.e., improvement across all
+queries) of 45.14%, while SEFRQO achieves 60.04%. Although LLM-
+Steer’s embedding-based generation and specialized architecture
+offer faster inference, they result in lower overall performance.
+Performance on Dynamic Scenario. Table 2 shows the capability
+of SEFRQO to handle changing workloads. Notably, most existing
+LQOs do not support dynamic workloads, as their model archi-
+tectures are typically tied to the schema of the training workload.
+However, since Bao can accommodate various schemas, we include
+it in this experiment. In general, larger LLMs yield better results,
+and SFT is crucial for enhancing performance. Since approximately
+two-thirds of the workloads originate from the IMDB schema (i.e.,
+JOB and CEB workloads), the dominance of familiar patterns may
+diminish the effectiveness of SFT-plus-Q𝐺𝑅𝑃𝑂 models, which tend
+to perform better on substantially different workloads such as Stack.
+Additionally, we can see that Bao underperforms compared to SE-
+FRQO, and exhibits a significant performance drop relative to its
+results in static settings. These results demonstrate the superiority
+of SEFRQO in handling dynamic workloads, effectively eliminating
+reliance and constraints associated with specific workloads.
+Table 2: Performance gain in dynamic scenario ↑.
+Model Performance Gain
+Overall Filtered
+L3B 2.64% 20.11%
+L8B 15.92% 54.83%
+LS3B 50.25% 58.65%
+LS8B 53.25% 69.98%
+LSG3B 33.88% 46.38%
+LSG8B 38.83% 51.38%
+Bao 14.82% 31.36%
+7.3 Self-evolving Feedback Paradigm
+In this section, we shift our focus to the overall execution latency
+for all queries in each iteration. We use the RET metric to measure
+the execution time ratio of SEFRQO compared to PostgreSQL.
+Figure 8 shows the self-evolving process under the CEB work-
+load. Among all evaluated models, SEFRQO with LS8B exhibits the
+best performance, achieving the lowest RET of 0.41. It also shows a
+trend and potential for continuous decrease with additional itera-
+tions. In contrast, SEFRQO with vanilla models (L3B, L8B) shows
+only marginal performance gains throughout the entire process.
+Notably, SEFRQO with L8B exhibits minor fluctuations, SEFRQO
+with L3B remains largely unchanged. This behavior likely results
+from L3B consistently generating the same query hint, thereby
+10
+
+=== PAGE 11 ===
+SEFRQO: A Self-Evolving Fine-Tuned RAG-Based Query Optimizer
+LS8B LS3B LSG8B LSG3B L8B L3B
+Models
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+2.00Ratio
+1.30
+1.84
+1.71
+1.12
+0.99 1.00
+0.37 0.31 0.37
+0.17
+1.00 1.00
+Relative Execution Time
+Homogeneous Rate
+Figure 10: RET and HR for investigating fine-tuning effects
+(on the first iteration of SEFRQO) ↓.
+failing to effectively utilize information from the dynamic prompt
+we construct. However, this phenomenon is mitigated with larger
+LLMs, which actively absorb input and generate more varied hints.
+This experiment further proves that domain-specific fine-tuning
+plays a crucial role in SEFRQO. Both LS3B and LS8B outperform
+their vanilla counterparts; however, LS3B demonstrates notable in-
+stability compared to LS8B, with performance fluctuation observed
+several times across all iterations. This phenomenon may indicate
+that smaller LLMs with supervised fine-tuning exhibit higher insta-
+bility than larger models in our self-evolving paradigm.
+Now, let us switch the perspective to compare SEFRQO with
+LQOs. Balsa achieves only limited performance improvements over
+the baseline (denoted by the black dashed line) within each iter-
+ation. Although Balsa achieves promising results in the previous
+evaluations (i.e., by gathering the best queries among all iterations,
+as shown in Table 1), these improved queries are scattered across
+different iterations. This indicates that within 50 iterations, Balsa
+does not consistently generate high-performance query plans in the
+same iteration, which means Balsa requires more iterations to reach
+peak performance. This is more obvious in Figure 9 when testing
+on the Stack workload: Balsa fails to outperform the baseline within
+our iteration range despite exhibiting a trend towards performance
+improvement over iterations.
+As Figure 9 shows, LLMs exhibit more stable evolving progress
+(i.e., lower variance and fewer fluctuations across iterations) on the
+Stack workload compared to their behavior on the CEB workload.
+This may originate from the fact that the LLMs are not fine-tuned
+on the Stack workload, causing them to be more cautious and
+reluctant to substantially change their behaviors in generating hints.
+Consequently, it enables a smaller model to outperform a larger
+model. As evidence, LS3B and LSG3B are unable to surpass LS8B on
+the CEB workload, but they ultimately achieve better performance
+than LS8B on the Stack workload. In this scenario, LSG3B with
+𝑄GRPO fine-tuning achieves the best performance.
+7.4 SFT and Q 𝐺𝑅𝑃𝑂 Effects
+Previous experiments verify SEFRQO’s collaborative capability by
+combining LLM fine-tuning with the self -evolving paradigm. In
+this section, we focus on the plan generation ability based on LLM’s
+internal reasoning, without involving the self-evolving paradigm
+introduced by RAG. We follow the initial setup, where dynamic
+prompts include only PostgreSQL execution records, excluding the
+best plan or performance gain, and evaluate using RET and HR.
+Figure 10 shows the results for different LLMs on the CEB static
+workload (as in Section 7.2). Both vanilla LLMs (i.e., L8B and L3B)
+primarily replicate PostgreSQL’s default execution plans or repeat-
+edly generate invalid hints and fall back to the PostgreSQL plan,
+yielding performance similar to PostgreSQL’s plan (i.e., RET close
+to 1) and a high homogeneity rate (i.e., HR close to 1). In contrast,
+the fine-tuned LLMs produce more diverse plans (i.e., lower HR),
+favoring exploration over simply copying the input query plan. This
+indicates an improvement in the reasoning abilities. Even when
+the initial plan is suboptimal (i.e., higher RET), our self-evolving
+paradigm reduces the final RET (see Figures 7 and 8).
+We observe the pronounced Q𝐺𝑅𝑃𝑂 effect in the 3B models: from
+LS3B to LSG3B, both the HR and RET decrease further. This shows
+that Q𝐺𝑅𝑃𝑂 enhances the models’ reasoning abilities, enabling
+3B-level models to generate more diverse and superior query hints.
+Notably, LSG3B even outperforms the larger LS8B model on both
+metrics. This demonstrates that a successful Q 𝐺𝑅𝑃𝑂 fine-tuning
+process can steer the model’s output preferences to achieve better
+task-specific performance compared to larger LLMs without Q𝐺𝑅𝑃𝑂 .
+Given that Q𝐺𝑅𝑃𝑂 is based on reinforcement learning, it introduces
+inherent uncertainty into LLM fine-tuning processes, which may
+require multiple fine-tuning runs to obtain a reliable model. For ex-
+ample, we show that the LSG8B model does not show improvement
+over LS8B. This may be attributed to the more complex reasoning
+nature of 8B models, which prevents them from demonstrating
+superiority without the self-evolving RAG paradigm.
+7.5 Inference and RAG Retrieval Time
+This experiment evaluates the overhead incurred by LLM infer-
+ence and RAG retrieval. We analyze these overheads for SEFRQO
+using the LS3B model. The LLM inference time is approximately
+236 ms on an NVIDIA A6000 and 160 ms on an NVIDIA A100. The
+average RAG retrieval latency is 0.7 ms. We find that the dominant
+overhead arises from LLM inference, which can be mitigated by
+using powerful GPUs. Furthermore, considering execution time
+savings (with SEFRQO’s query plans for the CEB workload aver-
+aging 520.67 ms compared to PostgreSQL’s922.86 ms), SEFRQO’s
+end-to-end latency still remains lower for OLAP.
+Inference time of LLMs is also positively correlated with output
+length. In our experiments, we observed two types of erroneous
+hint generation. Although PostgreSQL will reject such hints, we
+still incur a much longer hint generation. Figure 11 presents the two
+most classic errors. The first is Repeated Text Chunks, where the
+generated hint repeatedly includes the same table names multiple
+times. The second is Bracket Mismatching, in which excessive
+and unbalanced parentheses are generated. One direct implication
+is to incorporate a validation procedure during inference: when an
+unusable hint is generated, the process can be aborted promptly to
+reduce inference time.
+11
+
+=== PAGE 12 ===
+Liu et al.
+10 20 30 40 50
+Iteration
+0.2
+0.4
+0.6
+0.8
+1.0Homogeneous Rate
+LS3B
+LSG3B
+LSG3B-JO
+LSG3B-NR
+(a) HR ↓.
+10 20 30 40 50
+Iteration
+0.5
+1.0
+1.5
+2.0
+2.5Relative Execution Time
+LS3B
+LSG3B
+LSG3B-JO
+LSG3B-NR (b) RET ↓.
+Figure 12: Evaluation on the static CEB workload.
+10 20 30 40 50
+Iterations on Original IMDB Dataset
+0.5
+1.0
+1.5
+2.0Relative Execution Time
+LSG8B-noise
+LS8B-noise
+LSG8B
+LS8B
+Figure 13: RET for data distribution shifting situations ↓.
+Repeated Text Chunks:/*+ ... HashJoin(n mi mi ... mi mi mi) ... */Bracket Mismatching:
+/*+  Leading((((((((((((((s t) tq) q) */
+Figure 11: Two classical errors during LLMs’ generations,
+unneeded output characters increase inference time.
+Table 3: Performance gain on static CEB workload ↑.
+Performance Gain LS3B LSG3B LSG3B-JO LSG3B-NR
+Overall 53.93% 50.13% 24.81% 41.26%
+Filtered 56.76% 55.34% 48.65% 52.61%
+7.6 Ablation Studies
+In this section, we focus on 3B models and evaluate several config-
+urations to assess their impact on SEFRQO.
+Generation Mode. Figure 12a depicts the HR for each iteration.
+We observe that LSG3B-JO achieves a higher HR (approximately
+70%) than the other configurations. These results indicate that when
+LLM in SEFRQO is constrained to generate only a join-order hint,
+it mainly reproduces or approximates the default plan provided
+by the execution engine and is reluctant to propose new hints
+to improve performance. Table 3 presents the performance gains
+over the baseline, comparing LSG3B with LSG3B-JO. The results
+demonstrate that the full-plan hint generation mode is substantially
+more effective than the JO mode.
+Similar Queries as Reference. A key feature of our system is
+extracting reference queries by similarity search and integrating
+them into the prompt for in-context learning. This experiment
+evaluates its impact. Comparing LSG3B with LSG3B-NR, Table 3
+reports the performance gain and Figure 12b presents the RET.
+These results indicate that LSG3B consistently outperforms LSG3B-
+NR, demonstrating the effectiveness of our design.
+How Many References are the Best Setup?We evaluate SEFRQO
+with LS3B on the CEB static workload by varying 𝑘 (the number of
+reference queries in the prompt) from 1 to 3 and assess the impact on
+performance. Table 4 presents the performance gains and the lowest
+HR for each configuration. Observing theHR metric, we find that as
+𝑘 increases, more enriched prompts lead the LLM to generate more
+dynamic hints that deviate from the default reference query plan.
+However, the performance gain does not improve monotonically
+with 𝑘, indicating that too few or too many reference queries may
+lead to a suboptimal solution. Too few references leave SEFRQO
+lacking key information that could benefit performance, while too
+many references may confuse the LLM and cause performance
+degradation.
+Table 4: Performance gain ↑ and HR ↓ for different 𝑘.
+𝑘 Performance Gain Optimal HR
+Overall Filtered
+1 53.93% 56.76% 0.26
+2 57.75% 62.16% 0.20
+3 57.99% 58.87% 0.14
+The above ablation studies confirm the crucial role of reference
+queries in the prompt. They help identify the optimal hyperparam-
+eter 𝑘 and generation mode for SEFRQO, showing that a moderate
+prompt length balances inference latency and performance.
+7.7 Extra Investigations
+Handling Complex Queries. To evaluate the capability of SE-
+FRQO to handle complex workloads, we choose TPC-DS [4] as a
+representative benchmark. We replace our local LLMs with GPT-o3-
+mini [37], which is expected to deliver better performance due to
+its larger number of model parameters. SEFRQO achieves a 13.28%
+Overall Performance Gain and a 27.81% Filtered Performance Gain.
+Out of 99 queries, 28 have used new query plans from SEFRQO.
+Table 5 shows the performance gain for the top 5 queries. The query
+from template 10 has the highest performance gain at 90.63%.
+Table 5: Top 5 performance gains in TPC-DS queries ↑.
+Query Original Performance Gain Reduced Time
+10 6537.78 ms 90.63% 5925.19 ms
+17 3867.00 ms 71.79% 2776.12 ms
+25 3024.58 ms 52.59% 1590.32 ms
+16 18866.41 ms 28.80% 5433.53 ms
+79 535.55 ms 27.27% 146.04 ms
+Resilience to Inaccurate Cardinality. Cardinality estimation is
+important for query optimization; inaccurate cardinality could lead
+to sub-optimal query plans. Therefore, it’s necessary to investigate
+its effect on SEFRQO. We evaluate the static CEB workload by
+perturbing each filter and table’s cardinality using a random scaling
+12
+
+=== PAGE 13 ===
+SEFRQO: A Self-Evolving Fine-Tuned RAG-Based Query Optimizer
+factor 𝑛. When the original estimate is≥ 10, 𝑛 is sampled uniformly
+from [−1, 1]; otherwise, from [0, 1]. Note that the database itself
+remains unchanged; only manual estimation errors are introduced
+in the prompt. When using LSG8B, SEFRQO achieves a 51.50%
+Overall Performance Gain and a 57.11% Filtered Performance Gain;
+when using LS8B, it achieves 50.26% and 54.48%, respectively. A
+slight degradation can be obeserverd, however, SEFRQO is still
+comparable to the static experiment in Section 7.2.
+Robustness under Data Drift. Here, we study how well SEFRQO
+can handle drifts in the underlying data over time. Besides the orig-
+inal IMDB database, we construct a downsized version containing
+only records dated after the year 2000. We evaluate SEFRQO on the
+CEB workload by alternating between these two databases every
+5 iterations, and other conditions are just the same as Section 7.2.
+Figure 13 presents the execution times over 50, showing only the 5
+iterations that use the original database in each alternation cycle,
+to allow comparison with the corresponding static environment.
+We observe more frequent spikes, indicating that feedback from the
+downsized distribution interferes with SEFRQO’s self-evolution pro-
+cess. Nevertheless, for the LS8B model, this variance occasionally
+leads to the least execution times in some iterations.
+Effect of Different Similarity Calculation Methods. In SE-
+FRQO, we employ cosine similarity to retrieve similar queries as
+in-context learning examples. Besides, we also evaluate inner prod-
+uct and 𝐿2 distance similarity. On the static CEB workload, SEFRQO
+with LSG8B using default cosine similarity yields approximately
+an average of 3% greater performance gain than the other meth-
+ods. Interestingly, inner product introduces the highest variance in
+generated query plans, producing 150 more distinct plans over 50
+iterations compared to the other methods.
+Can SEFRQO Operate with Different DBMSes? We evaluate
+SEFRQO with LSG8B on MySQL using the CEB workload to test
+whether the knowledge can be transferred between different DBM-
+Ses. Although these LLMs are supervised fine-tuned on PostgreSQL’s
+hint format, we apply a simple hint translator (We translate hints
+from PostgreSQL to MySQL by picking each table in a sequence
+from the "Leading" clause to generate a join order to change MySQL’s
+behavior) and achieve an Overall Performance Gain of 26.28% and
+a Filtered Performance Gain of 30.98%. These results demonstrate
+that SEFRQO can perform effectively in a cross-DBMS environment.
+8 Related Work
+Non-LLM Learned Query Optimizers. In recent years, Learned
+Query Optimizers (LQOs) have experienced significant advance-
+ments, with a variety of neural architectures—such as Tree-CNNs [30,
+31, 61], Tree-LSTMs [64, 66], and GNNs [5, 7] which are employed to
+serve as cost predictors or evaluators within these systems. Broadly
+speaking, LQOs can be categorized based on their generation par-
+adigm into two types: steering and generative categories. In the
+steering category, the LQO refines query plans generated by tradi-
+tional optimizers using neural networks. Bao [30] adjusts the tradi-
+tional query optimizer behavior by enabling/disabling the different
+hint sets that this optimizer can choose from. LEON [9] employs
+a ranking-based approach combined with uncertainty-driven ex-
+ploration to enhance the query execution performance. LOGER [7]
+leverages a graph transformer along with a beam search strategy
+to achieve improved execution speedups. Lero [69] uses a relative-
+ranking-based method to choose the optimal plan. To sum up, this
+type has the advantage of being minimally invasive, preserving the
+core logic of the database engines and reducing the risk of produc-
+ing poorly performing plans. However, these LQOs are inherently
+limited by the capabilities of the traditional optimizers they rely
+on. In the generative category, the LQO directly controls the plan
+generation process. Balsa [61] and Neo [31] use the same neural
+network structure to generate the query plan step by step using
+reinforcement learning. Neo uses the typical Tree-CNN, and Balsa
+adds a simulation strategy to boost the performance. Lemo [32] uses
+a shared buffer manager component and a plan search algorithm to
+generate a better plan. These strategies allow for exploring a wider
+range of execution plans, which can lead to the discovery of more
+efficient execution. Nevertheless, this greater flexibility also intro-
+duces higher variability and potential instability in performance.
+LLMs and RAG for Databases. LLMs demonstrate strong per-
+formance across various NLP tasks [ 20, 21, 35], and are increas-
+ingly applied to database tasks such as knob tuning [13, 19, 23, 51],
+Text-to-SQL [12, 18], code generation [54], and schema understand-
+ing [53]. DBBert [ 51] and GPTuner [ 23] use LLMs to interpret
+database documents for knob tuning. There is potential to integrate
+query-level planning and optimization with system-level knob tun-
+ing in SEFRQO, a combination rarely explored in previous work
+because these two approaches are typically considered orthogo-
+nal. CARD [44] and GPT-DB [52] leverage LLMs to generate re-
+lational data analytics code and SQL pipelines for data analysis.
+PICARD [44] further enforces SQL syntax through incremental
+constraint decoding, while CAESURA [55] translates natural lan-
+guage into hybrid query plans combining SQL and Python UDFs.
+Similarly, RAG has been widely applied to tasks such as text gen-
+eration [15, 34], visual question answering [ 8, 25], code synthe-
+sis [10, 20, 27], and recently, it has been used to effectively address
+many challenges in the database domain. For example, in SQL gener-
+ation, systems like [47] improve accuracy by retrieving structurally
+similar queries and schema context. Query rewriting also benefits
+from RAG; approaches like Rafe [28] retrieve prior rewrite examples
+to transform natural language queries into efficient, semantically
+equivalent forms, often surpassing traditional optimizer rules [48].
+In text-to-SQL, ReFSQL [67] reduces hallucinations by retrieving
+relevant question–SQL pairs to guide generation.
+Recently, three early trials to explore the LLM in the query opti-
+mization context, LLMSteer [2], LLM-QO [50], and LLMOpt [62],
+have been proposed. LLMSteer uses only embedding models for
+hint set selection, which is light, but the improvement is limited.
+LLM-QO focuses primarily on applying fine-tuning to improve
+the model’s performance. LLM-QO uses a DPO-based reinforce-
+ment fine-tuning method, which requires constructing a dataset
+of “preferred” and “non_preferred” pairs beforehand. In contrast,
+our GRPO-based approach eliminates this overhead and potentially
+enhances the reasoning abilities of LLMs by training in actual ex-
+ecution environments. On the other hand, LLMOpt [62] employs
+LLMs to replace components in the Bao [30] workflow, fine-tuning
+them for plan candidate generation and selection. These works
+represent initial explorations of applying LLMs to replace LQO
+pipeline. However, SEFRQO adopts an LLM-native perspective to
+13
+
+=== PAGE 14 ===
+Liu et al.
+define optimization problems via model fine-tuning and prompt
+optimization. Our self-evolving RAG design also shows continuous
+learning capabilities that previous methods cannot easily achieve,
+and SERAG [26] is our initial work.
+9 Conclusion and Future Work
+This paper proposes SEFRQO, a self-evolving RAG system for query
+optimization. It leverages LLMs’ fine-tuning strategies to avoid cold
+starts and enhance generalization across workloads. It introduces a
+two-phase framework that combines offline SFT, Q𝐺𝑅𝑃𝑂 and online
+in-context learning. SEFRQO dynamically generates prompts and
+continuously evolves through execution feedback. We explore the
+knowledge transfer capabilities of LLM-based query optimization
+and demonstrate its potential for practical deployment. Various
+experiments show that SEFRQO’s superiority over previous LQOs
+and the baseline execution engine. To the best of our knowledge, this
+work is the first to apply RAG to query optimization in databases,
+thereby extending the frontier of this research area. Currently,
+SEFRQO targets OLAP queries, as its overhead remains a challenge
+for OLTP. Overcoming this limitation is left for future work.

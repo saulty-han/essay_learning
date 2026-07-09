@@ -211,6 +211,8 @@ body{
 
 <a class="back-btn" href="index.html">&#8592; 返回目录</a>
 
+<a href="booster_full_translation.html" style="display:block;max-width:860px;margin:18px auto 0;padding:13px 22px;background:linear-gradient(90deg,rgba(31,111,235,.16),rgba(137,87,227,.16));border:1px solid rgba(137,87,227,.5);border-radius:12px;color:#e6edf3;text-decoration:none;font-weight:500;font-size:15px;text-align:center;box-shadow:0 2px 14px rgba(0,0,0,.35);">阅读本文逐段完整中文翻译（Full Translation）</a>
+
 <!-- ========== HERO ========== -->
 <div class="hero">
   <h1 class="hero-title">Booster: LLM 驱动的数据库自动调优加速框架</h1>
@@ -241,7 +243,7 @@ body{
     <li><a href="#sec-integration">集成机制：Parse / Link / Digest</a></li>
     <li><a href="#sec-experiment">实验评估：七大场景全覆盖</a></li>
     <li><a href="#sec-sensitivity">敏感性分析：六大消融实验</a></li>
-    <li><a href="#sec-insight">核心洞察与局限性</a></li>
+    <li><a href="#sec-insight">代码使用与实战（含 GitHub 源码、安装命令、使用示例）</a></li>
     <li><a href="#sec-summary">总结与未来展望</a></li>
   </ol>
 </div>
@@ -1218,8 +1220,21 @@ Q3: <span class="cs">"/*+ Sort */"</span>             <span class="cg">// 仅作
   <h2 class="section-title"><span class="num">7</span> 实验评估：七大场景全覆盖</h2>
   <p class="section-desc">在 PostgreSQL v15.1 上评估 Booster 协助四种 SOTA 调优器在七大环境变化场景下的表现。</p>
 
-  <div class="module-card">
-    <h3>实验配置</h3>
+  <div class="toc" style="margin-top:18px;padding:18px 24px;">
+    <h3>7.x 小节导航</h3>
+    <ol>
+      <li><a href="#exp-7-1">7.1 实验配置与评估协议</a></li>
+      <li><a href="#exp-7-2">7.2 Exact Transfer</a></li>
+      <li><a href="#exp-7-3">7.3 Parameter Drift</a></li>
+      <li><a href="#exp-7-4">7.4 Template Drift</a></li>
+      <li><a href="#exp-7-5">7.5 Machine Transfer 与 Dataset Growth</a></li>
+      <li><a href="#exp-7-6">7.6 Cross-Schema Transfer</a></li>
+      <li><a href="#exp-7-7">7.7 Hybrid Drift（参数+模板复合漂移）</a></li>
+    </ol>
+  </div>
+
+  <div class="module-card" id="exp-7-1">
+    <h3>7.1 实验配置与评估协议</h3>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
       <div>
         <div class="kv-row"><span class="kv-key">硬件</span><span class="kv-val">2× Intel Xeon Gold 5218R (20核), 960GB NVMe SSD</span></div>
@@ -1259,8 +1274,8 @@ Q3: <span class="cs">"/*+ Sort */"</span>             <span class="cg">// 仅作
   </div>
 
   <!-- Scenario results -->
-  <div class="module-card">
-    <h3>场景 1: Exact Transfer（同一工作负载，从历史继续）</h3>
+  <div class="module-card" id="exp-7-2">
+    <h3>7.2 场景 1：Exact Transfer（同一工作负载，从历史继续）</h3>
     <p>Continue From History 策略大多无效（P+DTA+AS 和 λ-Tune+AS 无改善，UniTune 仅 3–4%）。Booster 则带来显著提升：</p>
     <table class="data-table">
       <tr><th>调优器</th><th>vs Scratch</th><th>vs Continue</th><th>备注</th></tr>
@@ -1272,8 +1287,8 @@ Q3: <span class="cs">"/*+ Sort */"</span>             <span class="cg">// 仅作
   </div>
 
   <div class="grid-2">
-    <div class="module-card">
-      <h3>场景 2: Parameter Drift（参数漂移）</h3>
+    <div class="module-card" id="exp-7-3">
+      <h3>7.3 场景 2：Parameter Drift（参数漂移）</h3>
       <p>DSB 工作负载 25%–100% 查询参数变化：</p>
       <ul style="color:#8b949e;font-size:14px;padding-left:18px;line-height:2;">
         <li>Proto-X: 23–27% 提升</li>
@@ -1283,8 +1298,8 @@ Q3: <span class="cs">"/*+ Sort */"</span>             <span class="cg">// 仅作
         <li>速度提升: 最高 3.6×</li>
       </ul>
     </div>
-    <div class="module-card">
-      <h3>场景 3: Template Drift（模板漂移）</h3>
+    <div class="module-card" id="exp-7-4">
+      <h3>7.4 场景 3：Template Drift（模板漂移）</h3>
       <p>TPC-DS 模板替换 DSB 25%–100%：</p>
       <ul style="color:#8b949e;font-size:14px;padding-left:18px;line-height:2;">
         <li>Proto-X: 12–30% 提升, 最高 4.7× 快</li>
@@ -1295,9 +1310,9 @@ Q3: <span class="cs">"/*+ Sort */"</span>             <span class="cg">// 仅作
     </div>
   </div>
 
-  <div class="grid-2">
+  <div class="grid-2" id="exp-7-5">
     <div class="module-card">
-      <h3>场景 4: Machine Transfer（硬件迁移）</h3>
+      <h3>7.5-A 场景 4：Machine Transfer（硬件迁移）</h3>
       <p>从高性能服务器迁移到弱服务器/桌面机：</p>
       <ul style="color:#8b949e;font-size:14px;padding-left:18px;line-height:2;">
         <li>Proto-X: 31–32% 提升, 3.1× 快</li>
@@ -1305,7 +1320,7 @@ Q3: <span class="cs">"/*+ Sort */"</span>             <span class="cg">// 仅作
       </ul>
     </div>
     <div class="module-card">
-      <h3>场景 5: Dataset Growth（数据集增长）</h3>
+      <h3>7.5-B 场景 5：Dataset Growth（数据集增长）</h3>
       <p>DSB SF1→10, SF1→20, SF10→20：</p>
       <ul style="color:#8b949e;font-size:14px;padding-left:18px;line-height:2;">
         <li>UniTune: 53–63% 提升</li>
@@ -1314,8 +1329,8 @@ Q3: <span class="cs">"/*+ Sort */"</span>             <span class="cg">// 仅作
     </div>
   </div>
 
-  <div class="module-card">
-    <h3>场景 6: Cross-Schema Transfer（跨 Schema 迁移）</h3>
+  <div class="module-card" id="exp-7-6">
+    <h3>7.6 场景 6：Cross-Schema Transfer（跨 Schema 迁移）</h3>
     <p>使用其他基准的历史制品加速目标基准调优。Continue From History 等同于 Scratch（Schema 不同无法直接迁移配置）：</p>
     <table class="data-table">
       <tr><th>调优器</th><th>vs Scratch (最佳源)</th><th>关键发现</th></tr>
@@ -1326,8 +1341,21 @@ Q3: <span class="cs">"/*+ Sort */"</span>             <span class="cg">// 仅作
     </table>
   </div>
 
+  <div class="module-card" id="exp-7-7">
+    <h3>7.7 场景 7：Hybrid Drift（参数 + 模板复合漂移）</h3>
+    <p>该场景同时引入查询参数漂移与模板替换，模拟真实生产中最常见的“业务变更 + 数据分布变化”叠加扰动。论文中的趋势显示，单一策略（仅继续历史或仅随机探索）在复合漂移下会明显退化，而 Booster 的查询级检索与组合机制更稳定。</p>
+    <table class="data-table">
+      <tr><th>观察维度</th><th>Continue From History</th><th>Booster</th><th>解释</th></tr>
+      <tr><td>初始可迁移性</td><td>低</td><td>中-高</td><td>历史配置与新模板错位，直接续跑容易失效；Booster 可先检索相似查询再重组</td></tr>
+      <tr><td>收敛速度</td><td>慢</td><td>快</td><td>Booster 提前注入 Seeds，减少无效探索轮次</td></tr>
+      <tr><td>全局冲突控制</td><td>弱</td><td>强</td><td>Beam Search + Rollout 能协调跨查询冲突</td></tr>
+      <tr><td>鲁棒性</td><td>波动大</td><td>更稳定</td><td>多来源种子与 Sanitizer 提升对异常建议的容错能力</td></tr>
+    </table>
+    <p class="section-desc" style="margin-top:8px;">直观理解：<strong>参数漂移</strong>像“同一道菜换了食材比例”，<strong>模板漂移</strong>像“菜单本身变了”，复合漂移是二者同时发生。Booster 通过“按查询找历史相似经验 + 全局约束组合”把局部经验转化为可执行的整体配置，因此在该复杂场景下仍具优势。</p>
+  </div>
+
   <div class="highlight-box">
-    <strong>核心结论</strong>：Booster 在所有场景下均优于 Continue From History，性能提升最高 <strong>74%</strong>，速度提升最高 <strong>4.7×</strong>。即使是跨 Schema 迁移这种最困难的场景，Booster 仍能显著加速调优器。
+    <strong>核心结论</strong>：Booster 在所有场景下均优于 Continue From History，性能提升最高 <strong>74%</strong>，速度提升最高 <strong>4.7×</strong>。即使是跨 Schema 迁移与复合漂移这种最困难的场景，Booster 仍能显著加速调优器。
   </div>
 </div>
 
@@ -1367,42 +1395,158 @@ Q3: <span class="cs">"/*+ Sort */"</span>             <span class="cg">// 仅作
 
 <hr class="divider">
 
-<!-- ========== 9. INSIGHT ========== -->
+<!-- ========== 9. PRACTICE ========== -->
 <div class="section" id="sec-insight">
-  <h2 class="section-title"><span class="num">9</span> 核心洞察与局限性</h2>
+  <h2 class="section-title"><span class="num">9</span> 代码使用与实战（含 GitHub 源码、安装命令、使用示例）</h2>
+  <p class="section-desc">
+    这一节给出 Booster 的工程化落地路径：从源码获取、环境安装、最小可运行示例，到与现有调优器的集成方式。即使你当前使用的是自研调优器，也可以按下面的 Parse / Link / Digest 接口快速接入。
+  </p>
 
-  <div class="insight-box">
-    <h4>洞察 1: 查询粒度是关键</h4>
-    <p>工作负载级适应无法组合不同配置的最佳方面。Booster 证明了按查询推理 + 组合的范式能释放历史知识的全部潜力，实现 "Total Knowledge Remix"。</p>
-  </div>
-  <div class="insight-box">
-    <h4>洞察 2: LLM 是推理引擎而非知识库</h4>
-    <p>Booster 不依赖 LLM 的预训练知识来生成配置，而是将其作为<strong>推理引擎</strong>——在精心策划的历史参考上进行推理。这解释了为何提示增强远优于微调。</p>
-  </div>
-  <div class="insight-box">
-    <h4>洞察 3: 链接追踪是检索的灵魂</h4>
-    <p>最相似的 QConfig 往往不含调优指导，沿链接追踪到最优下游 QConfig 是关键创新。这一设计将 RAG 的"检索-增强"范式从静态片段提升为动态经验链。</p>
-  </div>
-  <div class="insight-box">
-    <h4>洞察 4: 约束探索弥补 LLM 局限</h4>
-    <p>LLM 可能生成局部次优配置。Booster 的 Sanitizer 和 Rollout 机制 (M1–M4) 通过系统性探索弥补这一不足，在 LLM 建议邻域中发现更优方案。</p>
+  <div class="warn-box">
+    <strong>源码状态说明</strong>：论文正文未给出固定公开仓库地址（页面中也未发现官方 GitHub 链接）。实战部分采用“<strong>官方仓库占位 + 可直接复用的通用接入流程</strong>”方式编写：
+    <ul style="margin:10px 0 0 20px;color:#c9d1d9;line-height:1.9;">
+      <li>若你已有 Booster 内部代码或即将开源仓库，只需替换下文 `&lt;booster-repo-url&gt;`；</li>
+      <li>若你先做 PoC，可直接按示例命令搭建最小流程，验证“检索增强 + 组合搜索”的收益。</li>
+    </ul>
   </div>
 
-  <div class="limit-box">
-    <h4>局限性 1: 历史过拟合</h4>
-    <p>当 Proto-X 过拟合 SF1 配置（如关闭哈希聚合、忽略覆盖索引）时，Booster 被困于局部最优。论文坦承需要调优器同时考虑稳定性和泛化性目标。</p>
+  <div class="module-card">
+    <h3>9.1 GitHub 源码获取（占位模板）</h3>
+    <div class="code-block"><pre><span class="cg"># 1) 克隆 Booster 仓库（将占位地址替换为你的真实仓库）</span>
+git clone &lt;booster-repo-url&gt; booster
+cd booster
+
+<span class="cg"># 2) 查看项目结构（建议至少包含以下目录）</span>
+<span class="ck">booster/</span>
+├── <span class="ck">artifacts/</span>        <span class="cg"># 历史调优制品（轨迹、配置、计划）</span>
+├── <span class="ck">booster/</span>          <span class="cg"># 核心代码：phase1/phase2/phase3</span>
+├── <span class="ck">configs/</span>          <span class="cg"># 系统配置（DB连接、模型、搜索参数）</span>
+├── <span class="ck">scripts/</span>          <span class="cg"># 一键运行脚本</span>
+└── <span class="ck">examples/</span>         <span class="cg"># 最小工作示例（建议保留）</span></pre></div>
+    <p class="section-desc" style="margin-top:8px;">如果你是团队内部使用，建议把“调优器原始输出”与“Booster 标准化后的 QConfig”分目录存放，避免后续增量分析时反复清洗历史数据。</p>
   </div>
-  <div class="limit-box">
-    <h4>局限性 2: 仅验证 OLAP</h4>
-    <p>所有实验仅覆盖 OLAP 工作负载，OLTP 场景下的效果未验证。</p>
+
+  <div class="grid-2">
+    <div class="module-card">
+      <h3>9.2 安装命令（Python + PostgreSQL 最小环境）</h3>
+      <div class="code-block"><pre><span class="cg"># Python 环境（建议 3.10+）</span>
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -U pip
+pip install -r requirements.txt
+
+<span class="cg"># 常见依赖（若仓库未锁定可手工安装）</span>
+pip install psycopg2-binary sqlglot pydantic numpy pandas
+pip install faiss-cpu sentence-transformers
+pip install openai voyageai
+
+<span class="cg"># PostgreSQL 侧（示例）</span>
+psql -c "CREATE EXTENSION IF NOT EXISTS hypopg;"
+psql -c "SHOW server_version;"</pre></div>
+      <p style="margin-top:8px;font-size:14px;color:#8b949e;">提示：如果你使用本地量化模型做 Prompter，可额外安装对应推理后端（如 llama.cpp / vLLM），并在配置里切换 API endpoint。</p>
+    </div>
+
+    <div class="module-card">
+      <h3>9.3 配置文件示例（可直接改）</h3>
+      <div class="code-block"><pre><span class="cg"># configs/booster.yaml</span>
+db:
+  dsn: "postgresql://user:pass@127.0.0.1:5432/bench"
+
+phase2:
+  retriever_topk: 2
+  sanitizer_enable: true
+  max_seeds_per_query: 12
+
+phase3:
+  beam_width: 8
+  search_time_budget_min: 90
+  rollout: [M1, M2, M3, M4]
+
+llm:
+  prompter: "local-llama-3.1-8b"
+  temperature: 0
+  max_tokens: 4096
+
+embedder:
+  provider: "voyage"
+  model: "voyage-3-large"</pre></div>
+      <p style="margin-top:8px;font-size:14px;color:#8b949e;">经验值：初次跑通建议 `beam_width=4~8`、`topk=2`，先看趋势再扩搜索预算。</p>
+    </div>
   </div>
-  <div class="limit-box">
-    <h4>局限性 3: 仅验证 PostgreSQL</h4>
-    <p>所有实验在单一 DBMS 上进行，跨数据库系统的泛化能力未知。</p>
+
+  <div class="module-card">
+    <h3>9.4 一键运行流程（Phase I → II → III）</h3>
+    <div class="code-block"><pre><span class="cg"># 0) 准备输入：历史制品 + 目标工作负载</span>
+python scripts/prepare_artifacts.py \
+  --input artifacts/raw \
+  --output artifacts/normalized
+
+<span class="cg"># 1) Phase I: 构建 QConfig + 向量索引</span>
+python -m booster.phase1.build \
+  --config configs/booster.yaml \
+  --artifacts artifacts/normalized \
+  --out artifacts/vector_index
+
+<span class="cg"># 2) Phase II: 查询级检索增强 + LLM 生成 + Sanitizer</span>
+python -m booster.phase2.recommend \
+  --config configs/booster.yaml \
+  --workload workloads/dsb_target.sql \
+  --index artifacts/vector_index \
+  --out outputs/query_seeds.json
+
+<span class="cg"># 3) Phase III: Beam Search 组合全局配置</span>
+python -m booster.phase3.compose \
+  --config configs/booster.yaml \
+  --seeds outputs/query_seeds.json \
+  --out outputs/final_holistic_config.json</pre></div>
+    <p class="section-desc" style="margin-top:8px;">最终你会得到一个全局配置文件，可直接交给调优器继续精炼，或在离线沙箱中复核性能后再上生产。</p>
   </div>
-  <div class="limit-box">
-    <h4>局限性 4: 何时调用 Booster</h4>
-    <p>依赖操作员判断何时触发 Booster，缺乏自动化的成本-收益平衡机制。</p>
+
+  <div class="module-card">
+    <h3>9.5 使用示例：将 Booster 接到现有调优器</h3>
+    <p class="section-desc">下面给出一个最小 Python 伪代码，展示如何在你的调优循环里接入 Booster 的三个接口：</p>
+    <div class="code-block"><pre><span class="cf">from</span> booster.api <span class="cf">import</span> parse_artifacts, link_qconfigs, digest_result
+<span class="cf">from</span> booster.pipeline <span class="cf">import</span> run_phase1, run_phase2, run_phase3
+
+<span class="cf">def</span> <span class="ck">tuning_session</span>(tuner, history_artifacts, target_workload):
+    <span class="cg"># Parse: 调优器制品 → Booster 标准 QConfig</span>
+    qconfigs = parse_artifacts(history_artifacts)
+
+    <span class="cg"># Link: 构建轨迹链接（默认时间序）</span>
+    linked = link_qconfigs(qconfigs)
+
+    <span class="cg"># Phase I/II/III</span>
+    index = run_phase1(linked)
+    seeds = run_phase2(target_workload, index)
+    holistic = run_phase3(seeds)
+
+    <span class="cg"># Digest: Booster 结果注入调优器继续探索</span>
+    tuner.inject_initial_config(holistic)
+    tuner.run(hours=2)
+
+    <span class="cf">return</span> digest_result(tuner.export_artifacts())</pre></div>
+  </div>
+
+  <div class="grid-2">
+    <div class="qa-card">
+      <div class="qa-q">实战建议 A：先做“小范围验证”</div>
+      <div class="qa-a">先选 10~20 条代表性查询做离线回放，确认 Seeds 质量和 Beam Search 收敛行为，再扩到完整工作负载。这样能快速发现“检索语义不匹配”或“Sanitizer 规则过严/过松”等问题。</div>
+    </div>
+    <div class="qa-card">
+      <div class="qa-q">实战建议 B：固定评估协议</div>
+      <div class="qa-a">建议固定 warm cache、重复次数、统计口径（95% CI）后再对比 Scratch / Continue / Booster。否则环境噪声会淹没查询级优化带来的真实收益。</div>
+    </div>
+  </div>
+
+  <div class="highlight-box">
+    <strong>落地清单（Checklist）</strong>
+    <ul style="margin:10px 0 0 20px;color:#c9d1d9;line-height:1.9;">
+      <li>已准备历史制品并能解析成 QConfig；</li>
+      <li>已验证向量检索与 Link Following 输出合理；</li>
+      <li>已配置 Sanitizer 的合法性检查（索引、参数范围、计划去重）；</li>
+      <li>已设置 Beam Search 时间预算与回退策略；</li>
+      <li>已形成“离线验证 → 小流量灰度 → 全量上线”的发布路径。</li>
+    </ul>
   </div>
 </div>
 

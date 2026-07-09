@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>深度解读 — Leveraging Query Logs and ML for Parametric Query Optimization</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{font-family:'Noto Sans SC',system-ui,-apple-system,sans-serif;background:#0d1117;color:#c9d1d9;line-height:1.8;font-size:16px;min-height:100vh;}
+.container{max-width:1400px;margin:0 auto;padding:0 24px;background:#0d1117;position:relative;}
+.back-btn{position:fixed;top:16px;left:16px;z-index:9999;background:rgba(20,20,35,.75);color:#c9d1d9;border:1px solid rgba(255,255,255,.15);border-radius:10px;padding:8px 16px;font-size:14px;cursor:pointer;backdrop-filter:blur(6px);transition:all .3s;text-decoration:none;display:flex;align-items:center;gap:6px;}
+.back-btn:hover{background:rgba(30,30,55,.9);border-color:rgba(255,255,255,.3);}
+.hero{padding:80px 0 40px;text-align:center;}
+.hero-title{font-size:2.2rem;font-weight:700;background:linear-gradient(135deg,#fcd34d,#f59e0b,#fbbf24);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:12px;line-height:1.3;}
+.hero-sub{font-size:1.1rem;color:#8b949e;margin-bottom:8px;}
+.venue{font-size:.95rem;color:#8b949e;margin-top:8px;}
+.venue a{color:#f59e0b;text-decoration:none;}
+.venue a:hover{text-decoration:underline;}
+.tag-row{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:16px;}
+.tag{display:inline-block;padding:4px 14px;border-radius:20px;font-size:.85rem;border:1px solid rgba(245,158,11,.3);color:#f59e0b;background:rgba(245,158,11,.06);}
+.divider{border:none;border-top:1px solid rgba(255,255,255,.08);margin:48px 0;}
+.section{margin:40px 0;}
+.section-title{font-size:1.75rem;font-weight:700;margin-bottom:20px;color:#e6edf3;display:flex;align-items:center;gap:10px;}
+.section-title .num{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#fcd34d,#f59e0b);color:#0d1117;font-size:1rem;font-weight:700;flex-shrink:0;}
+.section-desc{font-size:16px;line-height:1.9;color:#c9d1d9;margin-bottom:16px;}
+.toc{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:28px 36px;margin:30px 0;}
+.toc h3{font-size:1.2rem;color:#e6edf3;margin-bottom:14px;}
+.toc ol{list-style:none;counter-reset:toc;padding:0;}
+.toc li{counter-increment:toc;margin:8px 0;}
+.toc li::before{content:counter(toc) ".";color:#f59e0b;font-weight:600;margin-right:8px;}
+.toc a{color:#8b949e;text-decoration:none;transition:color .2s;}
+.toc a:hover{color:#f59e0b;}
+.module-card{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:24px;margin:18px 0;transition:all .3s;}
+.module-card:hover{border-color:rgba(245,158,11,.3);transform:translateY(-2px);}
+.module-card h3{font-size:1.15rem;font-weight:600;margin-bottom:10px;color:#f59e0b;}
+.module-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.arch-card{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:22px;margin:14px 0;transition:all .3s;}
+.arch-card:hover{border-color:rgba(245,158,11,.3);}
+.arch-card h4{font-size:1.05rem;font-weight:600;color:#fbbf24;margin-bottom:8px;}
+.arch-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.step-flow{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:22px;margin:14px 0;}
+.step-flow h4{font-size:1.05rem;font-weight:600;color:#f59e0b;margin-bottom:8px;}
+.step-flow p{font-size:15px;line-height:1.8;color:#8b949e;}
+.data-table{width:100%;border-collapse:collapse;margin:18px 0;background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:12px;overflow:hidden;font-size:14px;}
+.data-table th{background:rgba(245,158,11,.1);color:#f59e0b;padding:12px 16px;text-align:left;font-weight:600;}
+.data-table td{padding:10px 16px;border-top:1px solid rgba(255,255,255,.06);color:#c9d1d9;}
+.data-table tr:hover td{background:rgba(245,158,11,.04);}
+.formula-box{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:20px 24px;margin:16px 0;font-size:18px;text-align:center;color:#e6edf3;font-family:'JetBrains Mono',monospace;}
+.code-block{background:rgba(20,20,35,.8);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:18px 22px;margin:16px 0;overflow-x:auto;}
+.code-block pre{font-family:'JetBrains Mono',monospace;font-size:14px;line-height:1.7;color:#c9d1d9;white-space:pre;}
+.ck{color:#f59e0b;}.cs{color:#fbbf24;}.cf{color:#d2a8ff;}.cg{color:#8b949e;}.cv{color:#79c0ff;}
+.qa-card{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:24px;margin:16px 0;}
+.qa-q{font-size:1.05rem;font-weight:600;color:#f59e0b;margin-bottom:12px;}
+.qa-a{font-size:15px;line-height:1.9;color:#8b949e;}
+.highlight-box{background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.2);border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;}
+.warn-box{background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.25);border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;}
+.info-box{background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.2);border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;}
+.prompt-box{background:rgba(20,20,35,.8);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:18px 22px;margin:16px 0;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.7;color:#c9d1d9;white-space:pre-wrap;}
+.prompt-label{display:inline-block;padding:2px 10px;border-radius:6px;font-size:.85rem;font-weight:600;margin-bottom:8px;background:rgba(245,158,11,.15);color:#f59e0b;}
+.fc{font-size:14px;color:#8b949e;text-align:center;margin:10px 0;line-height:1.6;}
+.comp-card{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:22px;margin:14px 0;transition:all .3s;}
+.comp-card:hover{border-color:rgba(245,158,11,.3);}
+.comp-card h4{font-size:1.05rem;font-weight:600;color:#fbbf24;margin-bottom:8px;}
+.comp-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.insight-box{background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.2);border-radius:12px;padding:18px 22px;margin:16px 0;}
+.insight-box h4{color:#f59e0b;font-size:1.05rem;margin-bottom:8px;}
+.insight-box p{font-size:15px;line-height:1.8;color:#c9d1d9;}
+.limit-box{background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.25);border-radius:12px;padding:18px 22px;margin:16px 0;}
+.limit-box h4{color:#fbbf24;font-size:1.05rem;margin-bottom:8px;}
+.limit-box p{font-size:15px;line-height:1.8;color:#c9d1d9;}
+.kv-row{display:flex;border-bottom:1px solid rgba(255,255,255,.06);padding:8px 0;}
+.kv-row:last-child{border-bottom:none;}
+.kv-key{width:180px;flex-shrink:0;color:#f59e0b;font-weight:500;font-size:14px;}
+.kv-val{color:#c9d1d9;font-size:14px;line-height:1.7;}
+.footer{text-align:center;color:#555;font-size:14px;padding:48px 0 32px;}
+.svg-container{background:rgba(20,20,35,.4);border:1px solid rgba(255,255,255,.06);border-radius:14px;padding:20px;margin:24px 0;overflow-x:auto;text-align:center;}
+.svg-container svg{max-width:100%;height:auto;}
+.fig-img{background:rgba(20,20,35,.4);border:1px solid rgba(255,255,255,.06);border-radius:14px;padding:16px;margin:24px 0;text-align:center;}
+.fig-img img{max-width:100%;height:auto;border-radius:8px;}
+@media(max-width:900px){
+  .grid-2,.grid-3{grid-template-columns:1fr;}
+  .hero-title{font-size:1.6rem;}
+  .kv-row{flex-direction:column;}
+  .kv-key{width:auto;}
+}
+@keyframes flowPulse{0%,100%{opacity:.6;}50%{opacity:1;}}
+.flow-arrow{animation:flowPulse 2s ease-in-out infinite;}
+.translation h3{font-size:1.3rem;color:#fbbf24;margin:26px 0 12px;font-weight:700;}
+.translation h4{font-size:1.1rem;color:#f59e0b;margin:18px 0 8px;font-weight:600;}
+.translation p{font-size:15.5px;line-height:1.95;color:#c9d1d9;margin-bottom:12px;}
+.fig-note{background:rgba(245,158,11,.07);border-left:3px solid #f59e0b;border-radius:8px;padding:12px 18px;margin:14px 0;font-size:14.5px;color:#e8c879;line-height:1.8;}
+.fig-note b{color:#fbbf24;}
+</style>
+</head>
+<body>
+<div class="container">
+
+<a class="back-btn" href="index.html">&#8592; 返回目录</a>
+
+<a href="pqo_query_logs_full_translation.html" style="display:block;max-width:860px;margin:18px auto 0;padding:13px 22px;background:linear-gradient(90deg,rgba(31,111,235,.16),rgba(137,87,227,.16));border:1px solid rgba(137,87,227,.5);border-radius:12px;color:#e6edf3;text-decoration:none;font-weight:500;font-size:15px;text-align:center;box-shadow:0 2px 14px rgba(0,0,0,.35);">阅读本文逐段完整中文翻译（Full Translation）</a>
+
+<!-- ========== HERO ========== -->
+<div class="hero">
+  <h1 class="hero-title">用查询日志与机器学习做参数化查询优化</h1>
+  <p class="hero-sub">把「选哪些计划缓存（populateCache）」与「来一个查询选哪个计划（getPlan）」解耦，用查询日志训练轻量 ML 模型，又快又准</p>
+  <div class="venue">
+    PVLDB 2022, 15(3): 401-413 &nbsp;|&nbsp;
+    <a href="https://doi.org/10.14778/3494124.3494126">doi:10.14778/3494124.3494126</a> &nbsp;|&nbsp;
+    Microsoft Research (Vaidya, Dutt, Narasayya, Chaudhuri)
+  </div>
+  <div class="tag-row">
+    <span class="tag">Parametric Query Optimization</span>
+    <span class="tag">populateCache</span>
+    <span class="tag">getPlan</span>
+    <span class="tag">Query Logs</span>
+    <span class="tag">Contextual Bandit</span>
+    <span class="tag">XGBoost</span>
+  </div>
+</div>
+
+<!-- ========== TOC ========== -->
+<div class="toc">
+  <h3>目录</h3>
+  <ol>
+    <li><a href="#sec-1">研究动机：PQO 的两种任务与解耦思想</a></li>
+    <li><a href="#sec-2">框架概览：日志驱动的 PQO 架构</a></li>
+    <li><a href="#sec-3">问题定义：次优性指标与两个目标</a></li>
+    <li><a href="#sec-4">基于优化器代价的 getPlan：分类 vs 回归</a></li>
+    <li><a href="#sec-5">基于执行代价的 getPlan：情境多臂老虎机</a></li>
+    <li><a href="#sec-6">populateCache 算法：贪心搜索与三阶段</a></li>
+    <li><a href="#sec-7">实验评估：TPC-DS / TPC-H / REAL1</a></li>
+    <li><a href="#sec-8">敏感性分析：模型大小、训练量、特征</a></li>
+    <li><a href="#sec-9">代码使用与实战（思路与复现）</a></li>
+    <li><a href="#sec-10">总结、贡献与局限</a></li>
+    <li><a href="#sec-11">全文中文翻译（对应嵌入图片）</a></li>
+  </ol>
+</div>
+
+<!-- ========== SEC 1 ========== -->
+<div class="section" id="sec-1">
+  <h2 class="section-title"><span class="num">1</span>研究动机：PQO 的两种任务与解耦思想</h2>
+  <p class="section-desc">参数化查询（如存储过程）被反复执行、仅参数绑定不同。对复杂查询，每次都重新优化（Opt-Always）开销巨大；而只优化第一个实例并缓存其计划（Opt-Once）虽省优化时间，但缓存计划对后续实例可能「任意次优」。PQO 是折中：用较少的缓存计划，把执行次优性压到尽量低。它包含两个任务：</p>
+
+  <div class="grid-2">
+    <div class="module-card">
+      <h3>populateCache（填缓存）</h3>
+      <p>为某个参数化查询找出「要缓存的一组计划」。运行在离线阶段，结果安装进计划缓存。</p>
+    </div>
+    <div class="module-card">
+      <h3>getPlan（取计划）</h3>
+      <p>新查询实例到来时，从缓存计划里高效挑出最适合它的那一个。它在查询执行的关键路径上，因此<strong>延迟</strong>是关键指标。</p>
+    </div>
+  </div>
+
+  <div class="highlight-box">
+    <b>核心主张 ①：把 populateCache 与 getPlan 架构解耦。</b> 此前多数在线 PQO 把两者交织在一起：getPlan 失败时回退优化器、并动态增删缓存计划。这带来两大问题——① 运营上不可预测、难调试（计划集一直在变）；② 常需昂贵的优化器/重算（recost）调用，导致 getPlan 的高均值与尾延迟。解耦后，getPlan 只从缓存里选、不回退优化器，立刻解决延迟；populateCache 作为离线步骤，更可控、可调试，还允许 DBA 手动加计划。
+  </div>
+
+  <div class="insight-box">
+    <h4>核心主张 ② 与 ③</h4>
+    <p><b>② 用查询日志驱动：</b>现代 DBMS 本就高效记录查询实例（参数、执行时间、CPU 时间）。populateCache 用日志在「巨大的选择性空间」里聚焦到 workload 相关区域；getPlan 用日志训练监督 ML 模型。<br>
+    <b>③ 用执行代价驱动 getPlan：</b>优化器代价估计常不准（基数估计误差、代价模型简化），作者把 getPlan 重新表述为「情境多臂老虎机（CMAB）」问题，用每次执行的真实代价反馈来学习选最低执行代价的计划。</p>
+  </div>
+
+  <div class="warn-box">
+    <b>对先前在线技术的批判：</b>它们假设计划代价函数线性/单调，而复杂 SQL 下这些假设常失败 → getPlan 次优性很高；或假设更保守 → 频繁回退优化器 → getPlan 延迟高。本文的 ML 方法对任意复杂 SQL 都适用、且不做代价行为假设。
+  </div>
+</div>
+
+<!-- ========== SEC 2 ========== -->
+<div class="section" id="sec-2">
+  <h2 class="section-title"><span class="num">2</span>框架概览：日志驱动的 PQO 架构</h2>
+  <p class="section-desc">论文 Figure 1 给出日志驱动 PQO 的组件。关键点是「架构上解耦 populateCache 与 getPlan」并「用查询日志」。</p>
+
+  <div class="svg-container">
+    <svg viewBox="0 0 960 300" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif">
+      <defs><marker id="ar1" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#fbbf24"/></marker></defs>
+      <rect x="10" y="10" width="940" height="44" rx="10" fill="rgba(245,158,11,.08)" stroke="rgba(245,158,11,.3)"/>
+      <text x="30" y="38" fill="#fbbf24" font-size="15" font-weight="700">查询日志（Query Log）：参数绑定 / 执行时间 / CPU 时间</text>
+
+      <rect x="20" y="80" width="220" height="64" rx="10" fill="rgba(20,20,35,.8)" stroke="#f59e0b"/>
+      <text x="130" y="106" fill="#e6edf3" font-size="13" text-anchor="middle" font-weight="700">① populateCache</text>
+      <text x="130" y="126" fill="#8b949e" font-size="11" text-anchor="middle">离线 · 贪心选 K 个计划</text>
+
+      <rect x="280" y="80" width="220" height="64" rx="10" fill="rgba(20,20,35,.8)" stroke="#f59e0b"/>
+      <text x="390" y="106" fill="#e6edf3" font-size="13" text-anchor="middle" font-weight="700">② 训练 getPlan 模型</text>
+      <text x="390" y="126" fill="#8b949e" font-size="11" text-anchor="middle">recost 矩阵作标签</text>
+
+      <rect x="540" y="80" width="200" height="64" rx="10" fill="rgba(20,20,35,.8)" stroke="#f59e0b"/>
+      <text x="640" y="106" fill="#e6edf3" font-size="13" text-anchor="middle" font-weight="700">计划缓存</text>
+      <text x="640" y="126" fill="#8b949e" font-size="11" text-anchor="middle">计划集 + ML 模型</text>
+
+      <rect x="780" y="80" width="170" height="64" rx="10" fill="rgba(20,20,35,.8)" stroke="#fbbf24"/>
+      <text x="865" y="106" fill="#e6edf3" font-size="13" text-anchor="middle" font-weight="700">③ getPlan</text>
+      <text x="865" y="126" fill="#8b949e" font-size="11" text-anchor="middle">在线 · 选计划</text>
+
+      <line x1="240" y1="112" x2="278" y2="112" stroke="#fbbf24" stroke-width="2" marker-end="url(#ar1)"/>
+      <line x1="500" y1="112" x2="538" y2="112" stroke="#fbbf24" stroke-width="2" marker-end="url(#ar1)"/>
+      <line x1="740" y1="112" x2="778" y2="112" stroke="#fbbf24" stroke-width="2" marker-end="url(#ar1)"/>
+
+      <rect x="20" y="180" width="930" height="100" rx="10" fill="rgba(20,20,35,.4)" stroke="rgba(255,255,255,.08)"/>
+      <text x="40" y="206" fill="#fbbf24" font-size="13" font-weight="700">各模块职责</text>
+      <text x="40" y="230" fill="#8b949e" font-size="12">• 收集日志：用已有 PQO（Opt-Once / Merging-Ranges / Opt-Always）引导，待日志足够后用本文技术。</text>
+      <text x="40" y="252" fill="#8b949e" font-size="12">• populateCache：输入 workload、计划预算 K、可选「必须包含的计划」；用 optimize 与 recost 两个 API 咨询优化器。</text>
+      <text x="40" y="274" fill="#8b949e" font-size="12">• getPlan：解析新实例→匹配模板→抽取各谓词选择性→喂给 ML 模型→返回所选计划。</text>
+    </svg>
+    <p class="fc">图 1（论文 Figure 1 架构）：日志驱动、populateCache 与 getPlan 解耦。该架构被后续 Kepler（RCE + SNGP）沿用与扩展。</p>
+  </div>
+
+  <div class="info-box">
+    <b>问题输入约定：</b>模板 𝑄 含 𝑑 个参数化谓词；实例 @x 由绑定值 (E1…Ed) 定义，并关联一个<strong>选择性向量</strong> (B1…Bd)（每个谓词的选择性）。p_opt(@x) 为优化器为 @x 选的计划；C_opt(p,@x) 为优化器估计代价；ExecCost(p,@x) 为真实执行代价。
+  </div>
+</div>
+
+<!-- ========== SEC 3 ========== -->
+<div class="section" id="sec-3">
+  <h2 class="section-title"><span class="num">3</span>问题定义：次优性指标与两个目标</h2>
+  <p class="section-desc">论文用「次优性（sub-optimality）」而非绝对代价来度量，便于跨查询聚合（几何均值或 95 分位）。</p>
+
+  <div class="module-card">
+    <h3>3.1 populateCache 的次优性（公式 1）</h3>
+    <p>给定 workload 𝒲 与计划预算 K，选出计划集 𝒫 = {p₁…p_K} 使聚合次优性最小：</p>
+  </div>
+  <div class="formula-box">
+    S_populateCache(𝒫, @x) = min_{p∈𝒫} C_opt(p,@x) / C_opt(p_opt(@x),@x)
+  </div>
+  <p class="section-desc">分子假设一个「完美 getPlan」（从 𝒫 中选最低代价计划），分母是理想策略 Opt-Always 的代价。此外还度量找出计划的总时间、optimize/recost 调用次数。</p>
+
+  <div class="module-card">
+    <h3>3.2 getPlan 的两个目标</h3>
+    <p><b>Objective 1（优化器代价）：</b>从 𝒫 中选使优化器估计代价最小的计划（公式 2）。</p>
+    <p><b>Objective 2（执行代价）：</b>从 𝒫 中选使真实执行代价最小的计划（公式 3）。</p>
+  </div>
+  <div class="formula-box">
+    Obj1: p₀ = arg min_{p∈𝒫} C_opt(p,@x) &nbsp;&nbsp; | &nbsp;&nbsp; Obj2: p₀ = arg min_{p∈𝒫} ExecCost(p,@x)
+  </div>
+
+  <div class="grid-3">
+    <div class="comp-card"><h4>度量：次优性</h4><p>几何均值或 95 分位，越小越好（1.0 为最优）。</p></div>
+    <div class="comp-card"><h4>度量：getPlan 延迟</h4><p>选计划所花时间，报告均值与尾分位。</p></div>
+    <div class="comp-card"><h4>度量：标注/训练开销</h4><p>生成标签与训练模型的时间。</p></div>
+  </div>
+
+  <div class="insight-box">
+    <h4>关键区分</h4>
+    <p>整体次优性 = populateCache 次优性 × getPlan 次优性。由于 getPlan 在关键路径上，<strong>效率（延迟）</strong>与<strong>次优性</strong>同等重要——这正是先前在线技术顾此失彼的地方。</p>
+  </div>
+</div>
+
+<!-- ========== SEC 4 ========== -->
+<div class="section" id="sec-4">
+  <h2 class="section-title"><span class="num">4</span>基于优化器代价的 getPlan：分类 vs 回归</h2>
+  <p class="section-desc">给定缓存的 K 个计划，getPlan 要选代价最低的那个。最准确的方法是「对每个计划 recost 一下取最小」，但 recost 对复杂查询常需 10ms~数百 ms，太贵（且需支持任意复杂 SQL 的 recost 特性）。作者改用监督 ML：用极小的内存 footprint 与极快的推理来近似。</p>
+
+  <div class="arch-card">
+    <h4>4.1 特征：选择性向量</h4>
+    <p>用「每个参数化谓词的选择性」组成的向量作输入特征。直觉：模型把高维选择性空间划分区域，每个区域映射到一个缓存计划。这比先前工作好得多，因为 getPlan 完全<strong>不需要调用优化器</strong>（选择性可用直方图等统计信息高效获得，约 25µs/选择性）。也尝试了直接用参数绑定（解析后的范围/类别谓词），准确性略差于选择性特征。</p>
+  </div>
+
+  <div class="step-flow">
+    <h4>4.2 分类 formulation（多类）</h4>
+    <p>把 getPlan 看作 K 类分类：K 个计划 = K 个类，训练数据由 workload 中每个实例标注「最佳计划 id」构成。模型学习在特征空间（选择性）上划分区域。</p>
+    <p><b>局限（论文 Figure 3）：</b>分类的目标是「最大化分类准确率」，与我们的次优性指标并不对齐。因为把实例 @x 错分为计划 p_a 而非真正最优的 p_b，其代价损失取决于 p_a、p_b、@x——这是「样例依赖的代价敏感分类」，多类情形很难处理。Figure 3 的例子中，把标为 p4 的点分成 p3 可能比分成 p2 的次优性更高，但普通分类器无法区分。</p>
+  </div>
+
+  <div class="step-flow">
+    <h4>4.3 回归 formulation（每计划一个回归器）</h4>
+    <p>为每个缓存计划各训练一个回归模型，预测该计划在给定特征下的优化器估计代价；对新实例调用 K 个回归器取预测代价最小的计划（Figure 2）。这是「对每个计划 recost」的低开销近似（快 1~2 个数量级），且拥有所有计划的<strong>完整代价信息</strong>，不像分类只用「最佳计划」标签。</p>
+  </div>
+
+  <div class="arch-card">
+    <h4>4.4 训练与「分类 vs 回归」</h4>
+    <p>两种形式的标注数据其实相同：每个缓存计划在 workload 实例上的代价（回归直接用，分类据此生成最佳计划标签）。训练时间本身很小（约 100ms），主要开销在标注（对每个计划 recost）。实验用决策树、XGBoost 等树模型。结论：小内存/小训练量下，<strong>回归</strong>次优性更好（尤其 95 分位）；getPlan 时间仅略高于分类。</p>
+  </div>
+</div>
+
+<!-- ========== SEC 5 ========== -->
+<div class="section" id="sec-5">
+  <h2 class="section-title"><span class="num">5</span>基于执行代价的 getPlan：情境多臂老虎机</h2>
+  <p class="section-desc">无论分类还是回归，上面的 getPlan 都在最小化「优化器估计代价」，但估计代价 ≠ 执行代价（基数估计误差、代价模型无法刻画执行环境）。作者把 getPlan 重新表述为<strong>情境多臂老虎机（CMAB）</strong>：臂 = 缓存计划，上下文 = 选择性（或参数绑定）向量，奖励 = 该实例用所选计划的（负）执行代价。随着实例被处理，老虎机不断学习选更低执行代价的计划。</p>
+
+  <div class="svg-container">
+    <svg viewBox="0 0 960 250" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif">
+      <defs><marker id="ar5" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#fbbf24"/></marker></defs>
+      <rect x="20" y="40" width="220" height="60" rx="10" fill="rgba(20,20,35,.8)" stroke="#f59e0b"/>
+      <text x="130" y="66" fill="#e6edf3" font-size="13" text-anchor="middle" font-weight="700">实例 @x (上下文 φ)</text>
+      <text x="130" y="86" fill="#8b949e" font-size="11" text-anchor="middle">选择性 / 绑定向量</text>
+
+      <rect x="300" y="40" width="220" height="60" rx="10" fill="rgba(20,20,35,.8)" stroke="#f59e0b"/>
+      <text x="410" y="66" fill="#e6edf3" font-size="13" text-anchor="middle" font-weight="700">每计划 C 个回归模型</text>
+      <text x="410" y="86" fill="#8b949e" font-size="11" text-anchor="middle">Bootstrapped TS：随机选 1 个</text>
+
+      <rect x="580" y="40" width="200" height="60" rx="10" fill="rgba(20,20,35,.8)" stroke="#fbbf24"/>
+      <text x="680" y="66" fill="#e6edf3" font-size="13" text-anchor="middle" font-weight="700">选 argmin 预测代价</text>
+      <text x="680" y="86" fill="#8b949e" font-size="11" text-anchor="middle">执行该计划</text>
+
+      <rect x="820" y="40" width="130" height="60" rx="10" fill="rgba(20,20,35,.8)" stroke="#fbbf24"/>
+      <text x="885" y="66" fill="#e6edf3" font-size="13" text-anchor="middle" font-weight="700">反馈</text>
+      <text x="885" y="86" fill="#8b949e" font-size="11" text-anchor="middle">真实执行代价</text>
+
+      <line x1="240" y1="70" x2="298" y2="70" stroke="#fbbf24" stroke-width="2" marker-end="url(#ar5)"/>
+      <line x1="520" y1="70" x2="578" y2="70" stroke="#fbbf24" stroke-width="2" marker-end="url(#ar5)"/>
+      <line x1="780" y1="70" x2="818" y2="70" stroke="#fbbf24" stroke-width="2" marker-end="url(#ar5)"/>
+      <path d="M885,100 C885,170 130,170 130,100" fill="none" stroke="#fbbf24" stroke-width="2" stroke-dasharray="5,4" marker-end="url(#ar5)"/>
+      <text x="480" y="190" fill="#8b949e" font-size="11" text-anchor="middle">用执行代价反馈更新对应计划的模型（Gamma(1,1) 加权）</text>
+    </svg>
+    <p class="fc">图 5（Algorithm 1 Bootstrapped Thompson Sampling 环路）：每计划维护 C 个回归模型；对新实例各随机抽 1 个模型预测代价，选最小者执行；用真实执行代价以 Gamma 加权更新这些模型。</p>
+  </div>
+
+  <div class="step-flow">
+    <h4>5.1 Algorithm 1：在线 Bootstrapped Thompson Sampling</h4>
+    <p>对每个计划维护 C 个监督回归模型。每来一个实例 @x：① 对每个计划 i，从 C 个模型中随机选 1 个，预测其执行代价 ˆA_i；② 选 a = argmin_i ˆA_i 执行，得到真实代价 A；③ 把观测 {(φ, A)} 加入「计划 a 对应模型」的历史，并对每个模型 j 以 Gamma(1,1) 采样的权重更新。随机选模型 → 探索；训练充分后选最小预测代价 → 利用。</p>
+  </div>
+
+  <div class="module-card">
+    <h3>5.2 避免初始次优 & 适应变化</h3>
+    <p><b>初始兜底：</b>老虎机在初始阶段随机选计划，往往比「选优化器估计代价最低的计划」更差。缓解策略：前 50 个实例先用优化器代价基线（或并行执行所有 K 计划取最先完成的）决策，之后切换到老虎机——既避免初期风险，又保留老虎机收益。</p>
+    <p><b>适应计划集变化：</b>新增计划时老虎机自动适应（暂时次优但快速收敛）；删除计划只需忽略该「臂」。这比监督 ML 需重训更灵活。</p>
+  </div>
+</div>
+
+<!-- ========== SEC 6 ========== -->
+<div class="section" id="sec-6">
+  <h2 class="section-title"><span class="num">6</span>populateCache 算法：贪心搜索与三阶段</h2>
+  <p class="section-desc">populateCache 的目标是用很少的计划覆盖整个 workload、使聚合次优性低。但 K-set 识别对最大代价次优性指标已被证明是 NP 完全的；朴素实现（2000 实例、100 计划、K=5）可能超过 10 小时。因此论文用启发式把每阶段开销降下来。</p>
+
+  <div class="grid-3">
+    <div class="comp-card"><h4>阶段 1 计划收集</h4><p>对 workload 子集调用优化器，最坏开销 n·T_opt；收集到 m 个不同计划。</p></div>
+    <div class="comp-card"><h4>阶段 2 计划重算</h4><p>对每个候选计划在 n 个实例上 recost，得「plan-recost 矩阵」，最坏开销 n·m·T_recost。</p></div>
+    <div class="comp-card"><h4>阶段 3 K-set 识别</h4><p>用矩阵确定预算 K 下的缓存计划集；朴素最坏开销需评估约 7500 万候选集，不现实。</p></div>
+  </div>
+
+  <div class="step-flow">
+    <h4>6.1 K-set 识别：贪心搜索</h4>
+    <p>从空集开始，每轮贪心加入「能使聚合次优性指标最小化的一个计划」，直到达到预算 K。复杂度 O(K·m·T_metric)，在 plan-recost 矩阵算好后极快：200 计划、2000 实例、K=10、几何均值指标下，贪心运行 &lt; 1 秒。</p>
+  </div>
+
+  <div class="step-flow">
+    <h4>6.2 计划收集 / 重算：只用子集</h4>
+    <p>为降低这两阶段开销而不显著损质：<strong>计划收集</strong>从日志随机选约 100–200 个实例优化即可（收集到的计划集质量很快稳定）；<strong>计划重算</strong>随机选约 200–400 个实例 recost 即可获得足够信息来决策 K 个计划。</p>
+  </div>
+
+  <div class="info-box">
+    <b>应对数据 / workload 变化：</b>监督 ML 假设数据 workload 不变；显著变化时需重跑 populateCache 并重训 getPlan 模型（先生成标签再训练）。老虎机则能持续重训自适应（见 6.5）。数据变化可由 DBMS 的统计更新触发机制探测，workload 漂移可用现有漂移检测技术追踪。
+  </div>
+</div>
+
+<!-- ========== SEC 7 ========== -->
+<div class="section" id="sec-7">
+  <h2 class="section-title"><span class="num">7</span>实验评估：TPC-DS / TPC-H / REAL1</h2>
+  <p class="section-desc">实验在 Microsoft SQL Server 2017 上，用 TPC-DS(100GB)、TPC-H skewed(10GB)、真实库 REAL1(97GB)，共 25 个参数化查询（多数含 UNION/INTERSECT/EXISTS/外连接等复杂结构，5–10 个 join）。每模板生成 2000 个实例，参数谓词 3–16 个（中位 9）。模型默认 XGBoost、16KB 内存、选择性特征。</p>
+
+  <div class="data-table">
+    <table>
+      <thead><tr><th>对比维度</th><th>结论</th></tr></thead>
+      <tbody>
+        <tr><td>getPlan 时间 vs 次优性（图 5）</td><td>分类/回归监督 ML 在两个维度上都显著优于所有先前技术，有时好几个数量级；Opt-Once 次优性最差但最快；MR 均值快但次优性高；SCR 近最优但 getPlan 时间极高。</td></tr>
+        <tr><td>分类 vs 回归（图 6/6.2.2）</td><td>小训练量（100 例）下，分类尾次优性可达 100，回归仅约 5%；回归在高分位更稳。</td></tr>
+        <tr><td>populateCache（图 8）</td><td>K=6 时几何均值次优性 &lt; 1.2；100-200 实例优化、200-400 实例 recost 即足够好。</td></tr>
+        <tr><td>端到端（图 9）</td><td>回归模型训练数据 −=100, .=200 即达合理精度；初始优化器开销很快被摊薄（训练后不再有优化器调用）。</td></tr>
+        <tr><td>执行代价 getPlan（图 10）</td><td>bandit 比优化器代价基线收敛到更低执行次优性；bandit-mitigated 避免初期次优且 ≈100 查询后与其余策略相当。</td></tr>
+      </tbody>
+    </table>
+    <p class="fc">表：论文 6.2–6.5 主要结论摘要。</p>
+  </div>
+
+  <div class="grid-2">
+    <div class="arch-card">
+      <h4>7.1 优化器代价 getPlan（6.2）</h4>
+      <p>对每模板用 populateCache 找 4–7 个好计划，recost 全部 2000 实例得到 plan-recost 矩阵；1600 实例训练/构造逻辑，400 实例测试，重复 10 次。结果与 Opt-Once、MR、PCM、SCR、Density 对比：监督 ML 在次优性剖面最好，且 getPlan 时间最小、方差最低（所有优化器交互都在离线训练阶段）。</p>
+    </div>
+    <div class="arch-card">
+      <h4>7.2 执行代价 getPlan（6.5）</h4>
+      <p>对每模板给 2000 实例序列，策略每步选一个计划执行、以执行代价作反馈。对比四种：optimizer-cost-baseline、bandit-random、bandit-mitigated（前 50 用优化器代价，之后切老虎机）、bandit-exec-bootstrap（前 50 并行执行所有计划取最优）。bandit 类最终都收敛到比基线更低的执行次优性。</p>
+    </div>
+  </div>
+
+  <div class="insight-box">
+    <h4>7.3 老虎机的鲁棒性（图 11）</h4>
+    <p><b>workload 漂移：</b>构造「先小选择性 200、中 300、大选择性」的对抗序列，老虎机在分布切换时尾次优性短暂上升但很快重新适应。<br>
+    <b>计划集漂移：</b>500 实例后随机删一半计划、1000 后加回，bandit-mitigated 利用先前反馈迅速回到原性能。<br>
+    <b>Thompson Sampling 重要：</b>TS/UCB 优于 ε-greedy；选 TS 因其 getPlan 效率优于 UCB。<br>
+    <b>噪声鲁棒：</b>即使给奖励乘 Gamma 噪声，老虎机仍随时间改善，只是收敛变慢。</p>
+  </div>
+</div>
+
+<!-- ========== SEC 8 ========== -->
+<div class="section" id="sec-8">
+  <h2 class="section-title"><span class="num">8</span>敏感性分析：模型大小、训练量、特征</h2>
+  <p class="section-desc">论文用回归模型做敏感性实验（分类趋势类似），逐一变动模型大小、训练量、模型类型、特征。</p>
+
+  <div class="grid-2">
+    <div class="arch-card"><h4>8.1 模型内存（图 7A）</h4><p>2KB→100KB 次优性持续改善但收益递减；默认 16KB 可接受（一个缓存计划本身至少 100KB）。</p></div>
+    <div class="arch-card"><h4>8.2 训练量（图 7B）</h4><p>100→1600 例次优性显著改善；400 例即可在训练成本与次优性间取得合理平衡，更多只在极高分位有微小收益。</p></div>
+    <div class="arch-card"><h4>8.3 模型类型（图 7C）</h4><p>树模型（回归树及其 boosting 版 XGBoost）显著优于线性、SVM 等简单模型。</p></div>
+    <div class="arch-card"><h4>8.4 特征（图 7D）</h4><p>选择性特征紧凑、准确、易得；仅用参数绑定也能得到合理模型，但未发现作为额外特征有显著优势。</p></div>
+  </div>
+
+  <div class="data-table">
+    <table>
+      <thead><tr><th>populateCache 参数</th><th>默认</th><th>推荐</th><th>结论</th></tr></thead>
+      <tbody>
+        <tr><td>计划数 K</td><td>10</td><td>≈6</td><td>K=2→10 时次优性显著下降，约 6 个计划即 &lt;1.2（图 8a）</td></tr>
+        <tr><td>优化实例数 #opt</td><td>2000</td><td>100–200</td><td>100-200 即足够，更多收益递减（图 8b）</td></tr>
+        <tr><td>重算实例数 #recost</td><td>2000</td><td>200–400</td><td>200-400 即足够（图 8c）</td></tr>
+        <tr><td>组合（图 8d）</td><td>全最大</td><td>K=6,#opt=100,#recost=200</td><td>直到 95 分位与最大参数配置相当，远优于最小配置</td></tr>
+      </tbody>
+    </table>
+    <p class="fc">表：populateCache 参数敏感性（图 8）。贪心搜索时间相对 optimize/recost 调用可忽略。</p>
+  </div>
+</div>
+
+<!-- ========== SEC 9 ========== -->
+<div class="section" id="sec-9">
+  <h2 class="section-title"><span class="num">9</span>代码使用与实战（思路与复现）</h2>
+  <p class="section-desc">本文由 Microsoft Research 发表，<strong>并未公开官方开源代码仓库</strong>（论文聚焦算法与实验，实现依赖 SQL Server 的 recost / plan-guide 接口）。下面给出可落地的复现思路与近似伪代码。</p>
+
+  <div class="kv-row"><span class="kv-key">发表</span><span class="kv-val">Vaidya, Dutt, Narasayya, Chaudhuri. PVLDB 15(3):401-413, 2022.</span></div>
+  <div class="kv-row"><span class="kv-key">依赖 DBMS</span><span class="kv-val">Microsoft SQL Server 2017（需 recost / USE PLAN hint / plan guides 接口）</span></div>
+  <div class="kv-row"><span class="kv-key">模型</span><span class="kv-val">XGBoost（16KB 约束）、决策树；老虎机用 per-plan 多个回归模型 + Bootstrapped TS</span></div>
+  <div class="kv-row"><span class="kv-key">关键超参</span><span class="kv-val">K≈6、优化实例 100–200、recost 实例 200–400、训练 400 例、老虎机前 50 例用优化器代价兜底</span></div>
+
+  <div class="code-block">
+    <pre># —— 概念性复现步骤（以 SQL Server 生态为例）——
+# 1) 收集查询日志：参数绑定 / 执行时间 / CPU 时间
+#    （SQL Server Query Store / XEvents）
+
+# 2) populateCache（离线）
+#    a. 对 ~150 个实例调用优化器 → 收集候选计划集
+#    b. 对候选计划在 ~300 个实例上 recost → 得到 plan-recost 矩阵
+#    c. 贪心：从空集起，每轮加入使几何均值次优性最小的计划，直到 K=6
+#    次优性(i) = min_{p in P} C_opt(p, q_i) / C_opt(p_opt(q_i), q_i)
+
+# 3) 训练 getPlan（优化器代价）
+#    a. 用 plan-recost 矩阵给每实例标「最佳计划 id」(分类) 或
+#       每计划一个回归器预测 C_opt (回归)
+#    b. 训练 XGBoost，约束内存 ~16KB；特征 = 各谓词选择性
+
+# 4) getPlan 在线（关键路径）
+#    解析新实例 → 抽选择性向量 → 喂 ML 模型 → 返回所选计划（不回退优化器）
+
+# 5) （可选）执行代价 getPlan：上线后把每次执行的真实代价作反馈，
+#    用 Bootstrapped Thompson Sampling 持续更新每计划的回归模型；
+#    前 50 个实例先用优化器代价基线决策以规避初期随机。</pre>
+  </div>
+
+  <div class="warn-box">
+    <b>注意事项：</b>本文的 recost 接口与 plan-guide 机制是 SQL Server 特有；若换到其他 DBMS（如 PostgreSQL 的 pg_hint_plan），需要自行实现等价的「强制某计划并求其代价」的接口。后续工作 Kepler 正是基于此解耦架构，用 RCE 生成候选 + 真实执行数据 + SNGP 兜底，进一步走向「执行代价」导向。
+  </div>
+</div>
+
+<!-- ========== SEC 10 ========== -->
+<div class="section" id="sec-10">
+  <h2 class="section-title"><span class="num">10</span>总结、贡献与局限</h2>
+  <p class="section-desc">论文重新审视 PQO，提出三个关键思想：① 解耦 populateCache 与 getPlan；② 用历史查询日志驱动两者；③ 把 getPlan 拓展到「执行代价」导向（情境老虎机）。</p>
+
+  <div class="highlight-box">
+    <b>主要贡献：</b>· 解耦架构带来灵活性与可调试性，对生产至关重要；· 把 populateCache 表述为基于日志的离线搜索，贪心算法用很少计划（≤6）取得低几何均值次优性（≈1.2）且可扩展到大量实例；· getPlan 用极小 ML 模型同时取得低延迟与低次优性，且对任意 SQL 不做代价行为假设；· 首次把 getPlan 表述为基于执行代价的 CMAB 问题；· 在合成与真实 workload 上做了与多种先前 PQO 技术及商业 DBMS 方案的全面对比。
+  </div>
+
+  <div class="limit-box">
+    <h4>局限与未来工作</h4>
+    <p>· 监督 ML 假设数据/workload 不变，显著变化需重跑离线步骤；· populateCache 依赖候选计划质量，极端高维选择性空间仍具挑战；· 执行代价老虎机需在线反馈回路，落地需配套执行采集；· workload 漂移检测与自动重训留作未来工作。</p>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-q">Q1：为什么「解耦」这么重要？</div>
+    <div class="qa-a">因为 getPlan 在查询关键路径上，若它失败时回退优化器（如 SCR），getPlan 延迟会很高且方差大。解耦后 getPlan 只从缓存里选、不回退，延迟恒定且小；populateCache 离线跑，可调试、可让 DBA 干预。</div>
+  </div>
+  <div class="qa-card">
+    <div class="qa-q">Q2：分类和回归两种 getPlan，到底用哪个？</div>
+    <div class="qa-a">默认推荐<strong>回归</strong>：为每个缓存计划训练一个回归器预测其代价、取最小。它在小训练量下尾次优性显著优于分类（100 例时分类尾次优性可达 100，回归约 5%），且对「样例依赖代价」更鲁棒。</div>
+  </div>
+  <div class="qa-card">
+    <div class="qa-q">Q3：执行代价老虎机会不会一开始就把查询搞得很慢？</div>
+    <div class="qa-a">会——随机探索阶段比优化器代价基线差。论文用「前 50 个实例先用优化器代价基线（或并行执行所有计划取最优）决策，再切老虎机」来缓解，既躲开初期风险又保留老虎机长期收益。</div>
+  </div>
+  <div class="qa-card">
+    <div class="qa-q">Q4：和后来的 Kepler 什么关系？</div>
+    <div class="qa-a">Kepler 沿用了本文的「解耦 + 查询日志」架构，但把候选生成升级为 RCE（扰动基数）、把标签从「优化器代价」换成「真实执行延迟」、把模型换成带 SNGP 不确定性的神经网络并加兜底。本文是 Kepler 的直接思想源头。</div>
+  </div>
+</div>
+
+<!-- ========== SEC 11 ========== -->
+<div class="section translation" id="sec-11">
+  <h2 class="section-title"><span class="num">11</span>全文中文翻译（对应嵌入图片）</h2>
+  <p class="section-desc">以下为论文核心内容的中文翻译，关键段落对应嵌入论文原图（来自 <code>images/Leveraging Query Logs and Machine Learning for Parametric Query Optimization/</code>），以 📌 标记。</p>
+
+  <h3>摘要</h3>
+  <p>参数化查询优化（PQO）须解决两个问题：为参数化查询识别相对较少的待缓存计划（populateCache），以及高效地为该查询的任意实例选出要执行的最佳缓存计划（getPlan）。我们的方法把这两个决策解耦。我们把 populateCache 形式化为一个优化问题，目标是识别出一组计划，使日志中查询的优化器估计代价最小，并给出高效算法。对于 getPlan，我们利用查询日志训练机器学习（ML）模型，从缓存计划中挑选优化器估计代价最低的计划。我们用基准与真实 workload 中的复杂参数化查询做了大量实验。我们的 populateCache 算法即使对复杂查询、用较少计划也取得低几何均值次优性（≈1.2），且能扩展到大型查询日志。我们基于 ML 的 getPlan 技术的平均延迟（≈210µs）比先前 PQO 技术快一到四个数量级；平均次优性低（≈1.05），95 分位次优性比先前技术低 1% 到 25%。最后，我们给出一个利用查询日志中执行时间信息、以规避优化器代价估计不准确的 getPlan 高效算法。</p>
+
+  <div class="fig-note">📌 <b>图 1（论文原图）：</b>日志驱动的 PQO 架构总览——收集查询日志、离线 populateCache、训练 getPlan 模型、计划缓存、在线 getPlan。
+    <div class="fig-img"><img src="images/Leveraging%20Query%20Logs%20and%20Machine%20Learning%20for%20Parametric%20Query%20Optimization/Leveraging%20Query%20Logs%20and%20Machine%20Learning%20for%20Parametric%20Query%20Optimization_p8_fig1.png" alt="PQO 架构与 ML getPlan 对比图"></div>
+  </div>
+
+  <h3>1 引言（节选）</h3>
+  <p>数据库应用广泛使用参数化查询（同一 SQL 反复执行、仅参数绑定不同）。对复杂 SQL，每次都优化（Opt-Always）消耗大量 CPU/内存；另一种极端是只优化第一个实例并缓存其计划（Opt-Once），虽最小化优化时间，但缓存计划对后续实例可能任意次优。PQO 是折中：用较少缓存计划，把执行次优性压到尽量低。任一 PQO 技术须为某参数化查询识别一组待缓存计划（populateCache），并在新实例到来时从中高效挑选最佳计划（getPlan）。getPlan 的次优性 = getPlan 所选计划的优化器估计代价 / 缓存中最佳计划的优化器估计代价；整体次优性 = 两者之积。由于 getPlan 在关键路径上，效率（getPlan 耗时）同样关键。</p>
+  <p>先前 PQO 多为在线技术，其 getPlan 常在对「代价如何随选择性多维空间变化」的假设（如单调性）上失败，导致次优性很高；或采用更保守假设而需频繁回退优化器/重算，导致高均值与尾延迟。本文提出：<strong>架构上把 populateCache 与 getPlan 解耦</strong>——getPlan 只从缓存中选、不回退，立刻解决延迟；populateCache 离线运行，更可预测、可调试。</p>
+
+  <h3>2 日志驱动的 PQO 架构</h3>
+  <p>现代 DBMS 普遍具备记录查询实例的日志能力（含参数绑定、执行时间、CPU 时间）。populateCache 模块以 workload 实例集与计划预算 K 为输入，通过 optimize 与 recost 两个 API 咨询优化器，确定要缓存的计划集并安装进计划缓存。训练 getPlan 模型的离线模块以计划集 𝒫 与日志为输入，通过 recost 接口得到（计划,代价）矩阵作为标签，训练出对该参数化查询专用的 ML 模型。在线 getPlan 解析新实例、匹配模板、抽取各谓词选择性作为 ML 模型输入，返回所选计划。</p>
+
+  <div class="fig-note">📌 <b>图 2（论文原图）：</b>给定参数化查询的 ML 模型设计——分类（多类，直接标最佳计划 id）与回归（每计划一个回归器预测代价、取最小）两种形式。
+    <div class="fig-img"><img src="images/Leveraging%20Query%20Logs%20and%20Machine%20Learning%20for%20Parametric%20Query%20Optimization/Leveraging%20Query%20Logs%20and%20Machine%20Learning%20for%20Parametric%20Query%20Optimization_p9_fig1.png" alt="ML 模型设计：分类与回归"></div>
+  </div>
+
+  <h3>3 基于优化器代价的 getPlan</h3>
+  <p>为每个缓存计划计算代价再取最小固然准确，但需要 recost 调用（对复杂查询每计划至少 10ms、常达数百 ms），不实用。我们改用监督 ML：用选择性向量作特征（约 25µs/选择性即可获得），训练极小内存、极快推理的模型。分类形式把问题看作 K 类分类，但「最大化分类准确率」与次优性指标不对齐——错分代价取决于具体计划与实例（样例依赖代价敏感分类），多类难处理（论文 Figure 3 举例）。回归形式为每个计划各训练一个回归器预测其优化器代价，取最小者，是对 recost 的低开销近似，且拥有全部计划的代价信息，表现更好。</p>
+
+  <h3>4 基于执行代价的 getPlan</h3>
+  <p>优化器代价最低的计划，其执行代价未必最低（基数估计误差、代价模型缺陷）。把问题表述为<strong>情境多臂老虎机（CMAB）</strong>：臂 = 缓存计划，上下文 = 选择性（或参数绑定）向量，奖励 = 所选计划的（负）执行代价。我们采用在线 Bootstrapped Thompson Sampling：每计划维护 C 个回归模型，对新实例各随机抽 1 个模型预测代价、选最小者执行，再用真实执行代价以 Gamma(1,1) 加权更新这些模型。初期随机决策较差，可先以优化器代价基线（或前 50 例并行执行所有计划取最先完成者）兜底，再切换到老虎机。</p>
+
+  <h3>5 populateCache 算法</h3>
+  <p>分三阶段：计划收集（对子集实例调优化器）、计划重算（对每个候选计划在子集实例上 recost 得 plan-recost 矩阵）、K-set 识别（从该矩阵确定预算 K 下的计划集，对最大代价指标是 NP 完全）。K-set 识别用简单贪心（从空集起每轮加入使聚合次优性最小的计划，200 计划/2000 实例/K=10 下 &lt;1 秒）。计划收集随机选 100–200 实例、重算随机选 200–400 实例即可取得好结果。数据/workload 显著变化时需重跑离线步骤；老虎机则可持续自适应。</p>
+
+  <div class="fig-note">📌 <b>图 3（论文原图）：</b>populateCache 参数敏感性——(a) 计划数 K、(b) 优化实例数、(c) 重算实例数、(d) 组合分析。K≈6 即达几何均值次优性 &lt;1.2。
+    <div class="fig-img"><img src="images/Leveraging%20Query%20Logs%20and%20Machine%20Learning%20for%20Parametric%20Query%20Optimization/Leveraging%20Query%20Logs%20and%20Machine%20Learning%20for%20Parametric%20Query%20Optimization_p9_fig4.png" alt="populateCache 参数敏感性"></div>
+  </div>
+
+  <h3>6 实验（节选）</h3>
+  <p>在 SQL Server 2017 上用 TPC-DS、TPC-H skewed、真实库 REAL1，共 25 个复杂参数化查询，每模板 2000 实例，默认 XGBoost（16KB）、选择性特征。结果：(1) 基于优化器代价的 getPlan：监督 ML 在次优性与 getPlan 时间上均显著优于 Opt-Once、MR、PCM、SCR、Density，且方差最低（图 5/6）；100 训练例下分类尾次优性可达 100、回归约 5%（图 7）。(2) populateCache：K=6 时几何均值次优性 &lt;1.2，100-200 优化 / 200-400 重算实例足够（图 8）。(3) 端到端（图 9）：回归模型训练量 −=100, .=200 即合理，初始优化器开销很快摊薄。(4) 执行代价 getPlan（图 10/11）：老虎机收敛到比优化器代价基线更低的执行次优性，且能适应 workload 漂移、计划集增减与奖励噪声；TS 优于 ε-greedy 与 UCB。</p>
+
+  <div class="fig-note">📌 <b>图 4（论文原图）：</b>端到端对比——本文回归模型（不同训练量）与先前在线 PQO 技术（SCR、Merging-Ranges）在次优性与优化器调用比例上的对比。
+    <div class="fig-img"><img src="images/Leveraging%20Query%20Logs%20and%20Machine%20Learning%20for%20Parametric%20Query%20Optimization/Leveraging%20Query%20Logs%20and%20Machine%20Learning%20for%20Parametric%20Query%20Optimization_p10_fig1.png" alt="端到端对比图"></div>
+  </div>
+
+  <div class="fig-note">📌 <b>图 5（论文原图）：</b>执行代价老虎机的学习曲线——optimizer-cost-baseline、bandit-random、bandit-mitigated、bandit-exec-bootstrap 的几何均值与尾次优性（滑动窗口平均）。
+    <div class="fig-img"><img src="images/Leveraging%20Query%20Logs%20and%20Machine%20Learning%20for%20Parametric%20Query%20Optimization/Leveraging%20Query%20Logs%20and%20Machine%20Learning%20for%20Parametric%20Query%20Optimization_p11_fig1.png" alt="老虎机执行次优性学习曲线"></div>
+  </div>
+
+  <h3>7 结论</h3>
+  <p>我们重访 PQO 这一重要问题并提出三点关键思想：第一，主张把「识别缓存哪些计划（populateCache）」与「为某实例从缓存中选哪个计划（getPlan）」解耦；第二，用历史查询日志驱动两者，且对任意复杂 SQL 不做代价行为假设；第三，把 getPlan 拓展为基于执行代价（而非优化器估计代价）的情境老虎机表述，初步实验显示其执行代价低于传统 PQO  formulation 下的最佳方案。</p>
+
+  <div class="limit-box">
+    <h4>关于开源</h4>
+    <p>本论文未提供公开代码仓库，其 recost / plan-guide 接口依赖 SQL Server。其「解耦 + 查询日志」架构被后续 Kepler 等工作中继承与发展。</p>
+  </div>
+</div>
+
+<div class="footer">Leveraging Query Logs and ML for Parametric Query Optimization · 深度解读 · 生成于论文精读</div>
+
+</div>
+</body>
+</html>

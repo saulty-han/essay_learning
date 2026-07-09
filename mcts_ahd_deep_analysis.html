@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>深度解读 — MCTS-AHD: Monte Carlo Tree Search for Comprehensive Exploration in LLM-Based Automatic Heuristic Design</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{
+  font-family:'Noto Sans SC',system-ui,-apple-system,sans-serif;
+  background:#0d1117;color:#c9d1d9;
+  line-height:1.8;font-size:16px;
+  min-height:100vh;
+}
+.container{
+  max-width:1400px;margin:0 auto;padding:0 24px;
+  background:#0d1117;position:relative;
+}
+.back-btn{
+  position:fixed;top:16px;left:16px;z-index:9999;
+  background:rgba(20,20,35,.75);color:#c9d1d9;
+  border:1px solid rgba(255,255,255,.15);border-radius:10px;
+  padding:8px 16px;font-size:14px;cursor:pointer;
+  backdrop-filter:blur(6px);transition:all .3s;
+  text-decoration:none;display:flex;align-items:center;gap:6px;
+}
+.back-btn:hover{background:rgba(30,30,55,.9);border-color:rgba(255,255,255,.3);}
+.hero{padding:80px 0 40px;text-align:center;}
+.hero-title{
+  font-size:2.2rem;font-weight:700;
+  background:linear-gradient(135deg,#ea580c,#f97316,#f97316);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  background-clip:text;margin-bottom:12px;line-height:1.3;
+}
+.hero-sub{font-size:1.1rem;color:#8b949e;margin-bottom:8px;}
+.venue{font-size:.95rem;color:#8b949e;margin-top:8px;}
+.venue a{color:#ea580c;text-decoration:none;}
+.venue a:hover{text-decoration:underline;}
+.tag-row{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:16px;}
+.tag{
+  display:inline-block;padding:4px 14px;border-radius:20px;font-size:.85rem;
+  border:1px solid rgba(234,88,12,.3);color:#ea580c;
+  background:rgba(234,88,12,.06);
+}
+.divider{border:none;border-top:1px solid rgba(255,255,255,.08);margin:48px 0;}
+.section{margin:40px 0;}
+.section-title{
+  font-size:1.75rem;font-weight:700;margin-bottom:20px;
+  color:#e6edf3;display:flex;align-items:center;gap:10px;
+}
+.section-title .num{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:36px;height:36px;border-radius:50%;
+  background:linear-gradient(135deg,#ea580c,#f97316);
+  color:#0d1117;font-size:1rem;font-weight:700;flex-shrink:0;
+}
+.section-desc{font-size:16px;line-height:1.9;color:#c9d1d9;margin-bottom:16px;}
+.toc{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:16px;padding:28px 36px;margin:30px 0;
+}
+.toc h3{font-size:1.2rem;color:#e6edf3;margin-bottom:14px;}
+.toc ol{list-style:none;counter-reset:toc;padding:0;}
+.toc li{counter-increment:toc;margin:8px 0;}
+.toc li::before{content:counter(toc) ".";color:#ea580c;font-weight:600;margin-right:8px;}
+.toc a{color:#8b949e;text-decoration:none;transition:color .2s;}
+.toc a:hover{color:#ea580c;}
+.module-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:24px;margin:18px 0;transition:all .3s;
+}
+.module-card:hover{border-color:rgba(234,88,12,.3);transform:translateY(-2px);}
+.module-card h3{font-size:1.15rem;font-weight:600;margin-bottom:10px;color:#ea580c;}
+.module-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.arch-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:22px;margin:14px 0;transition:all .3s;
+}
+.arch-card:hover{border-color:rgba(234,88,12,.3);}
+.arch-card h4{font-size:1.05rem;font-weight:600;color:#f97316;margin-bottom:8px;}
+.arch-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.step-flow{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:22px;margin:14px 0;
+}
+.step-flow h4{font-size:1.05rem;font-weight:600;color:#ea580c;margin-bottom:8px;}
+.step-flow p{font-size:15px;line-height:1.8;color:#8b949e;}
+.data-table{
+  width:100%;border-collapse:collapse;margin:18px 0;
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;overflow:hidden;font-size:14px;
+}
+.data-table th{
+  background:rgba(234,88,12,.1);color:#ea580c;
+  padding:12px 16px;text-align:left;font-weight:600;
+}
+.data-table td{
+  padding:10px 16px;border-top:1px solid rgba(255,255,255,.06);
+  color:#c9d1d9;
+}
+.data-table tr:hover td{background:rgba(234,88,12,.04);}
+.formula-box{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;padding:20px 24px;margin:16px 0;
+  font-size:18px;text-align:center;color:#e6edf3;
+  font-family:'JetBrains Mono',monospace;
+}
+.code-block{
+  background:rgba(20,20,35,.8);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;padding:18px 22px;margin:16px 0;
+  overflow-x:auto;
+}
+.code-block pre{
+  font-family:'JetBrains Mono',monospace;font-size:14px;
+  line-height:1.7;color:#c9d1d9;white-space:pre;
+}
+.ck{color:#ea580c;}.cs{color:#f97316;}.cf{color:#d2a8ff;}.cg{color:#8b949e;}.cv{color:#79c0ff;}
+.qa-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:24px;margin:16px 0;
+}
+.qa-q{font-size:1.05rem;font-weight:600;color:#ea580c;margin-bottom:12px;}
+.qa-a{font-size:15px;line-height:1.9;color:#8b949e;}
+.highlight-box{
+  background:rgba(234,88,12,.06);border:1px solid rgba(234,88,12,.2);
+  border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;
+}
+.warn-box{
+  background:rgba(240,136,62,.08);border:1px solid rgba(240,136,62,.25);
+  border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;
+}
+.info-box{
+  background:rgba(234,88,12,.06);border:1px solid rgba(234,88,12,.2);
+  border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;
+}
+.prompt-box{
+  background:rgba(20,20,35,.8);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;padding:18px 22px;margin:16px 0;
+  font-family:'JetBrains Mono',monospace;font-size:13px;
+  line-height:1.7;color:#c9d1d9;white-space:pre-wrap;
+}
+.prompt-label{
+  display:inline-block;padding:2px 10px;border-radius:6px;
+  font-size:.85rem;font-weight:600;margin-bottom:8px;
+  background:rgba(234,88,12,.15);color:#ea580c;
+}
+.fc{font-size:14px;color:#8b949e;text-align:center;margin:10px 0;line-height:1.6;}
+.comp-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:22px;margin:14px 0;transition:all .3s;
+}
+.comp-card:hover{border-color:rgba(234,88,12,.3);}
+.comp-card h4{font-size:1.05rem;font-weight:600;color:#f97316;margin-bottom:8px;}
+.comp-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.insight-box{
+  background:rgba(234,88,12,.06);border:1px solid rgba(234,88,12,.2);
+  border-radius:12px;padding:18px 22px;margin:16px 0;
+}
+.insight-box h4{color:#ea580c;font-size:1.05rem;margin-bottom:8px;}
+.insight-box p{font-size:15px;line-height:1.8;color:#c9d1d9;}
+.limit-box{
+  background:rgba(240,136,62,.08);border:1px solid rgba(240,136,62,.25);
+  border-radius:12px;padding:18px 22px;margin:16px 0;
+}
+.limit-box h4{color:#f97316;font-size:1.05rem;margin-bottom:8px;}
+.limit-box p{font-size:15px;line-height:1.8;color:#c9d1d9;}
+.kv-row{
+  display:flex;border-bottom:1px solid rgba(255,255,255,.06);padding:8px 0;
+}
+.kv-row:last-child{border-bottom:none;}
+.kv-key{width:180px;flex-shrink:0;color:#ea580c;font-weight:500;font-size:14px;}
+.kv-val{color:#c9d1d9;font-size:14px;line-height:1.7;}
+.footer{text-align:center;color:#555;font-size:14px;padding:48px 0 32px;}
+/* SVG architecture */
+.svg-container{
+  background:rgba(20,20,35,.4);border:1px solid rgba(255,255,255,.06);
+  border-radius:14px;padding:20px;margin:24px 0;overflow-x:auto;
+  text-align:center;
+}
+.svg-container svg{max-width:100%;height:auto;}
+/* Phase badge */
+.phase-badge{
+  display:inline-block;padding:3px 12px;border-radius:8px;
+  font-size:.85rem;font-weight:600;margin-right:8px;
+}
+.phase-1{background:rgba(99,102,241,.15);color:#818cf8;}
+.phase-2{background:rgba(234,88,12,.15);color:#f97316;}
+.phase-3{background:rgba(34,197,94,.15);color:#4ade80;}
+/* Grid layout */
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
+.grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;}
+@media(max-width:900px){
+  .grid-2,.grid-3{grid-template-columns:1fr;}
+  .hero-title{font-size:1.6rem;}
+  .kv-row{flex-direction:column;}
+  .kv-key{width:auto;}
+}
+/* Animated arrow */
+@keyframes flowPulse{
+  0%,100%{opacity:.6;}
+  50%{opacity:1;}
+}
+.flow-arrow{animation:flowPulse 2s ease-in-out infinite;}
+
+</style>
+</head>
+<body>
+<div class="container">
+
+<a class="back-btn" href="index.html">&#8592; 返回目录</a>
+
+<a href="mcts_ahd_full_translation.html" style="display:block;max-width:860px;margin:18px auto 0;padding:13px 22px;background:linear-gradient(90deg,rgba(31,111,235,.16),rgba(137,87,227,.16));border:1px solid rgba(137,87,227,.5);border-radius:12px;color:#e6edf3;text-decoration:none;font-weight:500;font-size:15px;text-align:center;box-shadow:0 2px 14px rgba(0,0,0,.35);">阅读本文逐段完整中文翻译（Full Translation）</a>
+
+<!-- ========== HERO ========== -->
+<div class="hero">
+  <h1 class="hero-title">MCTS-AHD: Monte Carlo Tree Search for Comprehensive Exploration in LLM-Based Automatic Heuristic Design</h1>
+  <p class="hero-sub">用 MCTS 全面探索 LLM 启发式设计空间——不让任何一个低性能启发式被浪费</p>
+  <div class="venue">arXiv 2024 &nbsp;|&nbsp; <a href='https://arxiv.org/abs/2404.02500'>arXiv:2404.02500</a></div>
+  <div class="tag-row">
+    <span class="tag">MCTS</span><span class="tag">Heuristic Design</span><span class="tag">LLM Evolution</span><span class="tag">Tree Search</span><span class="tag">NUS</span>
+  </div>
+</div>
+
+<!-- ========== TOC ========== -->
+<div class="toc">
+  <h3>目录</h3>
+  <ol>
+    <li><a href="#sec-1">研究动机</a></li>
+    <li><a href="#sec-2">框架概览</a></li>
+    <li><a href="#sec-3">MCTS 探索空间</a></li>
+    <li><a href="#sec-4">启发式保留与演化</a></li>
+    <li><a href="#sec-5">低性能启发式的复用</a></li>
+    <li><a href="#sec-6">树搜索与进化的整合</a></li>
+    <li><a href="#sec-7">实验评估</a></li>
+    <li><a href="#sec-8">敏感性分析</a></li>
+    <li><a href="#sec-9">代码使用与实战（含 GitHub 源码、安装命令、使用示例）</a></li>
+    <li><a href="#sec-10">总结与未来展望</a></li>
+  </ol>
+</div>
+
+<hr class="divider">
+
+<hr class="divider">
+
+<!-- ========== 1. MOTIVATION ========== -->
+<div class="section" id="sec-1">
+  <h2 class="section-title"><span class="num">1</span> 研究动机：种群进化易陷局部最优</h2>
+  <p class="section-desc">如何为组合优化等复杂任务自动设计高质量启发式函数（heuristic）而无需大量领域专家知识？现有 LLM-based AHD（如 EoH、Funsearch、ReEvo）采用基于种群（population-based）的进化计算，维护固定数量的精英函数，会直接丢弃低性能函数——但低性能函数经多步改良后可能变优，使进化陷入局部最优。</p>
+  <div class="grid-2">
+    <div class="module-card">
+      <h3>种群结构的缺陷</h3>
+      <p>种群方法维护精英集，红虚线之下的低性能函数被直接丢弃。这种"赢者通吃"机制使启发式空间探索不充分，难以跳出局部最优。</p>
+    </div>
+    <div class="module-card">
+      <h3>本文主张</h3>
+      <p>首次将 MCTS 应用于 LLM-based AHD：用树结构保存所有已生成启发式，能"暂时在劣势函数上继续开发"，实现更全面的启发式空间探索。</p>
+    </div>
+  </div>
+  <div class="insight-box">
+    <h4>核心创新</h4>
+    <p>把 LLM 生成的所有启发式组织成一棵 MCTS 树（根节点为虚拟节点），通过 Selection / Expansion / Simulation / Backpropagation 全面探索，并引入 tree-path reasoning 等树特有动作。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 2. OVERVIEW ========== -->
+<div class="section" id="sec-2">
+  <h2 class="section-title"><span class="num">2</span> 框架概览：启发式 MCTS 树</h2>
+  <p class="section-desc">MCTS-AHD 将 LLM 生成的每个启发式函数组织成 MCTS 树；根节点 nr 为虚拟节点，其余每个节点代表一个可执行的 Python 启发式函数 h∈H 及其语言描述。反复执行四阶段直到评估次数达上限 T。</p>
+  <div class="svg-container">
+    <svg viewBox="0 0 920 250" xmlns="http://www.w3.org/2000/svg" font-family="Noto Sans SC, sans-serif">
+      <defs><marker id="maA" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#f97316"/></marker></defs>
+      <rect x="20" y="95" width="130" height="60" rx="12" fill="rgba(234,88,12,.12)" stroke="#f97316" stroke-width="1.5"/>
+      <text x="85" y="130" text-anchor="middle" fill="#c9d1d9" font-size="14" font-weight="600">任务 P</text>
+      <rect x="190" y="55" width="200" height="130" rx="12" fill="rgba(234,88,12,.18)" stroke="#f97316" stroke-width="2"/>
+      <text x="290" y="88" text-anchor="middle" fill="#e6edf3" font-size="13" font-weight="700">Selection</text>
+      <text x="290" y="110" text-anchor="middle" fill="#8b949e" font-size="10">归一化 UCT</text>
+      <text x="290" y="128" text-anchor="middle" fill="#8b949e" font-size="10">选子节点到叶</text>
+      <text x="290" y="146" text-anchor="middle" fill="#8b949e" font-size="10">qmax/qmin 归一</text>
+      <text x="290" y="164" text-anchor="middle" fill="#8b949e" font-size="10">探索系数 λ</text>
+      <rect x="440" y="55" width="200" height="130" rx="12" fill="rgba(234,88,12,.18)" stroke="#f97316" stroke-width="2"/>
+      <text x="540" y="88" text-anchor="middle" fill="#e6edf3" font-size="13" font-weight="700">Expansion</text>
+      <text x="540" y="110" text-anchor="middle" fill="#8b949e" font-size="10">LLM 动作集</text>
+      <text x="540" y="128" text-anchor="middle" fill="#8b949e" font-size="10">2k+2 子节点</text>
+      <text x="540" y="146" text-anchor="middle" fill="#8b949e" font-size="10">Progressive Widening</text>
+      <text x="540" y="164" text-anchor="middle" fill="#8b949e" font-size="10">α=0.5</text>
+      <rect x="690" y="55" width="210" height="130" rx="12" fill="rgba(234,88,12,.12)" stroke="#f97316" stroke-width="1.5"/>
+      <text x="795" y="88" text-anchor="middle" fill="#e6edf3" font-size="13" font-weight="700">Sim + Backup</text>
+      <text x="795" y="110" text-anchor="middle" fill="#8b949e" font-size="10">评估 g(h)</text>
+      <text x="795" y="128" text-anchor="middle" fill="#8b949e" font-size="10">更新精英集 E</text>
+      <text x="795" y="146" text-anchor="middle" fill="#8b949e" font-size="10">Q←max 子节点</text>
+      <text x="795" y="164" text-anchor="middle" fill="#8b949e" font-size="10">N←Σ 子节点</text>
+      <line x1="160" y1="120" x2="185" y2="120" stroke="#f97316" stroke-width="2" marker-end="url(#maA)"/>
+      <line x1="390" y1="120" x2="435" y2="120" stroke="#f97316" stroke-width="2" marker-end="url(#maA)"/>
+      <line x1="640" y1="120" x2="685" y2="120" stroke="#f97316" stroke-width="2" marker-end="url(#maA)"/>
+    </svg>
+  </div>
+  <div class="step-flow">
+    <h4>端到端四阶段</h4>
+    <p>初始化 NI 个初始节点 → Selection（归一化 UCT 选到叶）→ Expansion（LLM 动作生成 2k+2 子节点）→ Simulation（评估 g(h) 更新 Q/N/精英集）→ Backpropagation（Q←max 子节点）。终止时输出全树中性能最高的启发式。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 3. ACTIONS ========== -->
+<div class="section" id="sec-3">
+  <h2 class="section-title"><span class="num">3</span> MCTS 探索空间：LLM 动作集</h2>
+  <p class="section-desc">LLM-based Actions 模拟 EC 的变异 / 交叉算子，并提供一种 MCTS 特有的树路径推理动作。单次扩展生成 2k+2 个子节点：m1、m2 各 k 个，e2、s1 各 1 个。</p>
+  <div class="module-card">
+    <h3>动作集合</h3>
+    <p><b>i1</b> Initialization（从零生成）；<b>m1/m2</b> Mutation（m1 引入新机制 / 公式，m2 修改参数）；<b>e1</b> Crossover（从多个函数生成全新工作流）；<b>e2</b> Crossover（以 parent 为基，参考精英集 E 前 10 的函数改进）；<b>s1</b> Tree-path Reasoning：分析叶到根所有唯一启发式，识别优势设计并生成增强函数——这是 MCTS 特有、依赖树结构的动作。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 4. EVOLVE ========== -->
+<div class="section" id="sec-4">
+  <h2 class="section-title"><span class="num">4</span> 启发式保留与演化</h2>
+  <p class="section-desc">Thought-Alignment Process 解决 LLM 幻觉导致的"代码与描述不一致"问题。每个动作调用 LLM 两次：第一次生成 Python 实现，第二次基于已生成代码用最多 3 句话总结描述。</p>
+  <div class="grid-2">
+    <div class="module-card">
+      <h3>Thought-Alignment</h3>
+      <p>第二次调用显著更短，不会显著增加时间 / Token 成本，却使语言描述与代码高度相关，提升后续 tree-path reasoning 的输入质量。</p>
+    </div>
+    <div class="module-card">
+      <h3>节点质量值</h3>
+      <p>节点质量 Q 等于其启发式在评估集 D 上的性能 g(h)；Selection 用归一化 UCT：UCT(c) = (Q(c)−qmin)/(qmax−qmin) + λ·√(ln(N(nc)+1)/N(c))。</p>
+    </div>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 5. REUSE ========== -->
+<div class="section" id="sec-5">
+  <h2 class="section-title"><span class="num">5</span> 低性能启发式的复用</h2>
+  <div class="module-card">
+    <h3>Exploration-Decay（探索衰减）</h3>
+    <p>前期鼓励探索、后期保证收敛。公式 λ = λ0·(T−t)/T（式 7），λ0 默认 0.1（对所有任务通用，避免任务特定调参），α=0.5。这使得被低估的低性能函数能在前期得到充分开发机会。</p>
+  </div>
+  <div class="arch-card">
+    <h4>Progressive Widening</h4>
+    <p>当 ⌊N(n)^α⌋ ≥ |children(nc)|（α=0.5）时新增子节点；根节点满足条件时调用 e1（从 2–5 个不同子树均匀选函数），其他节点调用 e2。这让树随评估预算渐进扩展，保留并发展暂时低性能的启发式。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 6. INTEGRATION ========== -->
+<div class="section" id="sec-6">
+  <h2 class="section-title"><span class="num">6</span> 树搜索与进化的整合</h2>
+  <div class="arch-card">
+    <h4>端到端数据流</h4>
+    <p>Selection → Expansion（e2/m1/m2/s1 生成 2k+2 子节点）→ Simulation（评估 g(h)，更新 Q/N/精英集 E/qmax/qmin）→ Backpropagation（Q(nc)←max_{c∈Children}Q(c)，N(nc)←ΣN(c)）。性能评估次数接近 T（默认 1000）时停止，输出全树最佳启发式。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 7. EXPERIMENT ========== -->
+<div class="section" id="sec-7">
+  <h2 class="section-title"><span class="num">7</span> 实验评估：TSP / KP / BPP 等</h2>
+  <div class="module-card">
+    <h3>设置与基线</h3>
+    <p>任务：TSP、KP、CVRP、MKP、BPP、ASP 等 NP-hard 组合优化；评价预算 T=1000；每个方法独立运行 3 次取平均。基线：手工启发式（Nearest-greedy/ACO/EI）、GHPP、POMO/DeepACO（NCO）、Funsearch/EoH/ReEvo/HSEvo（LLM-AHD）。LLM 用 GPT-3.5-turbo 与 GPT-4o-mini。</p>
+  </div>
+  <div class="highlight-box">
+    <p><b>主结果</b>：TSP N=50 Gap：MCTS-AHD 9.69% vs EoH 12.67% vs Funsearch 12.00%；KP N=100/W=25 Gap：MCTS-AHD 0.04% 最优；online BPP 平均 Gap 0.89% vs EoH 1.17% vs ReEvo 1.71% vs HSEvo 1.13%。TSP/KP 用 T=1000 约 3 小时、1M 输入 Token、约 0.3 美元。</p>
+  </div>
+  <table class="data-table">
+    <tr><th>任务</th><th>MCTS-AHD Gap</th><th>最佳基线</th></tr>
+    <tr><td>TSP N=50</td><td>9.69%</td><td>EoH 12.67%</td></tr>
+    <tr><td>KP N=100</td><td>0.04%</td><td>最优</td></tr>
+    <tr><td>online BPP</td><td>0.89%</td><td>HSEvo 1.13%</td></tr>
+    <tr><td>BO CAF（Rosenbrock）</td><td>1.68%</td><td>EoH 56.78%</td></tr>
+  </table>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 8. SENSITIVITY ========== -->
+<div class="section" id="sec-8">
+  <h2 class="section-title"><span class="num">8</span> 敏感性分析：消融</h2>
+  <div class="module-card">
+    <h3>组件消融（TSP50/KP100）</h3>
+    <p>原始 MCTS-AHD：TSP 10.661% / KP 0.059%；w/o Progressive Widening：12.132% / 0.064%；w/o Thought-alignment：11.640% / 0.061%；w/o Exploration-decay：11.606%。三个组件均有正向贡献，Progressive Widening 影响最大。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 9. INSIGHT ========== -->
+<div class="section" id="sec-9">
+  <h2 class="section-title"><span class="num">9</span> 代码使用与实战（含 GitHub 源码、安装命令、使用示例）</h2>
+  <div class="module-card">
+    <h3>论文与代码</h3>
+    <p>本文为新加坡国立大学工作（<a href="https://arxiv.org/abs/2501.08603" style="color:#f97316;">arXiv:2501.08603</a>）。<b>文中未提供公开代码仓库</b>。以下为按文内算法（Action 集 + UCT + Exploration-Decay + Progressive Widening）的可复现说明。</p>
+  </div>
+  <div class="code-block"><pre># 1) 准备评估框架（step-by-step / ACO / GLS / BO）
+pip install numpy scipy openai
+
+# 2) 实现 LLM 动作集（i1/m1/m2/e1/e2/s1）+ Thought-Alignment
+python mcts_ahd.py --task tsp --n 50 --budget 1000 \
+    --llm gpt-4o-mini --k 3 --lambda0 0.1 --alpha 0.5
+
+# 3) 评估启发式性能 g(h) 并回填 UCT（Selection/Expansion/Sim/Backup）
+python evaluate.py --heuristic best_h.py --test_set tsp_64.pkl</pre></div>
+  <div class="highlight-box">
+    <p>复现要点：λ0=0.1、α=0.5 为通用默认，无需任务特定调参；每次扩展生成 2k+2 子节点；Progressive Widening 是跳出局部最优的关键组件。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 10. SUMMARY ========== -->
+<div class="section" id="sec-10">
+  <h2 class="section-title"><span class="num">10</span> 总结与未来展望</h2>
+  <p class="section-desc">MCTS-AHD 首次把 MCTS 用于 LLM 自动启发式设计，用树结构保留并发展所有启发式（含低性能者），通过 tree-path reasoning、Thought-Alignment、Exploration-Decay 与 Progressive Widening 实现全面探索，在 TSP/KP/BPP 等任务上全面超越 EoH/ReEvo/Funsearch。</p>
+  <div class="qa-card">
+    <div class="qa-q">Q1：为什么 MCTS 比种群进化好？</div>
+    <div class="qa-a">种群直接丢弃低性能函数易陷局部最优；MCTS 用树保存所有启发式并渐进扩展，可继续开发被低估的劣势函数。</div>
+  </div>
+  <div class="qa-card">
+    <div class="qa-q">Q2：tree-path reasoning 是什么？</div>
+    <div class="qa-a">分析叶到根所有唯一启发式，识别优势设计生成增强函数，是依赖树结构的 MCTS 特有动作。</div>
+  </div>
+  <div class="qa-card">
+    <div class="qa-q">Q3：Exploration-Decay 如何工作？</div>
+    <div class="qa-a">λ=λ0·(T−t)/T，前期大 λ 鼓励探索、后期小 λ 保证收敛，λ0=0.1 通用无需调参。</div>
+  </div>
+  <div class="limit-box">
+    <h4>局限与未来</h4>
+    <p>依赖 LLM 调用成本与质量；树规模随预算增长；目前验证于组合优化任务。未来可探索更高效的扩展策略与跨任务迁移。</p>
+  </div>
+</div>
+
+<div class="footer">论文深度解读 · 生成自 MCTS-AHD: Monte Carlo Tree Search for Comprehensive Exploration in LLM-Based Automatic Heuristic Design · 阅读时间约 30 分钟</div>
+
+</div>
+</body>
+</html>

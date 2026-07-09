@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>深度解读 — LiTS: A Modular Framework for LLM Tree Search</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{
+  font-family:'Noto Sans SC',system-ui,-apple-system,sans-serif;
+  background:#0d1117;color:#c9d1d9;
+  line-height:1.8;font-size:16px;
+  min-height:100vh;
+}
+.container{
+  max-width:1400px;margin:0 auto;padding:0 24px;
+  background:#0d1117;position:relative;
+}
+.back-btn{
+  position:fixed;top:16px;left:16px;z-index:9999;
+  background:rgba(20,20,35,.75);color:#c9d1d9;
+  border:1px solid rgba(255,255,255,.15);border-radius:10px;
+  padding:8px 16px;font-size:14px;cursor:pointer;
+  backdrop-filter:blur(6px);transition:all .3s;
+  text-decoration:none;display:flex;align-items:center;gap:6px;
+}
+.back-btn:hover{background:rgba(30,30,55,.9);border-color:rgba(255,255,255,.3);}
+.hero{padding:80px 0 40px;text-align:center;}
+.hero-title{
+  font-size:2.2rem;font-weight:700;
+  background:linear-gradient(135deg,#0d9488,#14b8a6,#14b8a6);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  background-clip:text;margin-bottom:12px;line-height:1.3;
+}
+.hero-sub{font-size:1.1rem;color:#8b949e;margin-bottom:8px;}
+.venue{font-size:.95rem;color:#8b949e;margin-top:8px;}
+.venue a{color:#0d9488;text-decoration:none;}
+.venue a:hover{text-decoration:underline;}
+.tag-row{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:16px;}
+.tag{
+  display:inline-block;padding:4px 14px;border-radius:20px;font-size:.85rem;
+  border:1px solid rgba(13,148,136,.3);color:#0d9488;
+  background:rgba(13,148,136,.06);
+}
+.divider{border:none;border-top:1px solid rgba(255,255,255,.08);margin:48px 0;}
+.section{margin:40px 0;}
+.section-title{
+  font-size:1.75rem;font-weight:700;margin-bottom:20px;
+  color:#e6edf3;display:flex;align-items:center;gap:10px;
+}
+.section-title .num{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:36px;height:36px;border-radius:50%;
+  background:linear-gradient(135deg,#0d9488,#14b8a6);
+  color:#0d1117;font-size:1rem;font-weight:700;flex-shrink:0;
+}
+.section-desc{font-size:16px;line-height:1.9;color:#c9d1d9;margin-bottom:16px;}
+.toc{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:16px;padding:28px 36px;margin:30px 0;
+}
+.toc h3{font-size:1.2rem;color:#e6edf3;margin-bottom:14px;}
+.toc ol{list-style:none;counter-reset:toc;padding:0;}
+.toc li{counter-increment:toc;margin:8px 0;}
+.toc li::before{content:counter(toc) ".";color:#0d9488;font-weight:600;margin-right:8px;}
+.toc a{color:#8b949e;text-decoration:none;transition:color .2s;}
+.toc a:hover{color:#0d9488;}
+.module-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:24px;margin:18px 0;transition:all .3s;
+}
+.module-card:hover{border-color:rgba(13,148,136,.3);transform:translateY(-2px);}
+.module-card h3{font-size:1.15rem;font-weight:600;margin-bottom:10px;color:#0d9488;}
+.module-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.arch-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:22px;margin:14px 0;transition:all .3s;
+}
+.arch-card:hover{border-color:rgba(13,148,136,.3);}
+.arch-card h4{font-size:1.05rem;font-weight:600;color:#14b8a6;margin-bottom:8px;}
+.arch-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.step-flow{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:22px;margin:14px 0;
+}
+.step-flow h4{font-size:1.05rem;font-weight:600;color:#0d9488;margin-bottom:8px;}
+.step-flow p{font-size:15px;line-height:1.8;color:#8b949e;}
+.data-table{
+  width:100%;border-collapse:collapse;margin:18px 0;
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;overflow:hidden;font-size:14px;
+}
+.data-table th{
+  background:rgba(13,148,136,.1);color:#0d9488;
+  padding:12px 16px;text-align:left;font-weight:600;
+}
+.data-table td{
+  padding:10px 16px;border-top:1px solid rgba(255,255,255,.06);
+  color:#c9d1d9;
+}
+.data-table tr:hover td{background:rgba(13,148,136,.04);}
+.formula-box{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;padding:20px 24px;margin:16px 0;
+  font-size:18px;text-align:center;color:#e6edf3;
+  font-family:'JetBrains Mono',monospace;
+}
+.code-block{
+  background:rgba(20,20,35,.8);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;padding:18px 22px;margin:16px 0;
+  overflow-x:auto;
+}
+.code-block pre{
+  font-family:'JetBrains Mono',monospace;font-size:14px;
+  line-height:1.7;color:#c9d1d9;white-space:pre;
+}
+.ck{color:#0d9488;}.cs{color:#14b8a6;}.cf{color:#d2a8ff;}.cg{color:#8b949e;}.cv{color:#79c0ff;}
+.qa-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:24px;margin:16px 0;
+}
+.qa-q{font-size:1.05rem;font-weight:600;color:#0d9488;margin-bottom:12px;}
+.qa-a{font-size:15px;line-height:1.9;color:#8b949e;}
+.highlight-box{
+  background:rgba(13,148,136,.06);border:1px solid rgba(13,148,136,.2);
+  border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;
+}
+.warn-box{
+  background:rgba(240,136,62,.08);border:1px solid rgba(240,136,62,.25);
+  border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;
+}
+.info-box{
+  background:rgba(13,148,136,.06);border:1px solid rgba(13,148,136,.2);
+  border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;
+}
+.prompt-box{
+  background:rgba(20,20,35,.8);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;padding:18px 22px;margin:16px 0;
+  font-family:'JetBrains Mono',monospace;font-size:13px;
+  line-height:1.7;color:#c9d1d9;white-space:pre-wrap;
+}
+.prompt-label{
+  display:inline-block;padding:2px 10px;border-radius:6px;
+  font-size:.85rem;font-weight:600;margin-bottom:8px;
+  background:rgba(13,148,136,.15);color:#0d9488;
+}
+.fc{font-size:14px;color:#8b949e;text-align:center;margin:10px 0;line-height:1.6;}
+.comp-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:22px;margin:14px 0;transition:all .3s;
+}
+.comp-card:hover{border-color:rgba(13,148,136,.3);}
+.comp-card h4{font-size:1.05rem;font-weight:600;color:#14b8a6;margin-bottom:8px;}
+.comp-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.insight-box{
+  background:rgba(13,148,136,.06);border:1px solid rgba(13,148,136,.2);
+  border-radius:12px;padding:18px 22px;margin:16px 0;
+}
+.insight-box h4{color:#0d9488;font-size:1.05rem;margin-bottom:8px;}
+.insight-box p{font-size:15px;line-height:1.8;color:#c9d1d9;}
+.limit-box{
+  background:rgba(240,136,62,.08);border:1px solid rgba(240,136,62,.25);
+  border-radius:12px;padding:18px 22px;margin:16px 0;
+}
+.limit-box h4{color:#14b8a6;font-size:1.05rem;margin-bottom:8px;}
+.limit-box p{font-size:15px;line-height:1.8;color:#c9d1d9;}
+.kv-row{
+  display:flex;border-bottom:1px solid rgba(255,255,255,.06);padding:8px 0;
+}
+.kv-row:last-child{border-bottom:none;}
+.kv-key{width:180px;flex-shrink:0;color:#0d9488;font-weight:500;font-size:14px;}
+.kv-val{color:#c9d1d9;font-size:14px;line-height:1.7;}
+.footer{text-align:center;color:#555;font-size:14px;padding:48px 0 32px;}
+/* SVG architecture */
+.svg-container{
+  background:rgba(20,20,35,.4);border:1px solid rgba(255,255,255,.06);
+  border-radius:14px;padding:20px;margin:24px 0;overflow-x:auto;
+  text-align:center;
+}
+.svg-container svg{max-width:100%;height:auto;}
+/* Phase badge */
+.phase-badge{
+  display:inline-block;padding:3px 12px;border-radius:8px;
+  font-size:.85rem;font-weight:600;margin-right:8px;
+}
+.phase-1{background:rgba(99,102,241,.15);color:#818cf8;}
+.phase-2{background:rgba(13,148,136,.15);color:#14b8a6;}
+.phase-3{background:rgba(34,197,94,.15);color:#4ade80;}
+/* Grid layout */
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
+.grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;}
+@media(max-width:900px){
+  .grid-2,.grid-3{grid-template-columns:1fr;}
+  .hero-title{font-size:1.6rem;}
+  .kv-row{flex-direction:column;}
+  .kv-key{width:auto;}
+}
+/* Animated arrow */
+@keyframes flowPulse{
+  0%,100%{opacity:.6;}
+  50%{opacity:1;}
+}
+.flow-arrow{animation:flowPulse 2s ease-in-out infinite;}
+
+</style>
+</head>
+<body>
+<div class="container">
+
+<a class="back-btn" href="index.html">&#8592; 返回目录</a>
+
+<a href="lits_full_translation.html" style="display:block;max-width:860px;margin:18px auto 0;padding:13px 22px;background:linear-gradient(90deg,rgba(31,111,235,.16),rgba(137,87,227,.16));border:1px solid rgba(137,87,227,.5);border-radius:12px;color:#e6edf3;text-decoration:none;font-weight:500;font-size:15px;text-align:center;box-shadow:0 2px 14px rgba(0,0,0,.35);">阅读本文逐段完整中文翻译（Full Translation）</a>
+
+<!-- ========== HERO ========== -->
+<div class="hero">
+  <h1 class="hero-title">LiTS: A Modular Framework for LLM Tree Search</h1>
+  <p class="hero-sub">让 LLM 树搜索像搭积木一样简单——三组件分解实现算法与领域的正交复用</p>
+  <div class="venue">arXiv 2025 &nbsp;|&nbsp; <a href='https://arxiv.org/abs/2502.16407'>arXiv:2502.16407</a></div>
+  <div class="tag-row">
+    <span class="tag">LLM Tree Search</span><span class="tag">Modular Framework</span><span class="tag">MCTS</span><span class="tag">BFS</span><span class="tag">RMIT</span>
+  </div>
+</div>
+
+<!-- ========== TOC ========== -->
+<div class="toc">
+  <h3>目录</h3>
+  <ol>
+    <li><a href="#sec-1">研究动机</a></li>
+    <li><a href="#sec-2">框架概览</a></li>
+    <li><a href="#sec-3">Policy 组件</a></li>
+    <li><a href="#sec-4">Transition 组件</a></li>
+    <li><a href="#sec-5">RewardModel 组件</a></li>
+    <li><a href="#sec-6">三组件的可复用框架整合</a></li>
+    <li><a href="#sec-7">实验评估</a></li>
+    <li><a href="#sec-8">敏感性分析</a></li>
+    <li><a href="#sec-9">代码使用与实战（含 GitHub 源码、安装命令、使用示例）</a></li>
+    <li><a href="#sec-10">总结与未来展望</a></li>
+  </ol>
+</div>
+
+<hr class="divider">
+
+<hr class="divider">
+
+<!-- ========== 1. MOTIVATION ========== -->
+<div class="section" id="sec-1">
+  <h2 class="section-title"><span class="num">1</span> 研究动机：树搜索实现的紧耦合之痛</h2>
+  <p class="section-desc">现有树搜索实现（ToT / RAP / ReST-MCTS）多为任务特化，跨域 / 跨方法需大量重写。核心缺陷是算法与领域逻辑紧耦合，组件不可复用——用户想换方法或换任务都得重写整体。</p>
+  <div class="grid-2">
+    <div class="module-card">
+      <h3>算法与领域耦合</h3>
+      <p>任务逻辑被塞进整体配置，每换一种搜索算法或领域都要重新实现，复用几乎为零。</p>
+    </div>
+    <div class="module-card">
+      <h3>本文主张</h3>
+      <p>LiTS 把 LLM 树搜索分解为 Policy / Transition / RewardModel 三个可复用组件，通过装饰器注册机制实现"算法与领域的正交复用"，让用户"改所需、复用其余"。</p>
+    </div>
+  </div>
+  <div class="insight-box">
+    <h4>核心创新</h4>
+    <p>三组件分解 + 装饰器注册表，使同一组件可跨任务（环境规划 / 工具使用 / 语言推理）与跨算法（MCTS / BFS / ReAct）复用，并发现无限动作空间中 LLM 策略多样性是瓶颈。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 2. OVERVIEW ========== -->
+<div class="section" id="sec-2">
+  <h2 class="section-title"><span class="num">2</span> 框架概览：三层模块化结构</h2>
+  <p class="section-desc">LiTS 分三层：lits.structures（Action → Step → State → Node 通用类型）、lits.components（Policy / Transition / RewardModel）、lits.agents（MCTS / BFS / ReAct 等）；lits.prompts 集中注册、lits.tools 兼容 LangChain。</p>
+  <div class="svg-container">
+    <svg viewBox="0 0 920 250" xmlns="http://www.w3.org/2000/svg" font-family="Noto Sans SC, sans-serif">
+      <defs><marker id="ltT" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#14b8a6"/></marker></defs>
+      <rect x="20" y="95" width="150" height="60" rx="12" fill="rgba(13,148,136,.12)" stroke="#14b8a6" stroke-width="1.5"/>
+      <text x="95" y="130" text-anchor="middle" fill="#c9d1d9" font-size="14" font-weight="600">任务输入</text>
+      <rect x="200" y="55" width="200" height="130" rx="12" fill="rgba(13,148,136,.18)" stroke="#14b8a6" stroke-width="2"/>
+      <text x="300" y="88" text-anchor="middle" fill="#e6edf3" font-size="13" font-weight="700">Policy</text>
+      <text x="300" y="112" text-anchor="middle" fill="#8b949e" font-size="10">从状态生成候选动作</text>
+      <text x="300" y="132" text-anchor="middle" fill="#8b949e" font-size="10">ConcatPolicy</text>
+      <text x="300" y="150" text-anchor="middle" fill="#8b949e" font-size="10">ToolUsePolicy</text>
+      <text x="300" y="168" text-anchor="middle" fill="#8b949e" font-size="10">RAPPolicy</text>
+      <rect x="450" y="55" width="200" height="130" rx="12" fill="rgba(13,148,136,.18)" stroke="#14b8a6" stroke-width="2"/>
+      <text x="550" y="88" text-anchor="middle" fill="#e6edf3" font-size="13" font-weight="700">Transition</text>
+      <text x="550" y="112" text-anchor="middle" fill="#8b949e" font-size="10">执行动作产新状态</text>
+      <text x="550" y="132" text-anchor="middle" fill="#8b949e" font-size="10">BlocksWorld</text>
+      <text x="550" y="150" text-anchor="middle" fill="#8b949e" font-size="10">Crosswords</text>
+      <text x="550" y="168" text-anchor="middle" fill="#8b949e" font-size="10">可调用工具</text>
+      <rect x="700" y="55" width="200" height="130" rx="12" fill="rgba(13,148,136,.12)" stroke="#14b8a6" stroke-width="1.5"/>
+      <text x="800" y="88" text-anchor="middle" fill="#e6edf3" font-size="13" font-weight="700">RewardModel</text>
+      <text x="800" y="112" text-anchor="middle" fill="#8b949e" font-size="10">评估动作质量</text>
+      <text x="800" y="132" text-anchor="middle" fill="#8b949e" font-size="10">GenerativePRM</text>
+      <text x="800" y="150" text-anchor="middle" fill="#8b949e" font-size="10">EnvGroundedPRM</text>
+      <text x="800" y="168" text-anchor="middle" fill="#8b949e" font-size="10">链方法无需</text>
+      <line x1="170" y1="120" x2="195" y2="120" stroke="#14b8a6" stroke-width="2" marker-end="url(#ltT)"/>
+      <line x1="400" y1="120" x2="445" y2="120" stroke="#14b8a6" stroke-width="2" marker-end="url(#ltT)"/>
+      <line x1="650" y1="120" x2="695" y2="120" stroke="#14b8a6" stroke-width="2" marker-end="url(#ltT)"/>
+    </svg>
+  </div>
+  <div class="step-flow">
+    <h4>端到端流程</h4>
+    <p>CLI 按注册名解析组件 → Agent 编排组件执行搜索 / 链推理 → InferenceLogger 记录。BaseTreeSearch 处理外围逻辑，子类只写 search()，组件与算法正交，可跨任务 / 算法复用。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 3. POLICY ========== -->
+<div class="section" id="sec-3">
+  <h2 class="section-title"><span class="num">3</span> Policy 组件</h2>
+  <p class="section-desc">Policy 从状态生成候选动作。框架内置多种实现：ConcatPolicy（拼接式）、ToolUsePolicy（工具使用式）、RAPPolicy（RAP 式），用户可注册自己的策略。</p>
+  <div class="module-card">
+    <h3>注册与复用</h3>
+    <p>通过 @register_policy 装饰器注册，CLI 用 --policy 指定。同一 Policy 可复用于不同搜索算法（MCTS / BFS），实现"算法 × 领域"的正交组合。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 4. TRANSITION ========== -->
+<div class="section" id="sec-4">
+  <h2 class="section-title"><span class="num">4</span> Transition 组件</h2>
+  <p class="section-desc">Transition 执行动作产出新状态，可调用工具。内置 BlocksWorldTransition、CrosswordsTransition 等，失败可确定性回退保证分支多样。</p>
+  <div class="grid-2">
+    <div class="module-card">
+      <h3>状态转移</h3>
+      <p>Transition 把 (state, action) 映射为新 state，并负责工具调用与副作用。在有限动作空间（如 BlocksWorld）靠确定性回退保证分支多样性。</p>
+    </div>
+    <div class="module-card">
+      <h3>注册</h3>
+      <p>@register_transition 装饰器 + 数据集加载器（同 key），CLI 切 --dataset 即可换域，无需改动算法代码。</p>
+    </div>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 5. REWARD ========== -->
+<div class="section" id="sec-5">
+  <h2 class="section-title"><span class="num">5</span> RewardModel 组件</h2>
+  <div class="module-card">
+    <h3>价值引导</h3>
+    <p>RewardModel 评估动作质量引导树搜索，内置 GenerativePRM（生成式过程奖励）与 EnvGroundedPRM（环境接地奖励）。链方法（如 ReAct）无需 RewardModel。</p>
+  </div>
+  <div class="arch-card">
+    <h4>瓶颈发现</h4>
+    <p>在无限动作空间（如 Crosswords）下，LLM 策略多样性而非奖励质量是瓶颈——升温采样在 token 级而非动作级探索，导致模式崩溃（重复率 81.1%）；在有限动作空间（BlocksWorld）靠确定性回退保证分支多样。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 6. INTEGRATION ========== -->
+<div class="section" id="sec-6">
+  <h2 class="section-title"><span class="num">6</span> 三组件的可复用框架整合</h2>
+  <div class="arch-card">
+    <h4>装饰器注册表</h4>
+    <p>@register_policy / @transition / @reward / @dataset / @search / @resource，CLI 用 --policy / --transition / --reward / --search_framework 组合。组件与算法正交，可跨任务 / 算法复用；InferenceLogger 提供可观测的检查点与日志。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 7. EXPERIMENT ========== -->
+<div class="section" id="sec-7">
+  <h2 class="section-title"><span class="num">7</span> 实验评估：三类任务</h2>
+  <div class="module-card">
+    <h3>设置与基线</h3>
+    <p>环境规划（BlocksWorld / Crosswords，Claude 3.5 Sonnet，30 例）、工具使用（MapEval-SQL，10 例）、语言推理（MATH500，Llama3-8B，100 例）。对比 ToT、RAP、ReAct、CoT 等。</p>
+  </div>
+  <div class="highlight-box">
+    <p><b>主结果</b>：BlocksWorld MCTS 66.7% vs Chain 26.7%；MATH500 ReST(MCTS) 37% / ToT(BFS) 39% vs CoT 17% / RAP 18%；Crosswords MCTS 22.67% 但模式崩溃重复率 81.1%；MapEval ReAct 40%、MCTS 子集 0%（奖励模型自偏好偏差）。</p>
+  </div>
+  <table class="data-table">
+    <tr><th>任务</th><th>LiTS 最佳</th><th>对比 CoT</th></tr>
+    <tr><td>BlocksWorld</td><td>66.7%（MCTS）</td><td>Chain 26.7%</td></tr>
+    <tr><td>MATH500</td><td>39%（ToT-BFS）</td><td>CoT 17%</td></tr>
+    <tr><td>Crosswords</td><td>22.67%（MCTS）</td><td>模式崩溃 81.1%</td></tr>
+    <tr><td>MapEval-SQL</td><td>40%（ReAct）</td><td>—</td></tr>
+  </table>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 8. SENSITIVITY ========== -->
+<div class="section" id="sec-8">
+  <h2 class="section-title"><span class="num">8</span> 敏感性分析：模式崩溃发现</h2>
+  <div class="module-card">
+    <h3>无限 vs 有限动作空间</h3>
+    <p>无限文本动作空间下 LLM 无校准随机策略头，升温 0.8→1.2 仍 81.1% 重复——说明瓶颈是策略多样性而非奖励质量；有限动作空间（BlocksWorld）靠确定性回退保证分支多样；工具使用任务奖励模型质量是瓶颈。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 9. INSIGHT ========== -->
+<div class="section" id="sec-9">
+  <h2 class="section-title"><span class="num">9</span> 代码使用与实战（含 GitHub 源码、安装命令、使用示例）</h2>
+  <div class="module-card">
+    <h3>官方仓库</h3>
+    <p>代码仓库：<a href="https://github.com/xinzhel/lits-llm" style="color:#14b8a6;">https://github.com/xinzhel/lits-llm</a>（RMIT University，Apache 2.0）。含安装说明与可运行示例；每运行写单一 save_dir/config.json + 检查点，可用 lits-eval --save_dir 复现。</p>
+  </div>
+  <div class="code-block"><pre># 1) 安装
+pip install lits-llm
+
+# 2) 组合组件运行 MCTS（Policy + Transition + Reward + 数据集）
+lits run --search_framework mcts \
+    --policy rap_policy --transition blocksworld \
+    --reward generative_prm --dataset blocksworld
+
+# 3) 复现实验结果
+lits-eval --save_dir ./runs/blocksworld_mcts
+
+# 4) 加新域：注册 Transition 子类 + 数据集加载器（同 key），切 --dataset
+python -m lits.register --transition my_transition</pre></div>
+  <div class="highlight-box">
+    <p>复现要点：组件通过装饰器注册，CLI 组合即可；BaseTreeSearch 处理外围逻辑，子类只写 search()；InferenceLogger 提供检查点与日志，便于对比不同算法 / 领域组合。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 10. SUMMARY ========== -->
+<div class="section" id="sec-10">
+  <h2 class="section-title"><span class="num">10</span> 总结与未来展望</h2>
+  <p class="section-desc">LiTS 把 LLM 树搜索分解为 Policy / Transition / RewardModel 三组件，用装饰器注册表实现算法与领域的正交复用，在环境规划、工具使用、语言推理三类任务上验证有效，并发现无限动作空间中 LLM 策略多样性是瓶颈。</p>
+  <div class="qa-card">
+    <div class="qa-q">Q1：与 LLM Reasoners 区别？</div>
+    <div class="qa-a">LR 把任务逻辑塞进整体配置需每法重写；LiTS 拆为可复用组件，换算法 / 换域只需改对应组件。</div>
+  </div>
+  <div class="qa-card">
+    <div class="qa-q">Q2：如何加新域？</div>
+    <div class="qa-a">环境类只需注册 Transition 子类 + 数据集加载器（同 key），CLI 切 --dataset 即可，无需改算法。</div>
+  </div>
+  <div class="qa-card">
+    <div class="qa-q">Q3：模式崩溃含义？</div>
+    <div class="qa-a">无限文本动作空间下 LLM 无校准随机策略头，升温采样在 token 级而非动作级探索，导致重复率高。</div>
+  </div>
+  <div class="limit-box">
+    <h4>局限与未来</h4>
+    <p>仅演示级规模；模式崩溃结论基于单环境；工具需预先注册（计划接 MCP）；内置仅 MCTS / BFS；吞吐需并发批处理。</p>
+  </div>
+</div>
+
+<div class="footer">论文深度解读 · 生成自 LiTS: A Modular Framework for LLM Tree Search · 阅读时间约 30 分钟</div>
+
+</div>
+</body>
+</html>

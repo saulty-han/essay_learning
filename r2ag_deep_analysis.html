@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>深度解读 — R2AG: Incorporating Retrieval Information into RAG</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{
+  font-family:'Noto Sans SC',system-ui,-apple-system,sans-serif;
+  background:#0d1117;color:#c9d1d9;
+  line-height:1.8;font-size:16px;
+  min-height:100vh;
+}
+.container{
+  max-width:1400px;margin:0 auto;padding:0 24px;
+  background:#0d1117;position:relative;
+}
+/* ---------- back btn ---------- */
+.back-btn{
+  position:fixed;top:16px;left:16px;z-index:9999;
+  background:rgba(20,20,35,.75);color:#c9d1d9;
+  border:1px solid rgba(255,255,255,.15);border-radius:10px;
+  padding:8px 16px;font-size:14px;cursor:pointer;
+  backdrop-filter:blur(6px);transition:all .3s;
+  text-decoration:none;display:flex;align-items:center;gap:6px;
+}
+.back-btn:hover{background:rgba(30,30,55,.9);border-color:rgba(255,255,255,.3);}
+/* ---------- hero ---------- */
+.hero{padding:80px 0 40px;text-align:center;}
+.hero-title{
+  font-size:2.4rem;font-weight:700;
+  background:linear-gradient(135deg,#0cebeb,#20e3b2,#29ffc6);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  background-clip:text;margin-bottom:12px;line-height:1.3;
+}
+.hero-sub{font-size:1.1rem;color:#8b949e;margin-bottom:8px;}
+.venue{font-size:.95rem;color:#8b949e;margin-top:8px;}
+.venue a{color:#0cebeb;text-decoration:none;}
+.venue a:hover{text-decoration:underline;}
+/* ---------- tags ---------- */
+.tag-row{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:16px;}
+.tag{
+  display:inline-block;padding:4px 14px;border-radius:20px;font-size:.85rem;
+  border:1px solid rgba(12,235,235,.3);color:#0cebeb;
+  background:rgba(12,235,235,.06);
+}
+/* ---------- divider ---------- */
+.divider{
+  border:none;border-top:1px solid rgba(255,255,255,.08);
+  margin:48px 0;
+}
+/* ---------- section ---------- */
+.section{margin:40px 0;}
+.section-title{
+  font-size:1.75rem;font-weight:700;margin-bottom:20px;
+  color:#e6edf3;display:flex;align-items:center;gap:10px;
+}
+.section-title .num{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:36px;height:36px;border-radius:50%;
+  background:linear-gradient(135deg,#0cebeb,#20e3b2);
+  color:#0d1117;font-size:1rem;font-weight:700;flex-shrink:0;
+}
+.section-desc{font-size:16px;line-height:1.9;color:#c9d1d9;margin-bottom:16px;}
+/* ---------- TOC ---------- */
+.toc{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:16px;padding:28px 36px;margin:30px 0;
+}
+.toc h3{font-size:1.2rem;color:#e6edf3;margin-bottom:14px;}
+.toc ol{list-style:none;counter-reset:toc;padding:0;}
+.toc li{counter-increment:toc;margin:8px 0;}
+.toc li::before{content:counter(toc) ".";color:#0cebeb;font-weight:600;margin-right:8px;}
+.toc a{color:#8b949e;text-decoration:none;transition:color .2s;}
+.toc a:hover{color:#0cebeb;}
+/* ---------- module card ---------- */
+.module-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:24px;margin:18px 0;transition:all .3s;
+}
+.module-card:hover{border-color:rgba(12,235,235,.3);transform:translateY(-2px);}
+.module-card h3{
+  font-size:1.15rem;font-weight:600;margin-bottom:10px;
+  color:#0cebeb;
+}
+.module-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+/* ---------- arch card ---------- */
+.arch-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:22px;margin:14px 0;transition:all .3s;
+}
+.arch-card:hover{border-color:rgba(12,235,235,.3);}
+.arch-card h4{font-size:1.05rem;font-weight:600;color:#20e3b2;margin-bottom:8px;}
+.arch-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+/* ---------- step flow ---------- */
+.step-flow{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:22px;margin:14px 0;
+}
+.step-flow h4{font-size:1.05rem;font-weight:600;color:#0cebeb;margin-bottom:8px;}
+.step-flow p{font-size:15px;line-height:1.8;color:#8b949e;}
+/* ---------- data table ---------- */
+.data-table{
+  width:100%;border-collapse:collapse;margin:18px 0;
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;overflow:hidden;font-size:14px;
+}
+.data-table th{
+  background:rgba(12,235,235,.1);color:#0cebeb;
+  padding:12px 16px;text-align:left;font-weight:600;
+}
+.data-table td{
+  padding:10px 16px;border-top:1px solid rgba(255,255,255,.06);
+  color:#c9d1d9;
+}
+.data-table tr:hover td{background:rgba(12,235,235,.04);}
+/* ---------- formula box ---------- */
+.formula-box{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;padding:20px 24px;margin:16px 0;
+  font-size:18px;text-align:center;color:#e6edf3;
+  font-family:'JetBrains Mono',monospace;
+}
+/* ---------- code block ---------- */
+.code-block{
+  background:rgba(20,20,35,.8);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;padding:18px 22px;margin:16px 0;
+  overflow-x:auto;
+}
+.code-block pre{
+  font-family:'JetBrains Mono',monospace;font-size:14px;
+  line-height:1.7;color:#c9d1d9;white-space:pre;
+}
+.ck{color:#0cebeb;}.cs{color:#f0883e;}.cf{color:#d2a8ff;}.cg{color:#8b949e;}.cv{color:#79c0ff;}
+/* ---------- Q&A ---------- */
+.qa-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:24px;margin:16px 0;
+}
+.qa-q{font-size:1.05rem;font-weight:600;color:#0cebeb;margin-bottom:12px;}
+.qa-a{font-size:15px;line-height:1.9;color:#8b949e;}
+/* ---------- highlight / warn / info boxes ---------- */
+.highlight-box{
+  background:rgba(12,235,235,.06);border:1px solid rgba(12,235,235,.2);
+  border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;
+}
+.warn-box{
+  background:rgba(240,136,62,.08);border:1px solid rgba(240,136,62,.25);
+  border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;
+}
+.info-box{
+  background:rgba(12,235,235,.06);border:1px solid rgba(12,235,235,.2);
+  border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;
+}
+/* ---------- prompt box ---------- */
+.prompt-box{
+  background:rgba(20,20,35,.8);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;padding:18px 22px;margin:16px 0;
+  font-family:'JetBrains Mono',monospace;font-size:14px;
+  line-height:1.7;color:#c9d1d9;white-space:pre-wrap;
+}
+.prompt-label{
+  display:inline-block;padding:2px 10px;border-radius:6px;
+  font-size:.85rem;font-weight:600;margin-bottom:8px;
+  background:rgba(12,235,235,.15);color:#0cebeb;
+}
+/* ---------- paper figure ---------- */
+.paper-figure{
+  background:rgba(20,20,35,.4);border:1px solid rgba(255,255,255,.06);
+  border-radius:14px;padding:16px;margin:18px 0;text-align:center;
+}
+.paper-figure img{max-width:100%;border-radius:10px;}
+/* ---------- fig caption ---------- */
+.fc{
+  font-size:14px;color:#8b949e;text-align:center;
+  margin:10px 0;line-height:1.6;
+}
+/* ---------- comparison card ---------- */
+.comp-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:22px;margin:14px 0;transition:all .3s;
+}
+.comp-card:hover{border-color:rgba(12,235,235,.3);}
+.comp-card h4{font-size:1.05rem;font-weight:600;color:#20e3b2;margin-bottom:8px;}
+.comp-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+/* ---------- insight / limit box ---------- */
+.insight-box{
+  background:rgba(12,235,235,.06);border:1px solid rgba(12,235,235,.2);
+  border-radius:12px;padding:18px 22px;margin:16px 0;
+}
+.insight-box h4{color:#0cebeb;font-size:1.05rem;margin-bottom:8px;}
+.insight-box p{font-size:15px;line-height:1.8;color:#c9d1d9;}
+.limit-box{
+  background:rgba(240,136,62,.08);border:1px solid rgba(240,136,62,.25);
+  border-radius:12px;padding:18px 22px;margin:16px 0;
+}
+.limit-box h4{color:#f0883e;font-size:1.05rem;margin-bottom:8px;}
+.limit-box p{font-size:15px;line-height:1.8;color:#c9d1d9;}
+/* ---------- kv row ---------- */
+.kv-row{
+  display:flex;gap:12px;padding:8px 0;
+  border-bottom:1px solid rgba(255,255,255,.05);
+}
+.kv-key{color:#8b949e;min-width:120px;font-weight:500;}
+.kv-val{color:#e6edf3;}
+/* ---------- footer ---------- */
+.footer{
+  text-align:center;padding:40px 0;color:#8b949e;font-size:.9rem;
+  border-top:1px solid rgba(255,255,255,.06);margin-top:60px;
+}
+/* ---------- SVG wrap ---------- */
+.svg-wrap{
+  background:rgba(20,20,35,.4);border:1px solid rgba(255,255,255,.06);
+  border-radius:14px;padding:20px;margin:20px 0;overflow-x:auto;
+}
+.svg-wrap svg{width:100%;height:auto;display:block;}
+/* ---------- responsive ---------- */
+@media(max-width:768px){
+  .hero-title{font-size:1.6rem;}
+  .section-title{font-size:1.3rem;}
+  .container{padding:0 14px;}
+  .toc{padding:18px 22px;}
+  .data-table{font-size:13px;}
+  .data-table th,.data-table td{padding:8px 10px;}
+}
+</style>
+</head>
+<body>
+<div class="container">
+
+<a href="index.html" class="back-btn">← 返回主页</a>
+
+<a href="r2ag_full_translation.html" style="display:block;max-width:860px;margin:18px auto 0;padding:13px 22px;background:linear-gradient(90deg,rgba(31,111,235,.16),rgba(137,87,227,.16));border:1px solid rgba(137,87,227,.5);border-radius:12px;color:#e6edf3;text-decoration:none;font-weight:500;font-size:15px;text-align:center;box-shadow:0 2px 14px rgba(0,0,0,.35);">阅读本文逐段完整中文翻译（Full Translation）</a>
+
+<!-- ====== HERO ====== -->
+<section class="hero">
+  <h1 class="hero-title">R2AG: Incorporating Retrieval Information into RAG</h1>
+  <p class="hero-sub">把检索器的「检索信息」注入 LLM 生成过程——用可插拔的 R2-Former 弥合检索器与 LLM 之间的语义鸿沟</p>
+  <p class="venue">
+    <span>📄 EMNLP 2024</span> &nbsp;|&nbsp;
+    <span>华南师范大学 &amp; 香港科技大学（广州）</span> &nbsp;|&nbsp;
+    <a href="https://github.com/yefd/RRAG.git" target="_blank">GitHub: yefd/RRAG</a>
+  </p>
+  <div class="tag-row">
+    <span class="tag">RAG</span>
+    <span class="tag">Semantic Gap</span>
+    <span class="tag">R2-Former</span>
+    <span class="tag">Retrieval-Aware Prompting</span>
+    <span class="tag">Low-Resource</span>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- ====== TOC ====== -->
+<div class="toc">
+  <h3>目录</h3>
+  <ol>
+    <li><a href="#sec-1">研究动机：检索器与 LLM 之间的语义鸿沟</a></li>
+    <li><a href="#sec-2">整体架构总览</a></li>
+    <li><a href="#sec-3">核心组件一：检索特征提取（r / γ / ζ）</a></li>
+    <li><a href="#sec-4">核心组件二：R2-Former 信息瓶颈</a></li>
+    <li><a href="#sec-5">核心组件三：检索感知提示策略</a></li>
+    <li><a href="#sec-6">集成机制：QDM + LM 联合训练</a></li>
+    <li><a href="#sec-7">实验评估：五大基准上的表现</a></li>
+    <li><a href="#sec-8">敏感性分析：消融、检索器与注意力锚定</a></li>
+    <li><a href="#sec-9">代码使用与实战</a></li>
+    <li><a href="#sec-10">总结与未来展望</a></li>
+  </ol>
+</div>
+
+<hr class="divider">
+
+<!-- ====== 1. 研究动机 ====== -->
+<section class="section" id="sec-1">
+  <h2 class="section-title"><span class="num">1</span> 研究动机：检索器与 LLM 之间的语义鸿沟</h2>
+  <p class="section-desc">
+    标准 RAG 的流程是：检索器（通常是 <strong>encoder</strong> 架构）根据 query 找出 top-k 文档，然后把这些文档用简单文本拼接的方式「喂」给 LLM（通常是 <strong>decoder</strong> 架构）生成答案。问题在于，检索器和 LLM 的训练目标、网络架构截然不同，二者之间存在着显著的<strong>语义鸿沟（semantic gap）</strong>。
+  </p>
+
+  <div class="module-card">
+    <h3>现有 RAG 的三大痛点</h3>
+    <p>
+      <strong>① 外部被动接受：</strong>检索结果单向、按顺序地传给 LLM，LLM 并不真正理解「检索器为什么提供这些文档」。低质量/无关文档（Barnett et al., 2024）不可避免地混在结果中，LLM 只能被动接收噪声。<br>
+      <strong>② 内部负担过重：</strong>LLM 必须自行处理所有文档、判断哪些重要，这会拖累其生成准确答案的能力；在过长文档上还会遭遇「lost-in-the-middle」（Liu et al., 2023）问题。<br>
+      <strong>③ 现有增强方法治标不治本：</strong>无论是预处理（CRAG 过滤、BGM 重排）还是压缩（RECOMP、LongLLMLingua），都仍把「检索」和「生成」当作两个独立过程，只是把处理后的文档塞进 LLM 输入，<strong>没有真正打通二者之间的语义连接</strong>——即便检索器完美，也可能误导 LLM。
+    </p>
+  </div>
+
+  <div class="insight-box">
+    <h4>核心直觉</h4>
+    <p>检索器在编码时已经产生了高质量的<strong>语义表示（semantic representations）</strong>，能够刻画文档之间微妙的差异（Zhao et al., 2022）。如果能把这些表示当作「额外知识」显式地利用起来，就能让 LLM 对检索文档建立更深层理解，从而生成更准确的答案。R2AG 因此诞生——把 <strong>Retrieval 信息</strong>融入 <strong>Retrieval Augmented Generation</strong>。</p>
+  </div>
+
+  <div class="highlight-box">
+    <strong>关键卖点：</strong>R2AG 是一个<strong>低成本、非破坏性（non-destructive）</strong>的增强框架——它不改变检索文档的内容与顺序，只额外注入检索信息；并且检索器和 LLM <strong>都可以保持冻结（frozen）</strong>，因此特别适合算力受限的「low-source」场景。
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- ====== 2. 整体架构总览 ====== -->
+<section class="section" id="sec-2">
+  <h2 class="section-title"><span class="num">2</span> 整体架构总览</h2>
+  <p class="section-desc">
+    R2AG 在检索器和 LLM 之间插入了一个<strong>轻量、可插拔</strong>的模块 R2-Former，并把检索器的语义表示转化为统一的「检索特征」，再通过「检索感知提示（retrieval-aware prompting）」策略无损地注入 LLM 的输入嵌入空间。
+  </p>
+
+  <div class="svg-wrap">
+    <svg viewBox="0 0 1200 360" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="g1" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#0cebeb"/><stop offset="100%" stop-color="#20e3b2"/>
+        </linearGradient>
+        <linearGradient id="g2" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#20e3b2"/><stop offset="100%" stop-color="#29ffc6"/>
+        </linearGradient>
+        <filter id="sh"><feDropShadow dx="0" dy="3" stdDeviation="5" flood-color="#000" flood-opacity=".35"/></filter>
+        <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 1 L 9 5 L 0 9 z" fill="#0cebeb"/>
+        </marker>
+      </defs>
+
+      <!-- Retriever -->
+      <rect x="20" y="90" width="220" height="180" rx="16" fill="#0d1520" stroke="#0cebeb" stroke-width="1.5" filter="url(#sh)"/>
+      <rect x="20" y="90" width="220" height="44" rx="16" fill="url(#g1)"/>
+      <text x="130" y="118" text-anchor="middle" fill="#0d1117" font-size="15" font-weight="700">Retriever f_R</text>
+      <text x="130" y="160" text-anchor="middle" fill="#8b949e" font-size="12">查询 q + 文档 D</text>
+      <text x="130" y="184" text-anchor="middle" fill="#c9d1d9" font-size="12">编码为语义表示</text>
+      <text x="130" y="206" text-anchor="middle" fill="#c9d1d9" font-size="12">x_q = f_R(q)</text>
+      <text x="130" y="228" text-anchor="middle" fill="#c9d1d9" font-size="12">x_d = f_R(d)</text>
+      <text x="130" y="252" text-anchor="middle" fill="#8b949e" font-size="11">encoder 架构（可冻结）</text>
+
+      <!-- arrow -->
+      <line x1="240" y1="180" x2="290" y2="180" stroke="#0cebeb" stroke-width="2" marker-end="url(#arr)"/>
+
+      <!-- Feature Extraction -->
+      <rect x="290" y="90" width="230" height="180" rx="16" fill="#0d1520" stroke="#20e3b2" stroke-width="1.5" filter="url(#sh)"/>
+      <rect x="290" y="90" width="230" height="44" rx="16" fill="url(#g2)"/>
+      <text x="405" y="118" text-anchor="middle" fill="#0d1117" font-size="14" font-weight="700">检索特征提取</text>
+      <text x="405" y="158" text-anchor="middle" fill="#c9d1d9" font-size="12">r_i  相关性 relevance</text>
+      <text x="405" y="186" text-anchor="middle" fill="#c9d1d9" font-size="12">γ_i  前驱相似度 precedent</text>
+      <text x="405" y="214" text-anchor="middle" fill="#c9d1d9" font-size="12">ζ_i  邻域相似度 neighbor</text>
+      <text x="405" y="244" text-anchor="middle" fill="#8b949e" font-size="11">input_i = {r_i, γ_i, ζ_i}</text>
+
+      <line x1="520" y1="180" x2="570" y2="180" stroke="#0cebeb" stroke-width="2" marker-end="url(#arr)"/>
+
+      <!-- R2-Former -->
+      <rect x="570" y="70" width="240" height="220" rx="16" fill="#0d1520" stroke="#29ffc6" stroke-width="1.5" filter="url(#sh)"/>
+      <rect x="570" y="70" width="240" height="44" rx="16" fill="url(#g1)"/>
+      <text x="690" y="98" text-anchor="middle" fill="#0d1117" font-size="15" font-weight="700">R2-Former</text>
+      <text x="690" y="140" text-anchor="middle" fill="#8b949e" font-size="12">可训练 Transformer Encoder</text>
+      <text x="690" y="164" text-anchor="middle" fill="#c9d1d9" font-size="12">自注意力跨文档交互</text>
+      <text x="690" y="190" text-anchor="middle" fill="#c9d1d9" font-size="12">H = f_att( f→h1({input_i}) + p_i )</text>
+      <text x="690" y="216" text-anchor="middle" fill="#8b949e" font-size="11">轻量：heads=4, hidden=256</text>
+      <text x="690" y="244" text-anchor="middle" fill="#0cebeb" font-size="12" font-weight="600">信息瓶颈 (info bottleneck)</text>
+      <text x="690" y="270" text-anchor="middle" fill="#8b949e" font-size="11">检索器与 LLM 之间</text>
+
+      <line x1="810" y1="180" x2="860" y2="180" stroke="#0cebeb" stroke-width="2" marker-end="url(#arr)"/>
+
+      <!-- LLM -->
+      <rect x="860" y="90" width="220" height="180" rx="16" fill="#0d1520" stroke="#0cebeb" stroke-width="1.5" filter="url(#sh)"/>
+      <rect x="860" y="90" width="220" height="44" rx="16" fill="url(#g2)"/>
+      <text x="970" y="118" text-anchor="middle" fill="#0d1117" font-size="15" font-weight="700">LLM f_G</text>
+      <text x="970" y="156" text-anchor="middle" fill="#c9d1d9" font-size="12">检索感知提示注入</text>
+      <text x="970" y="180" text-anchor="middle" fill="#c9d1d9" font-size="12">eR_i 锚定在每篇文档前</text>
+      <text x="970" y="204" text-anchor="middle" fill="#c9d1d9" font-size="12">ŷ = f_G(E)</text>
+      <text x="970" y="232" text-anchor="middle" fill="#8b949e" font-size="11">decoder（可冻结 / 可微调）</text>
+
+      <!-- semantic gap annotation -->
+      <text x="130" y="320" text-anchor="middle" fill="#f0883e" font-size="13" font-weight="600">① 标准 RAG：检索器与 LLM 仅靠文本拼接 → 语义鸿沟</text>
+      <text x="690" y="320" text-anchor="middle" fill="#0cebeb" font-size="13" font-weight="600">② R2AG：R2-Former 桥接，检索信息作为锚点引导生成</text>
+    </svg>
+  </div>
+
+  <div class="arch-card">
+    <h4>设计要点</h4>
+    <p>
+      R2-Former 是一个放在检索器和 LLM 之间的<strong>可插拔轻量模型</strong>。它接收检索器的 list-wise 特征，通过自注意力让各文档特征相互交互，捕捉复杂依赖关系；随后「检索感知提示」把得到的检索信息投影进 LLM 的词嵌入空间，<strong>不改变检索文档的内容与顺序</strong>，从而避免了信息损失。R2AG 既可以只训练 R2-Former（冻结 LLM），也可以连 LLM 一起微调，因此在检索器与 LLM 都冻结的 low-source 场景下也完全可用。
+    </p>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- ====== 3. 核心组件一 ====== -->
+<section class="section" id="sec-3">
+  <h2 class="section-title"><span class="num">3</span> 核心组件一：检索特征提取（r / γ / ζ）</h2>
+  <p class="section-desc">
+    在生成之前，R2AG 先从检索器 f_R 取得查询与文档的语义表示，并把这些处于不同空间的表示<strong>对齐为统一格式</strong>的「检索特征」。每个文档 i 被表示为三元组 input_i = {r_i, γ_i, ζ_i}，分别刻画三种关系。
+  </p>
+
+  <div class="step-flow">
+    <h4>① 相关性分数 r_i（relevance）</h4>
+    <p>查询 q 与第 i 篇文档之间的相关性，同时用于文档排序。由相似度函数（点积 / 余弦）计算：<code>r_i = sim(x_q, x_{d_i})</code>。</p>
+  </div>
+  <div class="step-flow">
+    <h4>② 前驱相似度 γ_i（precedent similarity）</h4>
+    <p>第 i 篇文档与其在排序列表中「前驱加权表示」之间的相似度，权重由相关性 softmax 决定：<code>w_j = exp(r_j) / Σ_ℓ exp(r_ℓ)</code>，<code>γ_i = sim(x_{d_i}, Σ_{j&lt;i} w_j · x_{d_j})</code>。这刻画了文档在排序序列中的相对位置语义。</p>
+  </div>
+  <div class="step-flow">
+    <h4>③ 邻域相似度 ζ_i（neighbor similarity）</h4>
+    <p>第 i 篇文档与其相邻文档的平均相似度，例如 <code>ζ_i = [sim(x_{d_{i-1}}, x_{d_i}) + sim(x_{d_i}, x_{d_{i+1}})] / 2</code>。这捕捉文档之间的局部聚集关系。</p>
+  </div>
+
+  <div class="formula-box">
+    input_i = { r_i , γ_i , ζ_i } &nbsp;→&nbsp; 列表特征 {input_i}_{i=1}^k 送入 R2-Former
+  </div>
+
+  <div class="insight-box">
+    <h4>为什么需要三种特征？</h4>
+    <p>单个表示无法捕捉 LLM 生成所需的「交互特征」。相关性告诉 LLM「哪篇最相关」，前驱与邻域相似度则注入了<strong>文档之间、文档与排序之间的结构化关系</strong>，让后续的 R2-Former 能区分冗余/无关文档（消融实验显示 ζ 的影响最大，见第 8 节）。</p>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- ====== 4. 核心组件二 ====== -->
+<section class="section" id="sec-4">
+  <h2 class="section-title"><span class="num">4</span> 核心组件二：R2-Former 信息瓶颈</h2>
+  <p class="section-desc">
+    R2-Former 是 R2AG 的核心可训练模块，灵感来自 BLIP-2（Li et al., 2023b）。它是一个基于 Transformer 的<strong>可插拔模型</strong>，接收 list-wise 特征，输出蕴含深层检索信息的表示。
+  </p>
+
+  <div class="arch-card">
+    <h4>前向过程</h4>
+    <p>
+      ① 输入嵌入层：用线性映射把输入特征升维到更高维空间；<br>
+      ② 加入<strong>可训练的位置嵌入 p</strong> 以保持序列（排序）意识；<br>
+      ③ Transformer Encoder 通过自注意力掩码让每个位置都能关注其他位置，从而理解跨文档依赖。
+    </p>
+  </div>
+
+  <div class="formula-box">
+    H = f_att( f→h1( {input_i}_{i=1}^k ) + p_i )
+  </div>
+
+  <p class="section-desc">其中 <code>f_att</code> 是隐藏维度 h₁ 的 Transformer encoder，<code>f→h1</code> 为线性映射层，<code>p ∈ ℝ^{k×h₁}</code> 为位置嵌入。输出 <code>H ∈ ℝ^{k×h₁}</code> 包含更深层的检索信息，将被送入 LLM 的生成过程。</p>
+
+  <div class="highlight-box">
+    <strong>「信息瓶颈」的意义：</strong>R2-Former 体量很小（实验实现中注意力头数=4、隐藏维度=256、dropout=0.1、学习率 2e-4），它像一道「瓶颈」把检索器的语义信号压缩、提炼为 LLM 易于消费的形式，既<strong>桥接了检索器与 LLM 的语义鸿沟</strong>，又保持极低的计算与延迟开销（推理延迟仅增加 0.8%）。
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- ====== 5. 核心组件三 ====== -->
+<section class="section" id="sec-5">
+  <h2 class="section-title"><span class="num">5</span> 核心组件三：检索感知提示策略</h2>
+  <p class="section-desc">
+    这一步把 R2-Former 提炼出的检索信息，以一种<strong>无损、低复杂度</strong>的方式注入 LLM 的生成过程。
+  </p>
+
+  <div class="step-flow">
+    <h4>步骤 1 · 维度对齐投影</h4>
+    <p>用 MLP 投影层把检索信息 H 线性变换到与 LLM token 嵌入相同的维度：<code>E_R = f→h2(H) = {eR_i}_{i=1}^k</code>，其中 h₂ 是 LLM 词嵌入维度。</p>
+  </div>
+  <div class="step-flow">
+    <h4>步骤 2 · 文档 token 化与嵌入</h4>
+    <p>用 LLM 的分词器把查询与每篇文档转为 token 嵌入：<code>E_q = {eq_j}</code>，<code>E_d = {ed_j}</code>（通过 LLM 的词嵌入层查找得到）。</p>
+  </div>
+  <div class="step-flow">
+    <h4>步骤 3 · 锚定式注入</h4>
+    <p>把对应文档的检索信息嵌入 <code>eR_i</code> <strong>前置（prepend）</strong>到该文档嵌入序列的最前面。检索信息作为「外部知识」与「锚点」，引导 LLM 聚焦有用文档，减轻其自行甄别所有文档的负担。</p>
+  </div>
+
+  <div class="formula-box">
+    E = [ eq_1, …, eq_{n_q} | eR_1, ed1_1, …, ed1_{n_{d1}} | … | eR_k, edk_1, …, edk_{n_{dk}} ] &nbsp;→&nbsp; ŷ = f_G(E)
+  </div>
+
+  <div class="prompt-box"><span class="prompt-label">R2AG 提示模板（相比标准 RAG 仅多一行相似性提示）</span>Write a high-quality answer for the given question using only the provided search results
+(some of which might be irrelevant). Only give me the answer and do not output any other words.
+<span style="color:#0cebeb">The similarity information is provided in front of search results.</span>
+[1]similarity: &lt;R&gt;{#d1}
+[2]similarity: &lt;R&gt;{#d2}
+...
+[k]similarity: &lt;R&gt;{#dk}
+Question: {#q}
+Answer:</div>
+
+  <div class="insight-box">
+    <h4>「锚点」机制</h4>
+    <p>论文在注意力可视化（第 8 节）中发现，即便在更深的网络层，检索信息嵌入 <code>eR_i</code> 仍获得更高的注意力分数，且相关文档在浅层就能得到更多关注。这说明检索信息确实充当了<strong>锚点（anchor）</strong>，把 LLM 的注意力「拽」向有用的文档——这正是弥合语义鸿沟的关键。</p>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- ====== 6. 集成机制 ====== -->
+<section class="section" id="sec-6">
+  <h2 class="section-title"><span class="num">6</span> 集成机制：QDM + LM 联合训练</h2>
+  <p class="section-desc">
+    考虑到检索与生成的相互依赖，R2AG 把 R2-Former 的训练与 LLM 的对齐放在<strong>同一个阶段</strong>完成，通过联合训练让 R2-Former 真正理解检索器的 list-wise 特征，并保证检索信息能被 LLM 深度解读。
+  </p>
+
+  <div class="arch-card">
+    <h4>R2-Former 训练：查询-文档匹配（QDM）</h4>
+    <p>一个二分类任务，让 R2-Former 学习文档与查询的相关性关系。用分类头预测相关性 <code>ŝ = f→1(H)</code>，配合真实标签 s 计算交叉熵损失：</p>
+  </div>
+  <div class="formula-box">
+    L_QDM(s, ŝ) = − Σ_i [ s_i·log(ŝ_i) + (1−s_i)·log(1−ŝ_i) ]
+  </div>
+
+  <div class="arch-card">
+    <h4>LLM 对齐：语言建模（LM）</h4>
+    <p>在给定前文上下文与检索信息的条件下，最大化 token 的对数似然，奖励 LLM 正确预测后续词。</p>
+  </div>
+
+  <div class="formula-box">
+    L = L_QDM + L_LM
+  </div>
+
+  <div class="highlight-box">
+    <strong>灵活性权衡：</strong>R2AG 允许两种模式——<strong>仅训练 R2-Former（冻结 LLM）</strong>，计算成本最低；或<strong>两者联合训练</strong>以获得更深的理解。这对应了实际部署中「低算力 vs 高精度」的权衡，也是其适用于 low-source 场景的根本原因。
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- ====== 7. 实验评估 ====== -->
+<section class="section" id="sec-7">
+  <h2 class="section-title"><span class="num">7</span> 实验评估：五大基准上的表现</h2>
+  <p class="section-desc">
+    在 <strong>5 个数据集</strong>上评估：Natural Questions（NQ-10/20/30）、HotpotQA、MuSiQue、2WikiMultiHopQA、以及中文 DuReader（约 16k token）。对比两类基线：① 各种 LLM 上的标准 RAG；② 同一基础 LLM 上的增强 RAG 方法。
+  </p>
+
+  <table class="data-table">
+    <thead>
+      <tr><th>方法类别</th><th>代表方法</th><th>核心结论</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>标准 RAG（冻结 LLM）</td><td>LLaMA2/3、LongChat、ChatGPT、GPT-4、CoT</td><td>R2AG 显著超越同基础 LLM 的标准 RAG，在多跳数据集上提升明显</td></tr>
+      <tr><td>压缩/预处理增强</td><td>RECOMP、CRAG、LongLLMLingua</td><td>R2AG 全面优于它们；压缩类方法因信息损失甚至出现严重幻觉</td></tr>
+      <tr><td>检索感知增强</td><td>Self-RAG、RAFT</td><td>R2AG 多数指标最佳；R2AG + RAFT 组合取得整体最优</td></tr>
+      <tr><td>长文本鲁棒性</td><td>DuReader（~16k token）</td><td>R2AG 在超长文本下依然有效，展现效率与鲁棒性</td></tr>
+    </tbody>
+  </table>
+
+  <div class="insight-box">
+    <h4>关键发现</h4>
+    <p>
+      ① 即使使用小模型（LLaMA2-7B）作基础 LLM，R2AG 也能媲美大得多的 LLaMA2-13B / LLaMA3-8B；<br>
+      ② 除 GPT-4 外，R2AG 在多数数据集上优于所有对比 LLM，且在 NQ、HotpotQA 上超过 ChatGPT；<br>
+      ③ CRAG 在单跳 NQ 上尚可，但在多跳数据集上大幅下降——因为它简单过滤文档会丢失复杂查询所需的连接线索，而 R2AG 保留了全部文档并注入结构化检索信息，避免了这一问题。
+    </p>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- ====== 8. 敏感性分析 ====== -->
+<section class="section" id="sec-8">
+  <h2 class="section-title"><span class="num">8</span> 敏感性分析：消融、检索器与注意力锚定</h2>
+
+  <div class="arch-card">
+    <h4>① 消融实验（NQ-10 / NQ-20，LLaMA2-7B）</h4>
+    <p>逐项移除三种检索特征与 QDM 损失，性能均下降：</p>
+  </div>
+  <table class="data-table">
+    <thead>
+      <tr><th>变体</th><th>NQ-10 变化</th><th>NQ-20 变化</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>w/o r（相关性）</td><td>↓ 2.45%</td><td>↓ 3.73%</td></tr>
+      <tr><td>w/o γ（前驱相似度）</td><td>↓ 2.99%</td><td>↓ 1.87%</td></tr>
+      <tr><td>w/o ζ（邻域相似度）</td><td><strong>↓ 9.78%</strong></td><td>↓ 2.93%</td></tr>
+      <tr><td>w/o L_QDM</td><td>↓ 7.07%</td><td>↓ 0.27%</td></tr>
+    </tbody>
+  </table>
+  <p class="section-desc">结论：三种检索特征均有贡献，其中 <strong>ζ（邻域相似度）影响最大</strong>，印证了「文档间结构化关系」对 LLM 甄别无关文档至关重要；QDM 损失同样不可或缺。</p>
+
+  <div class="arch-card">
+    <h4>② 可学习 token 实验</h4>
+    <p>当检索结果高度相关、几乎无冗余时，可学习 token 对 LLM 无益甚至冗余；但随着文档数增加、无关信息增多，检索感知提示策略<strong>显著增强了 LLM 处理多文档的能力</strong>——尤其在包含无关信息时效果突出。</p>
+  </div>
+
+  <div class="arch-card">
+    <h4>③ 检索器与 LLM 的影响</h4>
+    <p>用 5 个未训练的检索器（BGE-Reranker、BERT、Contriever、OpenAI small/large）测试：更强的检索器带来更好表现，但 <strong>R2AG 即便在检索性能较差时也能显著提升 LLM</strong>（MuSiQue、DuReader 上尤为明显）。同时 R2AG13B &gt; R2AG7B，说明更强的 LLM 与更有效的检索器都会带来增益，R2AG 是一个可泛化的通用方法。</p>
+  </div>
+
+  <div class="insight-box">
+    <h4>④ 注意力可视化：检索信息即锚点</h4>
+    <p>论文抽取 LLaMA2-7B 最后 token 对其它 token 的自注意力分布（相关文档排第 2、第 1 篇具干扰性）。结果显示：<strong>检索信息在更深层仍获得更高注意力</strong>，相关文档在 1–4 层就能得到更多关注。这直观证明了检索信息作为「锚点」引导 LLM 聚焦有用文档的作用。</p>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- ====== 9. 代码使用与实战 ====== -->
+<section class="section" id="sec-9">
+  <h2 class="section-title"><span class="num">9</span> 代码使用与实战</h2>
+  <div class="kv-row"><span class="kv-key">代码仓库</span><span class="kv-val"><a href="https://github.com/yefd/RRAG.git" style="color:#0cebeb;">https://github.com/yefd/RRAG.git</a></span></div>
+  <div class="kv-row"><span class="kv-key">实现框架</span><span class="kv-val">纯 PyTorch + Transformers（非 LAVIS），易于复用</span></div>
+  <div class="kv-row"><span class="kv-key">检索器</span><span class="kv-val">Sentence-Transformer 微调的 BERT（siamese 双塔，768 维），余弦相似度</span></div>
+  <div class="kv-row"><span class="kv-key">R2-Former</span><span class="kv-val">学习率 2e-4，dropout 0.1，注意力头 4，隐藏维度 256；Adam 优化</span></div>
+  <div class="kv-row"><span class="kv-key">LLM 设置</span><span class="kv-val">默认参数 + 贪心解码；ChatGPT(gpt-3.5-turbo-0125)、GPT-4(gpt-4-turbo)</span></div>
+  <div class="kv-row"><span class="kv-key">提示占位符</span><span class="kv-val">每篇文档前插入特殊 token &lt;R&gt; 作为检索信息占位符</span></div>
+
+  <div class="code-block"><pre><span class="cg"># 典型调用链路（伪代码）</span>
+<span class="ck">x_q</span>, <span class="ck">x_d</span> = retriever(q), retriever(D)        <span class="cg"># encoder 语义表示</span>
+<span class="ck">feat</span> = [relevance, precedent, neighbor]      <span class="cg"># 统一检索特征</span>
+<span class="ck">H</span>    = R2Former(feat)                         <span class="cg"># 信息瓶颈提炼</span>
+<span class="ck">eR</span>   = project(H, dim=llm_embed)             <span class="cg"># 对齐到词嵌入维度</span>
+<span class="ck">E</span>    = prepend(eR, doc_embeddings)            <span class="cg"># 锚定式注入</span>
+<span class="ck">y</span>    = llm(E)                                <span class="cg"># 冻结或微调均可</span></pre></div>
+
+  <div class="info-box">
+    <strong>实战提示：</strong>由于 R2-Former 极轻量且 LLM 可冻结，R2AG 非常适合在已有 RAG 管线中<strong>低成本插入</strong>。但需注意它依赖 encoder 型检索器的语义表示（见局限性）。
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- ====== 10. 总结 ====== -->
+<section class="section" id="sec-10">
+  <h2 class="section-title"><span class="num">10</span> 总结与未来展望</h2>
+  <p class="section-desc">
+    R2AG 提出了一个新颖的增强 RAG 框架，通过把检索器的检索信息融入 LLM 的生成过程，弥合了检索器与 LLM 之间的语义鸿沟。可插拔的 R2-Former 作为信息瓶颈桥接二者，检索感知提示策略则以锚定方式无损注入检索信息。实验表明 R2AG 在五个数据集上优于同类方法，且对检索器质量、文档数量具有鲁棒性，推理延迟仅增 0.8%。
+  </p>
+
+  <div class="limit-box">
+    <h4>局限性（论文自述）</h4>
+    <p>
+      ① <strong>依赖 encoder 型检索器</strong>的语义表示；稀疏检索、cross-encoder 检索器的适用性有待探索；<br>
+      ② <strong>依赖基础 LLM 能力</strong>，更强的闭源 LLM（如 GPT-4）可能与 R2AG 不兼容；<br>
+      ③ 目前仅用三种检索特征（相关性、前驱、邻域），可能存在其他更有信息量的特征；<br>
+      ④ 评估的五个数据集都提供了相关文档，<strong>「完全没有相关文档」的情形</strong>（可结合 Self-RAG）尚未充分研究。
+    </p>
+  </div>
+
+  <div class="insight-box">
+    <h4>未来方向</h4>
+    <p>论文指出可在 R2AG 框架中引入更多类型的检索特征；拓展到更多检索器架构；并与 Self-RAG 等具备自我批判能力的方法结合，以应对无相关文档的场景。对于「如何让检索器与生成器真正协同」这一 RAG 核心难题，R2AG 提供了一条低成本、非破坏性的实用路径。</p>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-q">Q：R2AG 与 CRAG / RECOMP 这类「先处理文档再喂给 LLM」的方法本质区别是什么？</div>
+    <div class="qa-a">A：CRAG 过滤、RECOMP 压缩都仍把检索与生成视为两个独立阶段，只改文档内容，没有打通二者语义连接；R2AG 则显式利用检索器的语义表示，通过 R2-Former 提炼后作为「锚点」嵌入，让 LLM 获得「检索器为什么给这些文档」的结构化信号，因此是<strong>非破坏性</strong>且更本质的桥接。</div>
+  </div>
+</section>
+
+<div class="footer">论文深度解读 · 生成自 R2AG (EMNLP 2024) · 阅读时间约 28 分钟</div>
+
+</div>
+</body>
+</html>

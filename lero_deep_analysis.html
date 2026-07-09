@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>深度解读 — Lero: A Learning-to-Rank Query Optimizer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{font-family:'Noto Sans SC',system-ui,-apple-system,sans-serif;background:#0d1117;color:#c9d1d9;line-height:1.8;font-size:16px;min-height:100vh;}
+.container{max-width:1400px;margin:0 auto;padding:0 24px;background:#0d1117;position:relative;}
+.back-btn{position:fixed;top:16px;left:16px;z-index:9999;background:rgba(20,20,35,.75);color:#c9d1d9;border:1px solid rgba(255,255,255,.15);border-radius:10px;padding:8px 16px;font-size:14px;cursor:pointer;backdrop-filter:blur(6px);transition:all .3s;text-decoration:none;display:flex;align-items:center;gap:6px;}
+.back-btn:hover{background:rgba(30,30,55,.9);border-color:rgba(255,255,255,.3);}
+.hero{padding:80px 0 40px;text-align:center;}
+.hero-title{font-size:2.2rem;font-weight:700;background:linear-gradient(135deg,#22c55e,#16a34a,#15803d);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:12px;line-height:1.3;}
+.hero-sub{font-size:1.1rem;color:#8b949e;margin-bottom:8px;}
+.venue{font-size:.95rem;color:#8b949e;margin-top:8px;}
+.venue a{color:#22c55e;text-decoration:none;}
+.venue a:hover{text-decoration:underline;}
+.tag-row{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:16px;}
+.tag{display:inline-block;padding:4px 14px;border-radius:20px;font-size:.85rem;border:1px solid rgba(34,197,94,.3);color:#22c55e;background:rgba(34,197,94,.06);}
+.divider{border:none;border-top:1px solid rgba(255,255,255,.08);margin:48px 0;}
+.section{margin:40px 0;}
+.section-title{font-size:1.75rem;font-weight:700;margin-bottom:20px;color:#e6edf3;display:flex;align-items:center;gap:10px;}
+.section-title .num{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#22c55e,#16a34a);color:#0d1117;font-size:1rem;font-weight:700;flex-shrink:0;}
+.section-desc{font-size:16px;line-height:1.9;color:#c9d1d9;margin-bottom:16px;}
+.toc{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:28px 36px;margin:30px 0;}
+.toc h3{font-size:1.2rem;color:#e6edf3;margin-bottom:14px;}
+.toc ol{list-style:none;counter-reset:toc;padding:0;}
+.toc li{counter-increment:toc;margin:8px 0;}
+.toc li::before{content:counter(toc) ".";color:#22c55e;font-weight:600;margin-right:8px;}
+.toc a{color:#8b949e;text-decoration:none;transition:color .2s;}
+.toc a:hover{color:#22c55e;}
+.module-card{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:24px;margin:18px 0;transition:all .3s;}
+.module-card:hover{border-color:rgba(34,197,94,.3);transform:translateY(-2px);}
+.module-card h3{font-size:1.15rem;font-weight:600;margin-bottom:10px;color:#22c55e;}
+.module-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.arch-card{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:22px;margin:14px 0;transition:all .3s;}
+.arch-card:hover{border-color:rgba(34,197,94,.3);}
+.arch-card h4{font-size:1.05rem;font-weight:600;color:#16a34a;margin-bottom:8px;}
+.arch-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.step-flow{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:22px;margin:14px 0;}
+.step-flow h4{font-size:1.05rem;font-weight:600;color:#22c55e;margin-bottom:8px;}
+.step-flow p{font-size:15px;line-height:1.8;color:#8b949e;}
+.data-table{width:100%;border-collapse:collapse;margin:18px 0;background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:12px;overflow:hidden;font-size:14px;}
+.data-table th{background:rgba(34,197,94,.1);color:#22c55e;padding:12px 16px;text-align:left;font-weight:600;}
+.data-table td{padding:10px 16px;border-top:1px solid rgba(255,255,255,.06);color:#c9d1d9;}
+.data-table tr:hover td{background:rgba(34,197,94,.04);}
+.formula-box{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:20px 24px;margin:16px 0;font-size:18px;text-align:center;color:#e6edf3;font-family:'JetBrains Mono',monospace;}
+.code-block{background:rgba(20,20,35,.8);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:18px 22px;margin:16px 0;overflow-x:auto;}
+.code-block pre{font-family:'JetBrains Mono',monospace;font-size:14px;line-height:1.7;color:#c9d1d9;white-space:pre;}
+.ck{color:#22c55e;}.cs{color:#16a34a;}.cf{color:#d2a8ff;}.cg{color:#8b949e;}.cv{color:#79c0ff;}
+.qa-card{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:24px;margin:16px 0;}
+.qa-q{font-size:1.05rem;font-weight:600;color:#22c55e;margin-bottom:12px;}
+.qa-a{font-size:15px;line-height:1.9;color:#8b949e;}
+.highlight-box{background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.2);border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;}
+.warn-box{background:rgba(22,163,74,.08);border:1px solid rgba(22,163,74,.25);border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;}
+.info-box{background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.2);border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;}
+.prompt-box{background:rgba(20,20,35,.8);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:18px 22px;margin:16px 0;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.7;color:#c9d1d9;white-space:pre-wrap;}
+.prompt-label{display:inline-block;padding:2px 10px;border-radius:6px;font-size:.85rem;font-weight:600;margin-bottom:8px;background:rgba(34,197,94,.15);color:#22c55e;}
+.fc{font-size:14px;color:#8b949e;text-align:center;margin:10px 0;line-height:1.6;}
+.comp-card{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:22px;margin:14px 0;transition:all .3s;}
+.comp-card:hover{border-color:rgba(34,197,94,.3);}
+.comp-card h4{font-size:1.05rem;font-weight:600;color:#16a34a;margin-bottom:8px;}
+.comp-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.insight-box{background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.2);border-radius:12px;padding:18px 22px;margin:16px 0;}
+.insight-box h4{color:#22c55e;font-size:1.05rem;margin-bottom:8px;}
+.insight-box p{font-size:15px;line-height:1.8;color:#c9d1d9;}
+.limit-box{background:rgba(22,163,74,.08);border:1px solid rgba(22,163,74,.25);border-radius:12px;padding:18px 22px;margin:16px 0;}
+.limit-box h4{color:#16a34a;font-size:1.05rem;margin-bottom:8px;}
+.limit-box p{font-size:15px;line-height:1.8;color:#c9d1d9;}
+.kv-row{display:flex;border-bottom:1px solid rgba(255,255,255,.06);padding:8px 0;}
+.kv-row:last-child{border-bottom:none;}
+.kv-key{width:180px;flex-shrink:0;color:#22c55e;font-weight:500;font-size:14px;}
+.kv-val{color:#c9d1d9;font-size:14px;line-height:1.7;}
+.footer{text-align:center;color:#555;font-size:14px;padding:48px 0 32px;}
+.svg-container{background:rgba(20,20,35,.4);border:1px solid rgba(255,255,255,.06);border-radius:14px;padding:20px;margin:24px 0;overflow-x:auto;text-align:center;}
+.svg-container svg{max-width:100%;height:auto;}
+.phase-badge{display:inline-block;padding:3px 12px;border-radius:8px;font-size:.85rem;font-weight:600;margin-right:8px;}
+.phase-1{background:rgba(34,197,94,.15);color:#16a34a;}
+.phase-2{background:rgba(22,163,74,.15);color:#15803d;}
+.phase-3{background:rgba(120,180,80,.15);color:#90d27d;}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
+.grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;}
+.translation{background:rgba(34,197,94,.03);border:1px solid rgba(34,197,94,.12);border-radius:16px;padding:32px 36px;margin:30px 0;}
+.translation h2{font-size:1.6rem;color:#22c55e;margin-bottom:18px;text-align:center;}
+.translation h3{font-size:1.25rem;color:#16a34a;margin:28px 0 12px;font-weight:600;}
+.translation h4{font-size:1.08rem;color:#e6edf3;margin:18px 0 8px;font-weight:600;}
+.translation p{font-size:15.5px;line-height:2.0;color:#c9d1d9;margin-bottom:14px;text-align:justify;}
+.translation .fig-note{font-size:14px;color:#8b949e;background:rgba(34,197,94,.05);border-left:3px solid #22c55e;padding:10px 16px;margin:14px 0;border-radius:0 8px 8px 0;}
+@media(max-width:900px){.grid-2,.grid-3{grid-template-columns:1fr;}.hero-title{font-size:1.6rem;}.kv-row{flex-direction:column;}.kv-key{width:auto;}.translation{padding:20px;}}
+@keyframes flowPulse{0%,100%{opacity:.6;}50%{opacity:1;}}
+.flow-arrow{animation:flowPulse 2s ease-in-out infinite;}
+</style>
+</head>
+<body>
+<div class="container">
+
+<a class="back-btn" href="index.html">&#8592; 返回目录</a>
+
+<a href="lero_full_translation.html" style="display:block;max-width:860px;margin:18px auto 0;padding:13px 22px;background:linear-gradient(90deg,rgba(31,111,235,.16),rgba(137,87,227,.16));border:1px solid rgba(137,87,227,.5);border-radius:12px;color:#e6edf3;text-decoration:none;font-weight:500;font-size:15px;text-align:center;box-shadow:0 2px 14px rgba(0,0,0,.35);">阅读本文逐段完整中文翻译（Full Translation）</a>
+
+<!-- ========== HERO ========== -->
+<div class="hero">
+  <h1 class="hero-title">Lero: A Learning-to-Rank Query Optimizer</h1>
+  <p class="hero-sub">用「成对学习排序」替代「回归预测延迟」——计划相对好坏比精确预测更容易学</p>
+  <div class="venue">
+    PVLDB 2023, Vol.16(6) &nbsp;|&nbsp;
+    <a href="https://arxiv.org/abs/2302.06873">arXiv:2302.06873</a> &nbsp;|&nbsp;
+    <a href="https://github.com/Blondig/Lero-on-PostgreSQL">GitHub: Blondig/Lero-on-PostgreSQL</a>
+  </div>
+  <div class="tag-row">
+    <span class="tag">Query Optimization</span><span class="tag">Learning-to-Rank</span><span class="tag">Pairwise</span><span class="tag">Non-Intrusive</span><span class="tag">PostgreSQL</span>
+  </div>
+</div>
+
+<!-- ========== TOC ========== -->
+<div class="toc">
+  <h3>目录</h3>
+  <ol>
+    <li><a href="#sec-1">研究动机：预测延迟为何是"杀鸡用牛刀"</a></li>
+    <li><a href="#sec-2">框架概览：计划探索 + 成对比较器 + 模型训练</a></li>
+    <li><a href="#sec-3">核心组件一：成对计划比较器 CmpPlan 的形式化</a></li>
+    <li><a href="#sec-4">核心组件二：比较器模型设计与训练（PlanEmb + 比较层）</a></li>
+    <li><a href="#sec-5">核心组件三：以基数估计为旋钮的计划探索策略</a></li>
+    <li><a href="#sec-6">集成机制：非侵入式设计与 DBMS 的协同</a></li>
+    <li><a href="#sec-7">实验评估：IMDB / STATS / TPC-H / TPC-DS 上的表现</a></li>
+    <li><a href="#sec-8">敏感性分析：预训练、探索策略与空闲资源</a></li>
+    <li><a href="#sec-9">代码使用与实战（GitHub、安装、使用示例）</a></li>
+    <li><a href="#sec-10">总结与未来展望</a></li>
+    <li><a href="#sec-11">全文中文翻译（对应嵌入图片）</a></li>
+  </ol>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 1. MOTIVATION ========== -->
+<div class="section" id="sec-1">
+  <h2 class="section-title"><span class="num">1</span> 研究动机：预测延迟为何是"杀鸡用牛刀"</h2>
+  <p class="section-desc">Bao 等学习型优化器已经证明"站在优化器之上"可行，但它们仍有三大通病，而 Lero 一针见血地指出：<strong>这些通病的根源都是"用 ML 预测计划执行延迟/代价"这件事本身太难了</strong>。</p>
+  <div class="grid-2">
+    <div class="module-card">
+      <h3>① 性能不稳定（Unstable）</h3>
+      <p>学得模型容易给出不准确的延迟估计，导致次优计划；有时回退非常严重。论文第 6.2 节显示，在 TPC-H 上某些学习型优化器甚至<strong>比 PostgreSQL 原生优化器还差</strong>。</p>
+    </div>
+    <div class="module-card">
+      <h3>② 学习成本高（High cost）</h3>
+      <p>Neo/Balsa 需要数十到数百次训练迭代才能收敛，每次迭代还要执行所有新探索的计划，复杂数据集上要<strong>数天到数周</strong>。</p>
+    </div>
+  </div>
+  <div class="module-card">
+    <h3>③ 模型更新慢（Slow updating）</h3>
+    <p>数据动态变化时，同一计划的延迟会变，重训延迟预测模型代价巨大且易回退。</p>
+  </div>
+  <div class="insight-box">
+    <h4>核心洞察：我们真的需要预测延迟吗？</h4>
+    <p>传统代价模型本质是"人类手调"的 pointwise 排序模型（给每个计划一个序数分数=估计代价）。Lero 提出一个根本性问题：<strong>为了选出最好的计划，是否真的需要精确预测每个计划的延迟？</strong>答案是否定的——我们只需一个"神谕"能<strong>对一组候选计划按执行效率排序</strong>即可。精确回归是 overkill。于是 Lero 采用 <b>pairwise（成对）</b> 学习排序：训练一个二分类器判断"两个计划谁更好"。这比回归任务在模型效率与精度上都容易得多。</p>
+  </div>
+  <div class="highlight-box">
+    <h4>三个关键优势（初学者视角）</h4>
+    <p>① <b>直接优化目标</b>：排序比预测部分因子（基数/代价）更直接，选出的计划质量更高。② <b>训练成本低</b>：二分类比回归需要更少样本、更短时间。③ <b>无冷启动</b>：从原生优化器默认行为出发逐步学，初始质量有保障，不需漫长冷启动。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 2. OVERVIEW ========== -->
+<div class="section" id="sec-2">
+  <h2 class="section-title"><span class="num">2</span> 框架概览：计划探索 + 成对比较器 + 模型训练</h2>
+  <p class="section-desc">Lero 持续探索不同计划、观测性能、学习更准确地排序。它由三个组件构成，整体是一个"非侵入式、长在原生优化器之上"的学习排序系统。</p>
+  <div class="svg-container">
+    <svg viewBox="0 0 940 300" xmlns="http://www.w3.org/2000/svg" font-family="Noto Sans SC, sans-serif">
+      <defs><marker id="lArr" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#16a34a"/></marker></defs>
+      <rect x="20" y="120" width="110" height="60" rx="12" fill="rgba(34,197,94,.12)" stroke="#22c55e" stroke-width="1.5"/>
+      <text x="75" y="148" text-anchor="middle" fill="#e6edf3" font-size="13" font-weight="600">查询 Q</text>
+      <text x="75" y="168" text-anchor="middle" fill="#8b949e" font-size="10">SQL</text>
+      <!-- plan explorer -->
+      <rect x="160" y="30" width="200" height="240" rx="14" fill="rgba(34,197,94,.06)" stroke="#16a34a" stroke-width="1.5"/>
+      <text x="260" y="56" text-anchor="middle" fill="#16a34a" font-size="12" font-weight="700">Plan Explorer</text>
+      <text x="260" y="84" text-anchor="middle" fill="#8b949e" font-size="10">与原生优化器协作</text>
+      <text x="260" y="108" text-anchor="middle" fill="#8b949e" font-size="10">调基数估计 eC()</text>
+      <text x="260" y="128" text-anchor="middle" fill="#8b949e" font-size="10">生成候选 P1..Pn</text>
+      <text x="260" y="156" text-anchor="middle" fill="#8b949e" font-size="10">需含"真优"且</text>
+      <text x="260" y="174" text-anchor="middle" fill="#8b949e" font-size="10">足够"多样"</text>
+      <text x="260" y="206" text-anchor="middle" fill="#8b949e" font-size="10">P* 返回执行</text>
+      <text x="260" y="226" text-anchor="middle" fill="#8b949e" font-size="10">其余供训练</text>
+      <!-- comparator -->
+      <rect x="400" y="70" width="170" height="160" rx="14" fill="rgba(34,197,94,.12)" stroke="#22c55e" stroke-width="2"/>
+      <text x="485" y="98" text-anchor="middle" fill="#e6edf3" font-size="13" font-weight="700">CmpPlan</text>
+      <text x="485" y="122" text-anchor="middle" fill="#8b949e" font-size="10">成对比较器</text>
+      <text x="485" y="142" text-anchor="middle" fill="#8b949e" font-size="10">PlanEmb 嵌入</text>
+      <text x="485" y="162" text-anchor="middle" fill="#8b949e" font-size="10">logistic 比较</text>
+      <text x="485" y="190" text-anchor="middle" fill="#8b949e" font-size="10">选 P* = argmin Emb</text>
+      <!-- model trainer -->
+      <rect x="610" y="40" width="180" height="100" rx="14" fill="rgba(34,197,94,.06)" stroke="#16a34a" stroke-width="1.5"/>
+      <text x="700" y="66" text-anchor="middle" fill="#16a34a" font-size="12" font-weight="700">Model Trainer</text>
+      <text x="700" y="92" text-anchor="middle" fill="#8b949e" font-size="10">空闲 worker 执行候选</text>
+      <text x="700" y="112" text-anchor="middle" fill="#8b949e" font-size="10">收集延迟→统计库</text>
+      <text x="700" y="132" text-anchor="middle" fill="#8b949e" font-size="10">周期 SGD 更新</text>
+      <!-- runtime stats -->
+      <rect x="610" y="170" width="180" height="70" rx="14" fill="rgba(34,197,94,.06)" stroke="#16a34a" stroke-width="1.5"/>
+      <text x="700" y="196" text-anchor="middle" fill="#e6edf3" font-size="12" font-weight="600">Runtime Stats</text>
+      <text x="700" y="218" text-anchor="middle" fill="#8b949e" font-size="10">运行时统计仓库</text>
+      <!-- execution -->
+      <rect x="830" y="110" width="90" height="60" rx="12" fill="rgba(34,197,94,.12)" stroke="#22c55e" stroke-width="1.5"/>
+      <text x="875" y="138" text-anchor="middle" fill="#e6edf3" font-size="12" font-weight="600">执行引擎</text>
+      <text x="875" y="158" text-anchor="middle" fill="#8b949e" font-size="9">运行 P*</text>
+      <line x1="130" y1="150" x2="158" y2="150" stroke="#16a34a" stroke-width="2" marker-end="url(#lArr)"/>
+      <line x1="370" y1="150" x2="398" y2="150" stroke="#16a34a" stroke-width="2" marker-end="url(#lArr)"/>
+      <line x1="570" y1="150" x2="608" y2="150" stroke="#16a34a" stroke-width="2" marker-end="url(#lArr)"/>
+      <line x1="790" y1="140" x2="828" y2="140" stroke="#16a34a" stroke-width="2" marker-end="url(#lArr)"/>
+      <line x1="700" y2="170" x2="700" y1="140" stroke="#16a34a" stroke-width="1.5" marker-end="url(#lArr)"/>
+      <path d="M 700 240 Q 700 285 260 285 Q 110 285 75 192" fill="none" stroke="#16a34a" stroke-width="1.5" stroke-dasharray="5,4" marker-end="url(#lArr)"/>
+      <text x="470" y="300" text-anchor="middle" fill="#8b949e" font-size="10">闭环：执行统计回流，持续训练比较器，性能随时间提升</text>
+    </svg>
+  </div>
+  <p class="fc">图 1（论文原图重绘）：Lero 系统架构。Plan Explorer 与原生优化器协作生成候选计划；CmpPlan 选最优 P* 执行；Model Trainer 在空闲资源上执行其它候选、收集延迟进 Runtime Stats 仓库，并周期性更新比较器。</p>
+  <div class="step-flow">
+    <h4>一次查询的闭环</h4>
+    <p>① 查询 Q 到来 → ② Plan Explorer 调基数估计生成一组候选 P₁…Pₙ（既要含真优计划、又要足够多样）→ ③ CmpPlan 比较所有候选选 P* 返回执行 → ④ 其余候选由 Model Trainer 在空闲 worker 上执行，延迟写入 Runtime Stats → ⑤ 周期性用 SGD 更新 CmpPlan。该设计让模型在<strong>不影响正常数据库服务</strong>的前提下持续变好。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 3. CmpPlan formal ========== -->
+<div class="section" id="sec-3">
+  <h2 class="section-title"><span class="num">3</span> 核心组件一：成对计划比较器 CmpPlan 的形式化</h2>
+  <p class="section-desc">Lero 的"神谕"是一个比较任意两个计划的二值函数 CmpPlan：</p>
+  <div class="formula-box">CmpPlan(P₁, P₂) = 0  if Latency(P₁) &lt; Latency(P₂) ;  1  if Latency(P₁) &gt; Latency(P₂)</div>
+  <p>训练数据组织成三元组 (Pᵢ, Pⱼ, label)，label 指示该对中哪个更好。学习目标是拟合上式。由此可推导两个漂亮性质：</p>
+  <div class="grid-2">
+    <div class="arch-card">
+      <h4>交换性（Commutativity）</h4>
+      <p>CmpPlan(P₁,P₂) = 1 − CmpPlan(P₂,P₁)。调换输入顺序不影响比较结果。</p>
+    </div>
+    <div class="arch-card">
+      <h4>传递性（Transitivity）</h4>
+      <p>若 CmpPlan(P₁,P₂)&lt;0.5 且 CmpPlan(P₂,P₃)&lt;0.5，则 CmpPlan(P₁,P₃)&lt;0.5。即 P₁&gt;P₂&gt;P₃ 可推出 P₁&gt;P₃。因此比较器诱导出所有计划的<strong>全序</strong>。</p>
+    </div>
+  </div>
+  <div class="insight-box">
+    <h4>为什么全序很重要？</h4>
+    <p>因为比较器输出一个 1 维嵌入 PlanEmb(P)，且 <b>P* = arg min PlanEmb(Pᵢ)</b> —— 即"嵌入最小者最优"。这比 d 维嵌入（d&gt;1 时无法定义全序，需比较所有 n(n−1) 对再投票）简单得多。论文附录 A.2 实验也证明：d=1 反而最好，d∈{2,4,8,16} 性能更差（训练数据不足以支撑高维嵌入）。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 4. Comparator model ========== -->
+<div class="section" id="sec-4">
+  <h2 class="section-title"><span class="num">4</span> 核心组件二：比较器模型设计与训练</h2>
+  <p class="section-desc">CmpPlan 由"计划嵌入层（PlanEmb）+ 比较层"组成。PlanEmb 把每个计划映射成 1 维嵌入，比较层算两个嵌入之差经 logistic 后输出"谁更好"。</p>
+  <div class="svg-container">
+    <svg viewBox="0 0 900 280" xmlns="http://www.w3.org/2000/svg" font-family="Noto Sans SC, sans-serif">
+      <defs><marker id="l2" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6" fill="#16a34a"/></marker></defs>
+      <rect x="20" y="40" width="170" height="90" rx="12" fill="rgba(34,197,94,.1)" stroke="#16a34a" stroke-width="1.5"/>
+      <text x="105" y="66" text-anchor="middle" fill="#e6edf3" font-size="11" font-weight="600">计划 P₁</text>
+      <text x="105" y="86" text-anchor="middle" fill="#8b949e" font-size="9">IndexScan</text>
+      <text x="105" y="102" text-anchor="middle" fill="#8b949e" font-size="9">MergeJoin ...</text>
+      <rect x="20" y="160" width="170" height="90" rx="12" fill="rgba(34,197,94,.1)" stroke="#16a34a" stroke-width="1.5"/>
+      <text x="105" y="186" text-anchor="middle" fill="#e6edf3" font-size="11" font-weight="600">计划 P₂</text>
+      <text x="105" y="206" text-anchor="middle" fill="#8b949e" font-size="9">SeqScan</text>
+      <text x="105" y="222" text-anchor="middle" fill="#8b949e" font-size="9">LoopJoin ...</text>
+      <!-- plan emb -->
+      <rect x="220" y="40" width="150" height="90" rx="12" fill="rgba(34,197,94,.12)" stroke="#22c55e" stroke-width="1.5"/>
+      <text x="295" y="68" text-anchor="middle" fill="#e6edf3" font-size="11" font-weight="600">PlanEmb</text>
+      <text x="295" y="90" text-anchor="middle" fill="#8b949e" font-size="9">树卷积+池化</text>
+      <text x="295" y="110" text-anchor="middle" fill="#8b949e" font-size="9">→ 1维嵌入 e₁</text>
+      <rect x="220" y="160" width="150" height="90" rx="12" fill="rgba(34,197,94,.12)" stroke="#22c55e" stroke-width="1.5"/>
+      <text x="295" y="188" text-anchor="middle" fill="#e6edf3" font-size="11" font-weight="600">PlanEmb</text>
+      <text x="295" y="210" text-anchor="middle" fill="#8b949e" font-size="9">（参数共享）</text>
+      <text x="295" y="230" text-anchor="middle" fill="#8b949e" font-size="9">→ 1维嵌入 e₂</text>
+      <!-- diff + logistic -->
+      <rect x="410" y="90" width="160" height="70" rx="12" fill="rgba(34,197,94,.1)" stroke="#16a34a" stroke-width="1.5"/>
+      <text x="490" y="116" text-anchor="middle" fill="#e6edf3" font-size="11" font-weight="600">比较层</text>
+      <text x="490" y="138" text-anchor="middle" fill="#8b949e" font-size="9">x = e₁ − e₂</text>
+      <text x="490" y="156" text-anchor="middle" fill="#8b949e" font-size="9">φ(x)=1/(1+e⁻ˣ)</text>
+      <rect x="610" y="100" width="150" height="55" rx="12" fill="rgba(34,197,94,.14)" stroke="#22c55e" stroke-width="1.5"/>
+      <text x="685" y="124" text-anchor="middle" fill="#e6edf3" font-size="11" font-weight="600">输出 (0,1)</text>
+      <text x="685" y="144" text-anchor="middle" fill="#8b949e" font-size="9">P₂更优的概率</text>
+      <line x1="190" y1="85" x2="218" y2="85" stroke="#16a34a" stroke-width="2" marker-end="url(#l2)"/>
+      <line x1="190" y1="205" x2="218" y2="205" stroke="#16a34a" stroke-width="2" marker-end="url(#l2)"/>
+      <line x1="370" y1="85" x2="408" y2="125" stroke="#16a34a" stroke-width="2" marker-end="url(#l2)"/>
+      <line x1="370" y1="205" x2="408" y2="135" stroke="#16a34a" stroke-width="2" marker-end="url(#l2)"/>
+      <line x1="570" y1="125" x2="608" y2="127" stroke="#16a34a" stroke-width="2" marker-end="url(#l2)"/>
+    </svg>
+  </div>
+  <p class="fc">图 2（论文原图重绘）：比较器模型。两个计划分别经共享参数的 PlanEmb（树卷积+池化+全连接）得 1 维嵌入，相减后过 logistic，输出 P₂ 更优的概率。</p>
+  <div class="module-card">
+    <h3>计划嵌入 PlanEmb 的特征设计</h3>
+    <p>每个子树节点（对应子查询 Qⱼ）的特征向量拼接：① 该子计划最后操作的 <b>one-hot 编码</b>；② <b>基数估计</b>（对 log(C) 做 min-max 归一化，因基数跨度大）；③ 子查询输出的<b>行宽</b>；④ 涉及表的 <b>0/1 编码</b>。<b>关键：不含估计代价</b>——因为代价与基数、行宽强相关，且会引入代价模型本身的误差。这比 Neo/Bao 的设计更干净。</p>
+  </div>
+  <div class="arch-card">
+    <h4>比较层与损失函数</h4>
+    <p>CmpPlan(P₁,P₂)=φ(PlanEmb(P₁)−PlanEmb(P₂))，值域 (0,1)。损失函数取交叉熵：L = −∑ log(1−CmpPlan)（当 Pᵢ≺Pⱼ）−∑ log(CmpPlan)（当 Pᵢ≻Pⱼ）。参数共享：两份 PlanEmb 副本共享可学习参数，反向传播时把两份梯度相加再更新。</p>
+  </div>
+  <h3 style="color:#22c55e;margin:14px 0 8px;">训练：先预训练，再在线两两学习</h3>
+  <div class="grid-2">
+    <div class="comp-card"><h4>预训练（继承人类智慧）</h4><p>用<strong>合成负载</strong>离线预训练：随机生成不同连接顺序/谓词的计划，把子查询基数随机赋值后喂入原生代价模型（不执行）得到估计代价作标签。因代价模型多为分段线性/二次函数，预训练<strong>几分钟内收敛</strong>，使初始 PlanEmb ≈ 原生估计代价，模型起点就约等于原生优化器，无冷启动。</p></div>
+    <div class="comp-card"><h4>在线 Pairwise 训练</h4><p>真实执行候选计划后，对每条查询的 n 个候选构造 n(n−1) 个训练点（Pᵢ 比 Pⱼ 慢则 label=1）。周期性 SGD 更新。因只学"相对顺序"而非绝对延迟，对动态数据更鲁棒——同一计划延迟会变，但两计划<strong>谁快谁慢的相对顺序</strong>更稳定。</p></div>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 5. Plan exploration ========== -->
+<div class="section" id="sec-5">
+  <h2 class="section-title"><span class="num">5</span> 核心组件三：以基数估计为旋钮的计划探索策略</h2>
+  <p class="section-desc">候选计划既要含真优计划、又要足够多样。Lero 的巧思是用<strong>基数估计作为旋钮</strong>：在把子查询基数喂入代价模型前，故意放大/缩小它，从而让原生优化器生成不同计划。</p>
+  <div class="insight-box">
+    <h4>为什么用基数做旋钮？（对比 Bao 的 hint）</h4>
+    <p>Bao 用 query-level 的 hint 集（整条查询禁用/强制某类算子），有两个缺陷：① hint 是<strong>整查询级</strong>的，若查询不同部分最优选择不同，调一个 flag 最多只能让一部分选对；② hint 集合系统相关、枚举不可行。Lero 在<b>表达式级</b>调基数，能精细考虑多样化计划，且基数估计接口几乎所有 DBMS 都提供，<strong>平台无关、易移植</strong>。</p>
+  </div>
+  <div class="module-card">
+    <h3>具体例子（论文 §4 开头）</h3>
+    <p>设查询 Q 连接两个子查询 Q₁、Q₂，它们各自最优连接分别是"索引嵌套循环连接"和"merge join"。因基数估计误差，原生优化器可能对两者都用了 merge join。用 hint 集去禁用/强制某类连接，<strong>至多只能让 Q₁、Q₂ 之一选对</strong>——最优计划永远进不了候选集。而 Lero 调 Q₁、Q₂ 各自的基数估计，可让两者各自找到正确算子，从而把最优计划纳入候选。</p>
+  </div>
+  <h3 style="color:#22c55e;margin:14px 0 8px;">理论保证（q-error 旋钮）</h3>
+  <p>设真实基数 C*，DBMS 估计 C，已知 q-error 上界 QE(C,C*)≤Δ。取缩放因子集合 Fᵅ_Δ = {αᵗ | ⌊−logᵅΔ⌋≤t≤⌈logᵅΔ⌉}，对每个子查询乘以某个 f∈F 得 eC。理论中至少存在一个组合使所有子查询的 q-error ≤ α，且候选数仅为 O(logᵃʲ Δ)（对数级，不随 Δ 爆炸）。暴力枚举所有子查询组合开销太大（O(log²qᵃ Δ)），故 Lero 用<strong>基于优先级的启发式</strong>：</p>
+  <div class="step-flow">
+    <h4>启发式算法（图 3）</h4>
+    <p>外层按 |log f| 从小到大枚举缩放因子 f（优先探索原生优化器选择附近的"邻域计划空间"，那里质量不至于太差且最可能出错）；内层枚举子查询大小 k（k=1,2,…），对<strong>所有 size-k 子查询一起</strong>调基数（因同尺寸子查询常被一起低估、q-error 相似）。候选维护在优先级队列中待执行。候选数降为 O(q·logᵃ Δ)。</p>
+  </div>
+  <div class="arch-card">
+    <h4>鼓励多样性（图 4 直觉）</h4>
+    <p>对 4 表连接 A⋈B⋈C⋈D：调 size-2 子查询基数时，不同 f 会催生不同<strong>计划形状</strong>（f≪1 更易生成 bushy 树，f≫1 更易生成 left-deep 树）与不同<strong>连接顺序</strong>。表 3 显示 Lero 的探索器生成更少但更高质量的候选（IMDB 上 47% 比 PostgreSQL 快，hint 集法仅 36%）。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 6. INTEGRATION ========== -->
+<div class="section" id="sec-6">
+  <h2 class="section-title"><span class="num">6</span> 集成机制：非侵入式设计与 DBMS 的协同</h2>
+  <p class="section-desc">Lero 最大的工程卖点是 <strong>non-intrusive（非侵入式）</strong>：它几乎不改 DBMS 内部，只借助大多数 DBMS 提供的公开接口，与原生优化器并肩工作。</p>
+  <div class="comp-card"><h4>实现只需一个 hook</h4><p>在 PostgreSQL 上，Lero 唯一的较大改动是一个 <b>pg_hint_plan 的 hook 函数</b>：当子查询大小为 k 时，调用原生估计 C(Q') 并返回 f·C(Q') 作为 eC(Q')，否则返回 C(Q')。这个"钩子"极小，因此可轻松移植到任何提供类似基数估计接口的其他数据库。</p></div>
+  <div class="info-box"><h4>与原生优化器协同的两层意义</h4><p>① 计划探索复用原生优化器的搜索能力，不另起炉灶；② 比较器预训练直接继承原生代价模型的"人类数十年智慧"，起点即约等于原生优化器。二者结合使 Lero 既新颖又稳健。</p></div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 7. EXPERIMENT ========== -->
+<div class="section" id="sec-7">
+  <h2 class="section-title"><span class="num">7</span> 实验评估：IMDB / STATS / TPC-H / TPC-DS</h2>
+  <p class="section-desc">Lero 在 PostgreSQL 13.1 上实现并对比 PostgreSQL 原生、Bao、Bao+、Neo、Balsa。基准含 IMDB(JOB)、STATS-CEB、TPC-H、TPC-DS。核心结论如下。</p>
+  <table class="data-table">
+    <thead><tr><th>场景</th><th>关键结果</th></tr></thead>
+    <tbody>
+      <tr><td>稳定模型（IMDB/STATS/TPC-H/TPC-DS）</td><td>相比 PostgreSQL 原生执行时间减少 <b>70% / 44% / 21% / 13%</b>；相比 Bao 减少 <b>26% / 25% / 37% / 5%</b>；相比 Bao+ 仍约少 20%。</td></tr>
+      <tr><td>尾部回归（STATS 146 查询）</td><td>Lero 仅 <b>9 条(6.2%)</b> 变慢；Bao/Bao+ 各 29 条回退。Lero 最大回退仅 5.2%，Bao 达 46.5%。</td></tr>
+      <tr><td>部署后性能曲线</td><td>看 200/100/100/100 条查询后 Lero 即稳定优于 PostgreSQL 与其他学习型；总执行时间比 PostgreSQL/Bao/Bao+ 在 STATS 上少 47%/38%/23%。</td></tr>
+      <tr><td>优化开销</td><td>额外优化时间仅占 IMDB 总执行 ≤2.4%、其余 &lt;0.1%，却节省 13%–70% 执行时间。</td></tr>
+      <tr><td>动态数据（STATS 按时间增数据）</td><td>1000 条查询后比 PostgreSQL 少 50%、比 Bao/Bao+ 少 38%；数据变更后比 PG/Bao/Bao+ 好 33%/29%/10%。</td></tr>
+    </tbody>
+  </table>
+  <div class="insight-box">
+    <h4>为什么 Lero 更稳、更快收敛？</h4>
+    <p>因为它学的是"相对排序"而非"绝对延迟"。延迟预测在动态数据上要更多样本才收敛，而相对顺序更鲁棒。表 6 的 rank-specific 指标也显示：Lero 选中 P1（真正最快）的比例远高于其他优化器（STATS 上 42.5% vs Bao+ 9.6%）。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 8. SENSITIVITY ========== -->
+<div class="section" id="sec-8">
+  <h2 class="section-title"><span class="num">8</span> 敏感性分析：预训练、探索策略与空闲资源</h2>
+  <div class="grid-3">
+    <div class="module-card"><h3>预训练（§6.5）</h3><p>预训练仅 ~5 分钟。有预训练时，前 100 条查询 Lero 与 PostgreSQL 几乎同计划（因 comparator 拟合了原生代价模型）；冷启动则需近 300 条才追上。预训练给了一个好起点并加速收敛。</p></div>
+    <div class="module-card"><h3>探索策略（§6.6）</h3><p>表 3：Lero 探索器生成更少但更高质量的候选（IMDB 47% 快于 PG，hint 集法 36%）；图 9 显示 Lero 探索器优于 hint 集法与随机法。</p></div>
+    <div class="module-card"><h3>空闲资源（§6.7）</h3><p>即使只用 12.5%/25%/50% 候选被空闲资源执行，模型仍最终收敛，初始不差于 PG（靠预训练）；空闲少只减慢学习速度，对终极性能影响很小（曲线最终平行）。</p></div>
+  </div>
+  <div class="warn-box"><h4>超参与局限</h4><p>超参：α=10，Δ=10²，缩放因子集 {10⁻²,10⁻¹,1,10,10²}。局限：因 pg_hint_plan 不支持对视图/嵌套 SQL 施加 hint，含视图或嵌套查询的模板无法被 Lero 完全优化（TPC-H/DS 中已排除此类模板）。</p></div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 9. CODE ========== -->
+<div class="section" id="sec-9">
+  <h2 class="section-title"><span class="num">9</span> 代码使用与实战（GitHub、安装、使用示例）</h2>
+  <div class="module-card">
+    <h3>官方仓库</h3>
+    <p><a href="https://github.com/Blondig/Lero-on-PostgreSQL" style="color:#22c55e;">github.com/Blondig/Lero-on-PostgreSQL</a> —— 基于 PostgreSQL 的非侵入式实现，核心是 Plan Explorer（基数旋钮 hook）+ CmpPlan（成对比较器）+ Model Trainer。</p>
+  </div>
+  <div class="code-block"><pre># 1) 环境：PostgreSQL 13+（需 pg_hint_plan 支持 cardinality hook）
+git clone https://github.com/Blondig/Lero-on-PostgreSQL.git
+cd Lero-on-PostgreSQL
+pip install -r requirements.txt   # torch / sklearn 等
+
+# 2) 配置 PostgreSQL 加载 pg_hint_plan，并确保基数估计 hook 可用
+
+# 3) 预训练比较器（离线、无需执行计划，~5 分钟）
+python pretrain.py --workload synthetic_queries.sql
+
+# 4) 部署并持续在线训练（空闲 worker 执行候选、收集延迟）
+python lero_serve.py --alpha 10 --delta 100 --update_every 100
+
+# 5) 查询时 Lero 自动：调基数生成候选 → CmpPlan 选 P* → 执行</pre></div>
+  <div class="info-box"><h4>复现要点</h4><p>① 关键在于 Plan Explorer 的基数旋钮 hook（对 size-k 子查询乘缩放因子）；② 比较器用共享参数的 PlanEmb + logistic 比较层，损失为成对交叉熵；③ 预训练用合成数据拟合原生代价模型以去冷启动；④ 实验需 IMDB/STATS/TPC-H/DS 数据集与对应 workload 生成脚本（仓库内附）。</p></div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 10. SUMMARY ========== -->
+<div class="section" id="sec-10">
+  <h2 class="section-title"><span class="num">10</span> 总结与未来展望</h2>
+  <p class="section-desc">Lero 的核心思想：<strong>查询优化不需要精确预测延迟，只需要把候选计划排好序</strong>。它用 pairwise 学习排序训练二分类比较器，比回归预测延迟更易学、更稳、训练成本更低；并以"基数估计为旋钮"的非侵入式计划探索，持续生成含真优且多样的候选。在 PostgreSQL 上，Lero 把原生优化器执行时间最多降 70%，比其他学习型优化器最多降 37%，且能快速适应动态数据。</p>
+  <div class="qa-card"><div class="qa-q">Q1：Lero 与 Bao 的本质区别？</div><div class="qa-a">Bao 预测每个计划的延迟（pointwise 回归）再用 Thompson 采样选；Lero 改为比较两个计划的相对好坏（pairwise 分类）。相对顺序比绝对延迟更易学、更鲁棒，故收敛更快、尾部更稳。</div></div>
+  <div class="qa-card"><div class="qa-q">Q2：为什么计划探索用"基数旋钮"而非"hint 集"？</div><div class="qa-a">hint 是查询级、系统相关、易漏掉"不同子查询需不同算子"的最优计划；基数旋钮是表达式级、平台无关，且能催生更多样（不同形状/顺序）的候选。</div></div>
+  <div class="qa-card"><div class="qa-q">Q3：未来方向？</div><div class="qa-a">支持视图/嵌套 SQL（解除 pg_hint_plan 限制）；把资源预算信息纳入特征以支持变资源场景；探索 d 维嵌入的更优用法；与 LLM 驱动调优（如 Booster）结合。</div></div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 11. TRANSLATION ========== -->
+<div class="section translation" id="sec-11">
+  <h2>全文中文翻译（对应嵌入图片）</h2>
+
+  <h3>摘要（Abstract）</h3>
+  <p>近期一系列工作尝试用机器学习技术辅助或重建 DBMS 中的基于代价的查询优化器。尽管在某些基准上表现出优势，它们的缺陷（如性能不稳定、训练成本高、模型更新慢）源于"用机器学习模型预测执行计划的代价或延迟"这一本质难题。本文提出一个学习排序（learning-to-rank）查询优化器 Lero，它构建在原生查询优化器之上，持续学习以改善优化性能。其核心观察是：计划的<strong>相对顺序（rank）</strong>，而非精确的代价或延迟，对查询优化已足够。Lero 采用成对（pairwise）方法训练一个分类器来比较任意两个计划并判断谁更好——相比预测代价/延迟的回归任务，这种二分类任务在模型效率与精度上都容易得多。Lero 并非从零构建学习型优化器，而是利用数据库数十年的智慧并改善原生优化器。凭借其<strong>非侵入式设计</strong>，Lero 能以极小集成代价实现在任何现有 DBMS 之上。我们用 PostgreSQL 实现 Lero 并展示其卓越性能：在多个基准上达到接近最优；把 PostgreSQL 原生优化器的计划执行时间最多降低 70%，把其他学习型优化器最多降低 37%；同时持续学习并自动适应查询负载与数据变化。</p>
+
+  <h3>1. 引言（Introduction）</h3>
+  <p>查询优化器在数据库中扮演极重要角色，目标是为每个查询选出高效执行计划。传统基于代价的优化器 [40] 寻找估计代价最小的计划，而代价是执行延迟或资源消耗的代理。其代价模型含大量经验调参的"魔法常数"。近期工作 [32,33,51] 用 ML 精修传统代价模型与计划枚举，但仍受"延迟预测本身极难"这一缺陷困扰。</p>
+  <p>Lero 提出一种新颖的轻量成对 ML 模型。它采用非侵入式设计，对 DBMS 现有组件改动极小，并非从零构建，而是利用优化器的数十年智慧、无额外冷启动成本地快速改善。Lero 通过审慎探索不同优化机会并学会更准确地排序来提升质量。</p>
+  <h4>1.1 从启发式代价模型到机器学习模型</h4>
+  <p>传统代价优化器有三大组件：基数估计器、代价模型、计划枚举器。众多启发式（如跨表属性独立假设、魔法常数）在实践中被调参以匹配性能，但在数据分布/系统配置变化时并不可靠，导致代价模型误差大、生成计划质量差。用 ML 替换这些组件是自然想法：学基数估计、学代价模型（用可学习参数代替魔法常数，实现实例级优化）。Neo [33] 与 Balsa [51] 提供端到端学习型方案，学一个计划价值函数 PlanVal 代替传统 PlanCost，用最佳优先搜索找最小估计延迟计划。Bao [32] 学"驾驶"原生优化器：用不同 hint 集生成候选计划，用 PlanVal 估质量选最优，并用 Thompson 采样周期更新。</p>
+  <p>尽管学习型优化器在某些场景优于传统，但仍远不令人满意，有三大缺陷：<b>性能不稳定</b>（估计不准致次优，TPC-H 上甚至不如 PG）、<b>学习成本高</b>（Neo/Balsa 需数十到数百迭代，复杂集上数天到数周）、<b>模型更新慢</b>（动态数据下重训代价大且易回退）。根本症结在于"预测计划执行延迟/代价"这一难题——精确延迟依赖数据分布、负载模式、系统环境等众多因素，且提升估计精度并不必然带来优化改善。论文提出根本问题：<b>我们真的需要预测每个计划的延迟吗？</b>为找最优计划，训练预测精确延迟的模型是"杀鸡用牛刀"。</p>
+  <h4>1.2 一个学习排序查询优化器</h4>
+  <p>Lero 的本质是为查询优化提供一个能"对一组候选计划按执行效率排序"的习得神谕。传统代价模型可视为"人类学习"的 pointwise 模型（输出序数分数=估计代价）。Lero 采用更有效的 pairwise 方法，且不丢弃人类在代价模型与优化器上的智慧。贡献：① 把学习排序范式引入查询优化，直接排序选优计划，比学代价/基数更有效；② 采用 pairwise 二分类，训练更容易、样本更少、时间更短；③ 能更有效地探索新计划空间（用表达式级基数调谐而非查询级 hint）；④ 利用数据库数十年智慧、非侵入式、起点好无冷启动；⑤ 在 PostgreSQL 上实现，执行时间比原生少 70%、比其他学习型少 37%，且更快适应变化。</p>
+
+  <h3>2. 系统概览（System Overview）</h3>
+  <p>Lero 持续探索计划、观测性能、学更准确的排序，采用预测"两计划谁更高效"的 pairwise 方法，在模型精度与学习效率间取得最佳权衡。图 1 展示整体架构：对每条查询 Q，Plan Explorer 与原生优化器协作生成候选 P₁…Pₙ；CmpPlan 从中选最优 P* 执行；后台 Model Trainer 在空闲 worker 上执行其它候选、收集延迟进 Runtime Stats 仓库，并周期训练更新 CmpPlan，使模型在不影响正常服务下持续变好。</p>
+  <div class="fig-note">📌 对应图 1（Figure 1: System architecture of Lero）：查询 Q → Plan Explorer 生成候选 → CmpPlan 选 P* 执行 → Model Trainer 用空闲资源执行其余候选、收集延迟、周期更新比较器。</div>
+  <p><b>比较器 CmpPlan。</b> 形式化为 CmpPlan(P₁,P₂)=0（若 Latency(P₁)&lt;Latency(P₂)），否则 1。训练数据组织为每对执行计划的三元组 (Pᵢ,Pⱼ,label)。</p>
+  <p><b>Plan Explorer。</b> 生成多样化候选，须：i) 含某些真优候选；ii) 足够多样以便模型学区分好坏。Lero 用<strong>基数估计作为旋钮</strong>：在喂入代价模型前故意放大/缩小子查询基数，生成不同计划（调向真实代价可生成更好邻居计划，调反方向生成更差计划，二者都增多样性）。</p>
+  <p><b>Model Trainer。</b> 在系统资源可用时执行其它候选，把计划信息与执行统计加入仓库用于训练更新。分布式系统中空闲 worker 普遍存在，可借之收集运行时统计。</p>
+
+  <h3>3. 一个习得的计划比较器（A Learned Plan Comparator）</h3>
+  <h4>3.1 模型设计</h4>
+  <p>比较器由"计划嵌入层 + 比较层"组成（图 2）。计划嵌入层把 P₁、P₂ 从原特征空间映射到 1 维嵌入，比较层比较两个嵌入之差以判定质量。</p>
+  <div class="fig-note">📌 对应图 2（Figure 2: Plan encoding and the structure of our plan comparator model）：计划先 featurize 成向量树（节点向量含最后算子 one-hot、基数、行宽、表 0/1 编码），经树卷积→池化→全连接得 PlanEmb；两计划 PlanEmb 相减过 logistic 得 0/1 输出。</div>
+  <p><b>计划嵌入层 PlanEmb。</b> 用参数共享：两份 PlanEmb 副本共享结构与可学习参数，分别生成 PlanEmb(P₁)、PlanEmb(P₂)∈ℝ。树卷积模型（类似 [32,33,36] 但改进）把计划 featurize 成向量树，节点向量拼接：最后算子 one-hot、基数估计（对 log(C) min-max 归一）、行宽、表的 0/1 编码。<b>不含估计代价</b>（因与基数/行宽强相关且引入额外误差）。树卷积滑过节点及其两子节点变换计划树，再展平喂入网络得嵌入。与"预测延迟"不同，PlanEmb 提取关键信息供比较层比较；1 维嵌入可解释为一种排序准则，其尺度不受限、不必正比于延迟——这使其更易训练。</p>
+  <p><b>比较层。</b> 把两嵌入之差 x=PlanEmb(P₁)−PlanEmb(P₂) 过 logistic φ(x)=1/(1+e⁻ˣ) 得输出（是否在 (0,1)，可解释为 P₂ 更优的概率）：CmpPlan(P₁,P₂)=φ(PlanEmb(P₁)−PlanEmb(P₂))。由 φ(a−b)+φ(b−a)=1 保持两性质：交换性 CmpPlan(P₁,P₂)=1−CmpPlan(P₂,P₁)；传递性（推出全序）。因此可选 P*=arg min PlanEmb(Pᵢ)。</p>
+  <p><b>损失函数。</b> 目标是最大化输出正确顺序的似然，损失取 L=−log ACC，即所有计划对的交叉熵：L=−∑[I(Pᵢ≺Pⱼ)·log(1−CmpPlan)+I(Pᵢ≻Pⱼ)·log(CmpPlan)]。</p>
+  <h4>3.2 模型训练</h4>
+  <p><b>预训练（继承传统智慧）。</b> 离线用合成负载预训练，使初始 PlanEmb≈原生估计代价 PlanCost，模型起点≈原生优化器；随查询执行增多，CmpPlan 持续改善以适应动态分布。因原生代价模型多为基数分段线性/二次函数，预训练收敛极快。</p>
+  <p><b>成对训练（在线）。</b> 每条查询的候选 {P₁…Pₙ} 由 Plan Explorer 生成，空闲时执行、收集统计；按损失函数构造 n(n−1) 个训练点（Pᵢ 比 Pⱼ 慢则 label=1）。周期用 SGD 反向更新 CmpPlan 与共享参数的 PlanEmb。因只学相对顺序，对动态数据更鲁棒——同计划延迟会变，但两计划的相对顺序更稳定。</p>
+
+  <h3>4. 计划探索策略（Plan Exploration Strategy）</h3>
+  <p>Plan Explorer 生成候选有两目的：① 优化时让比较器选最优（须含真优）；② 探索时优先探索有希望的计划、用新观测及时纠正错误。候选还应足够多样（不同连接顺序、left-deep/bushy 形状）。Lero 对原生优化器改动极小，策略不应系统相关。</p>
+  <p>现有方法：RL（Neo/Balsa）随机采样计划，易漏高质量计划或采样过大成本高；Bao 用 hint 集调谐，但有二缺陷（整查询级易漏"不同子查询需不同算子"的最优；hint 集合系统相关、枚举不可行）。</p>
+  <h4>4.1 以基数为旋钮</h4>
+  <p>Lero 把基数估计当旋钮：每次用不同子查询基数，优化器就选不同计划。形式化：原生估计 C()，Lero 让优化器调用调谐后的 eC()，生成不同计划。优势：① 基数决定代价从而决定连接顺序与算子，调基数易引入多样（不同连接顺序/算子）；② 平台无关（多数 DBMS 提供修改估计的接口）。</p>
+  <p><b>暴力策略与理论。</b> 设真实基数 C*，q-error 定义为 QE=max{est/true, true/est}。用指数步长缩放因子集 Fᵅ_Δ，至少存在一个 f 使 QE(f·C, C*)≤α，且 |F|=Θ(logᵅΔ) 仅对数依赖 Δ。递归对所有子查询调基数，候选数 O(log²qᵃ Δ)，且至少一候选在代价模型下近最优（最优不差于真实最优的 α⁴ 倍）。但暴力开销仍过高，故用启发式。</p>
+  <h4>4.2 基于优先级的启发式</h4>
+  <p>关键思想：优先探索原生优化器可能出错处。内层枚举子查询大小 k（k 越大基数估计越难越易错），对所有 size-k 子查询一起调基数（同尺寸子查询常被一起低估、q-error 相似）。图 3 算法：外层按 |log f| 增序枚举缩放因子（优先邻近原生选择的计划空间），内层枚举 k，对 size-k 子查询乘 f 得 eC，生成计划入优先级队列。候选数降为 O(q·logᵅΔ)。图 4 直觉：调 size-2 基数时不同 f 催生不同形状（bushy/left-deep）与连接顺序。实现上只需一个 hook：子查询大小为 k 时返回 f·C()，否则返回 C()，故极易移植。</p>
+  <div class="fig-note">📌 对应图 3（Figure 3: Plan exploration strategy）/ 图 4（Diversity intuition）：算法按缩放因子与子查询大小 k 生成候选；图 4 以 4 表连接展示不同 f 如何催生不同计划形状与连接顺序。</div>
+
+  <h3>5. 扩展与讨论（Extensions）</h3>
+  <p><b>d 维嵌入比较器。</b> 可扩展为 d 维嵌入，比较层改为可学习线性层。但附录 A.2 实验表明：d&gt;1 性能反而更差（IMDB 上执行时间增至 d=1 的 1.4–2.2 倍，STATS 上甚至慢于原生），因高维需更大训练集与更长时间；且 d&gt;1 时 PlanEmb 无法定义全序、选最优不如 d=1 方便。故 Lero 用最简 1 维嵌入。</p>
+  <p><b>变资源预算。</b> 本文假设每计划执行资源恒定；原则上可把资源预算信息纳入比较器特征，使计划在不同资源下比较，但会增大训练难度，留作未来工作。</p>
+
+  <h3>6. 实验评估（Experimental Evaluation）</h3>
+  <p>开源实现，并在 PostgreSQL 上对比 Neo/Bao/Balsa。基准：IMDB(JOB，1000 查询)、STATS-CEB(146 模板)、TPC-H(sf=10)、TPC-DS(sf=10)。Neo/Balsa 需 72 小时训练仍常不及 PG（除原 JOB 113 查询），Bao 数小时即超 PG；故主实验报告 Bao/Bao+ 与 Lero。同时实现 Bao+（用空闲资源执行所有候选以公平对比）。</p>
+  <h4>6.2 查询性能</h4>
+  <p>稳定模型下（表 1）：Lero 比 PG 在 IMDB/STATS/TPC-H/TPC-DS 执行时间少 70%/44%/21%/13%；比 Bao 少 26%/25%/37%/5%；比 Bao+ 仍约少 20%。图 5（STATS 146 查询逐查询对比）：Lero 仅 9 条(6.2%) 变慢（最大回退 5.2%），Bao/Bao+ 各 29 条回退（Bao 最大 46.5%）。图 6 部署后曲线：Lero 看 200/100/100/100 条后即稳定优于 PG 与其余学习型，且差距随查询增多扩大；在 STATS 上总执行时间比 PG/Bao/Bao+ 少 47%/38%/23%；Lero 在所有基准上始终优于 PG，而 Bao/Bao+ 有时不及 PG。</p>
+  <h4>6.3 优化开销</h4>
+  <p>额外优化时间极低：IMDB 仅占 ≤2.4% 总执行时间，其余 &lt;0.1%，却节省 13%–70% 执行时间。</p>
+  <h4>6.4 适应动态数据</h4>
+  <p>STATS 按时间戳增数据。1000 条查询后 Lero 累积执行时间比 PG 少 50%、比 Bao/Bao+ 少 38%；数据变更后比 PG/Bao/Bao+ 好 33%/29%/10%。仅 Lero 始终优于 PG（Bao 初期差、Bao+ 中期差）。</p>
+  <h4>6.5 预训练重要性</h4>
+  <p>预训练仅 ~5 分钟。有预训练时前 100 条 Lero≈PG；冷启动则前 200 条可能差于 PG，近 300 条才追上。预训练给好起点并加速收敛。</p>
+  <h4>6.6 计划探索策略</h4>
+  <p>表 3：Lero 探索器生成更少但更优质候选（IMDB 47% 快于 PG vs hint 集法 36%；TPC-H 24% vs 6%）。图 9：Lero 探索器优于 hint 集法与随机法。</p>
+  <h4>6.7 空闲资源影响</h4>
+  <p>即便只用 12.5%/25%/50% 候选被空闲资源执行，模型仍最终收敛，初始不差于 PG（靠预训练）；空闲少只减慢学习，对终极性能影响很小。</p>
+  <h4>6.8 与 Balsa 对比</h4>
+  <p>原 JOB 负载上（表 4），Balsa 匹配或略优 Bao；但即便 Balsa 充分训练，仍不及 Bao+ 与 Lero。Lero 在 random/slow split 下 speedup 均最高（如 slow split 4.38 vs Balsa 2.31）。</p>
+
+  <h3>7. 相关工作（Related Work）</h3>
+  <p><b>学习优化查询。</b> 多数聚焦学基数估计（query-driven/data-driven）或精修代价模型/计划枚举。这些只优化个别组件，未必改善整体。Neo/Balsa 端到端、Bao 用 hint 驾驶，但均受"预测代价/延迟"缺陷困扰。Lero 基于计划探索与成对比较，学计划对差异以改善端到端质量。<b>学习排序范式</b>分 pointwise/pairwise/listwise，本文首将 pairwise 用于学习型查询优化。<b>学调索引</b> [10] 也用成对比较器，但与 Lero 任务不同（索引选择 vs 计划选择）、特征编码与架构不同。</p>
+
+  <h3>8. 结论（Conclusions）</h3>
+  <p>我们提出 Lero，一个学习排序查询优化器。第一，把学习排序技术用于查询优化——论证了为优化而精确预测延迟/基数是 overkill，改用 pairwise 二分类比较两计划，更高效有效。第二，利用数据库数十年智慧，与原生优化器协作改善质量。第三，配备计划探索策略，更有效地探索新优化机会。在 PostgreSQL 上的广泛评估展示了 Lero 在查询性能上的优势及其适应变化数据与负载的能力。</p>
+</div>
+
+<div class="footer">论文深度解读 · 生成自 Lero: A Learning-to-Rank Query Optimizer · 阅读时间约 45 分钟</div>
+
+</div>
+</body>
+</html>

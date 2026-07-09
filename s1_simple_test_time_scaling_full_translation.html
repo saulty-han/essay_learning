@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>s1: Simple test-time scaling 论文全文翻译</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="translation_style.css">
+<script>window.MathJax={tex:{inlineMath:[['$','$'],['\\(','\\)']],displayMath:[['$$','$$'],['\\[','\\]']]},svg:{fontCache:'global'}};</script>
+<script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+</head>
+<body>
+<div class="container">
+
+<a class="back-btn" href="index.html">&#8592; 返回目录</a>
+
+<!-- HERO -->
+<div class="hero">
+<h1 class="hero-title">s1：简单的测试时扩展<br><span style="font-size:1.1rem;color:#666;font-weight:400;">s1: Simple test-time scaling</span></h1>
+<p class="hero-sub">仅用 1000 条样本微调 + 预算强制（budget forcing），实现类 o1 的测试时扩展</p>
+<div class="hero-meta">Niklas Muennighoff, Zitong Yang, Weijia Shi 等 · Stanford / UW / Allen Institute for AI · arXiv:2501.19393</div>
+<div class="tag-row"><span class="tag">Test-time Scaling</span><span class="tag">Budget Forcing</span><span class="tag">SFT</span><span class="tag">Sample Efficiency</span><span class="tag">Reasoning</span></div>
+</div>
+
+<!-- TOC -->
+<div class="toc"><h3>目录</h3><ol>
+<li><a href="#sec-abstract">摘要 (Abstract)</a></li>
+<li><a href="#sec-intro">1. 引言 (Introduction)</a></li>
+<li><a href="#sec-data">2. 推理数据构建 s1K (Reasoning data curation)</a></li>
+<li><a href="#sec-tts">3. 测试时扩展 (Test-time scaling)</a></li>
+<li><a href="#sec-results">4. 结果 (Results)</a></li>
+<li><a href="#sec-ablation">5. 消融实验 (Ablations)</a></li>
+<li><a href="#sec-discussion">6. 讨论与相关工作 (Discussion)</a></li>
+<li><a href="#sec-impact">影响声明 (Impact Statement)</a></li>
+</ol></div>
+
+<!-- ======== ABSTRACT ======== -->
+<h2 id="sec-abstract" class="sec-title">摘要 (Abstract)</h2>
+<p>测试时扩展（test-time scaling）是一种有前景的语言建模新方法，它利用额外的测试时计算来提升性能。近期 OpenAI 的 o1 模型展示了这一能力，但未公开其方法，引发了大量复现尝试。我们追求实现测试时扩展与强推理性能的最简方法。首先，我们整理出一个小型数据集 s1K——1000 道配有推理轨迹的问题，依据我们通过消融验证的三条准则：难度（difficulty）、多样性（diversity）与质量（quality）。其次，我们提出<strong>预算强制（budget forcing）</strong>，通过强制终止模型的思考过程，或在其试图结束时多次追加 "Wait" 来延长思考，以此控制测试时计算。这能促使模型重新审视答案，常能修正错误的推理步骤。</p>
+<p>在用 s1K 对 Qwen2.5-32B-Instruct 进行监督微调并配备预算强制后，我们的模型 s1-32B 在竞赛数学题（MATH 与 AIME24）上超越 o1-preview 达 27%。进一步，用预算强制对 s1-32B 进行扩展，可在无测试时干预的情况下外推其性能：在 AIME24 上从 50% 提升到 57%。我们的模型、数据与代码均开源：https://github.com/simplescaling/s1。</p>
+
+<!-- ======== INTRODUCTION ======== -->
+<h2 id="sec-intro" class="sec-title">1. 引言 (Introduction)</h2>
+<p>过去几年语言模型的性能提升，很大程度上依赖用大规模自监督预训练扩展训练时计算。这些强大模型的诞生，为建立在其之上的新扩展范式——<strong>测试时扩展</strong>——奠定了基础。该方法的目标是在测试时增加计算以获得更好结果。已有大量工作探索这一思想，而 OpenAI o1 近期验证了该范式的可行性：o1 以随测试时计算扩展一贯提升的强推理性能，展示了其能力。OpenAI 将其方法描述为使用大规模强化学习（RL），暗示使用了海量数据。这引发了各种依赖 MCTS、多智能体等技术的复现尝试。其中 DeepSeek R1 成功复现了 o1 级性能，同样通过数百万样本与多训练阶段的 RL。然而，尽管大量 o1 复现尝试，尚无一个公开复现出清晰的测试时扩展行为。</p>
+
+<div class="figure-wrap">
+<img src="images/s1_simple_test_time_scaling_pages/p01.png" alt="Figure 1">
+<div class="fig-caption"><strong>图 1：s1-32B 的测试时扩展。</strong>我们在推理密集型任务上评估 s1-32B 并改变测试时计算量，显示随平均思考时间（token 数）增加，MATH500、AIME24、GPQA Diamond 准确率持续上升。</div>
+</div>
+
+<p>因此我们要问：实现测试时扩展与强推理性能的最简方法是什么？我们展示了：仅用 1000 个样本进行下一 token 预测训练，并通过我们称为<strong>预算强制</strong>的简单测试时技术控制思考时长，就能得到一个随测试时计算增加而扩展性能的强推理模型。具体而言，我们构建 <strong>s1K</strong>——1000 道精心筛选、配有从 Gemini Thinking Experimental 蒸馏出的推理轨迹与答案的问题。我们对一个现成的预训练模型进行有监督微调（SFT），仅需 16 块 H100 GPU 上 26 分钟训练。训练后，我们用预算强制控制模型花费的测试时计算：(I) 若模型生成的思考 token 超过期望上限，我们追加结束思考的 token 定界符强制结束，使其转入答案生成；(II) 若要模型花费更多测试时计算，我们抑制结束思考 token 定界符的生成，改为在模型当前推理轨迹后追加 "Wait" 以鼓励更多探索。</p>
+<p>配备这一简单配方（在 1000 样本上 SFT + 测试时预算强制）后，我们的 s1-32B 展现出测试时扩展（图 1），且是样本效率最高的推理模型，超越 OpenAI o1-preview 等闭源模型（图 2）。我们的消融实验表明：将数据选择的三条准则（难度、多样性、质量）结合至关重要；随机选取、选最长轨迹或仅选最多样样本都会导致显著更差性能（AIME24 平均约 −30%）；在全部 59K 样本池上训练并不比 1K 选择带来实质增益。</p>
+<p>我们的贡献：(1) 提出创建样本高效推理数据集（§2）与测试时扩展（§3）的简法；(2) 据此构建与 o1-preview 竞争的 s1-32B（§4）；(3) 对数据（§5.1）与测试时扩展（§5.2）的细微之处作消融；(4) 以讨论收尾激励未来简单推理研究（§6）。</p>
+
+<!-- ======== DATA ======== -->
+<h2 id="sec-data" class="sec-title">2. 推理数据构建 s1K (Reasoning data curation to create s1K)</h2>
+<h3 class="subsec-title">2.1 初始收集 59K 样本</h3>
+<p>我们遵循三条指导原则，从 16 个来源收集初始 59,029 道题：<strong>质量</strong>——数据集应高质量，我们始终检查样本并忽略格式糟糕者；<strong>难度</strong>——应具挑战性、需要显著推理努力；<strong>多样性</strong>——应来自不同领域以覆盖不同推理任务。我们收集两类数据集：</p>
+<ul style="padding-left:2em;">
+<li><strong>现有数据集的整理：</strong>最大来源是 NuminaMATH（30,660 道数学题）；加入历史 AIME 题（1983–2021）；为增强多样性加入 OlympicArena（4,250 道涵盖天文、生物、化学、计算机、地理、数学、物理的奥赛题）；OmniMath 增加 4,238 道竞赛级数学题；AGIEval 加入 2,385 道来自 SAT/LSAT 等标准化测试的题。</li>
+<li><strong>定量推理新数据集：</strong>s1-prob（182 道斯坦福统计系博士资格考概率题，含手写证明解）；s1-teasers（23 道量化交易面试脑筋急转弯，仅取最高难度）。</li>
+</ul>
+<p>对每道题，我们用 Google Gemini Flash Thinking API 生成推理轨迹与解，得到 59K 个「问题—推理轨迹—解」三元组。我们针对评估题（MATH500、GPQA Diamond、AIME24）做 8-gram 去污染与去重。</p>
+
+<h3 class="subsec-title">2.2 最终筛选 1K 样本</h3>
+<p>我们经过三个阶段筛选，到达最小 1000 样本集，仍依据质量、难度、多样性三原则。先过滤 API 错误样本（剩 54,116），再过滤含格式问题的低质量样本（ASCII 图、不存在的图片引用、题号不一致等，剩 51,581）。</p>
+
+<div class="figure-wrap">
+<img src="images/s1_simple_test_time_scaling_pages/p03.png" alt="Figure 2">
+<div class="fig-caption"><strong>图 2：s1K 与 s1-32B。</strong>(左) s1K 是含推理轨迹的 1000 道高质量、多样、困难的问题数据集；(右) 在 s1K 上微调的 32B 参数模型 s1-32B 位于样本效率前沿，优于 r1-distill、Sky-T1、QwQ、Bespoke-Stratos、o1-preview 等。</div>
+</div>
+
+<p><strong>难度（Difficulty）。</strong> 用两个指标：模型性能与推理轨迹长度。我们用 Qwen2.5-7B-Instruct 与 Qwen2.5-32B-Instruct 评估每题，由 Claude 3.5 Sonnet 对照参考答案判分；用 Qwen2.5 tokenizer 测推理轨迹 token 长度作为难度代理（假设更难的问题需要更多思考 token）。我们移除两个模型都能正确解的题（可能过易），样本降至 24,496。</p>
+<p><strong>多样性（Diversity）。</strong> 用 Claude 3.5 Sonnet 依据美国数学会 MSC 分类系统将问题归入领域。我们从 24,496 题池中：先均匀随机选一个领域，再按「偏向更长推理轨迹」的分布从中采样一题，重复至得到覆盖 50 个领域的 1000 个样本。消融（§5.1）显示三条准则结合很重要；部分蒸馏生成不正确，我们允许其存在，因为我们关注捕捉推理过程而非完全正确的解（评分显示 s1K 中 53.6% 正确）。</p>
+
+<!-- ======== TEST-TIME SCALING ======== -->
+<h2 id="sec-tts" class="sec-title">3. 测试时扩展 (Test-time scaling)</h2>
+<h3 class="subsec-title">3.1 方法</h3>
+<p>我们将测试时扩展方法分为两类：(1) <strong>顺序（Sequential）</strong>——后续计算依赖先前结果（如长推理轨迹）；(2) <strong>并行（Parallel）</strong>——计算相互独立（如多数投票）。我们聚焦顺序扩展，因其能基于中间结果深化推理与迭代精炼。我们提出新的顺序扩展方法及评测方式。</p>
+<p><strong>预算强制（Budget forcing）。</strong> 我们提出一个简单的解码时干预，强制思考 token 的最大和/或最小数量：为强制上限，直接追加结束思考 token 定界符（及可选 "Final Answer:"）提前退出思考阶段；为强制下限，抑制结束思考 token 定界符的生成，并可选追加 "Wait" 鼓励模型反思当前生成。</p>
+
+<div class="figure-wrap">
+<img src="images/s1_simple_test_time_scaling_pages/p04.png" alt="Figure 3">
+<div class="fig-caption"><strong>图 3：s1-32B 的预算强制。</strong>模型在 "...is 2." 后试图停止，但我们抑制结束思考 token 定界符、改为追加 "Wait"，促使 s1-32B 自我修正答案（重新数 r，得到正确结果 3）。</div>
+</div>
+
+<p><strong>基线。</strong> 我们将预算强制与以下比较：(I) 条件长度控制——在提示中告知模型应生成多长，分 token 条件控制、步骤条件控制、类别条件控制；(II) 拒绝采样（rejection sampling）——采样直到生成符合预定计算预算。</p>
+
+<h3 class="subsec-title">3.2 指标 (Metrics)</h3>
+<p>我们建立一组期望性质作为评测指标，不仅关心准确率，也关心可控性与扩展斜率。对每个方法，我们在固定基准上改变测试时计算，得到以思考 token 为 x 轴、准确率为 y 轴的分段线性函数 $f$（图 1 中 AIME24 最右点对应 $f(7320)=57\%$）。我们度量三个指标：</p>
+<div class="eq-block">$$\text{Control} = \frac{1}{|\mathcal{A}|}\sum_{a\in\mathcal{A}}\mathbb{I}(a_{\min}\le a\le a_{\max})\tag{1}$$</div>
+<div class="eq-block">$$\text{Scaling} = \frac{1}{\binom{|\mathcal{A}|}{2}}\sum_{a,b\in\mathcal{A},\,b>a}\frac{f(b)-f(a)}{b-a}\tag{2}$$</div>
+<div class="eq-block">$$\text{Performance} = \max_{a\in\mathcal{A}} f(a)\tag{3}$$</div>
+<p>Control 衡量方法对测试时计算使用的可控程度（100% 为完美控制）；Scaling 为该分段线性函数的平均斜率，须为正且越大越好；Performance 为方法在基准上达到的最大性能。</p>
+
+<!-- ======== RESULTS ======== -->
+<h2 id="sec-results" class="sec-title">4. 结果 (Results)</h2>
+<h3 class="subsec-title">4.1 设置</h3>
+<p><strong>训练：</strong> 用 s1K 对 Qwen2.5-32B-Instruct 做 SFT 得到 s1-32B，16 块 NVIDIA H100 上用 PyTorch FSDP 仅需 26 分钟。<strong>评估：</strong> 选三个代表性推理基准——AIME24（30 道 2024 美国数学邀请赛题，答案为 000–999 整数）、MATH500（难度各异的竞赛数学题）、GPQA Diamond（198 道博士级科学题，涵盖生物/化学/物理）。除非特别说明，温度 0（贪心）测准确率（pass@1）。</p>
+
+<div class="table-note">
+<strong>表 1：s1-32B 是一个强开源推理模型。</strong># ex. = 推理微调所用样本数；BF = budget forcing。对比 o1 系列、DeepSeek r1 系列、QwQ、Sky-T1、Bespoke-32B 及 s1。关键行：<strong>s1 w/o BF (1K)：AIME24 50.0 / MATH500 92.6 / GPQA 56.6</strong>；<strong>s1-32B (1K, 含 BF)：AIME24 56.7 / MATH500 93.0 / GPQA 59.6</strong>；开放权重且开放数据的模型中，s1-32B 样本效率最高，逼近 Gemini 2.0 Thinking（AIME24 60.0）。
+</div>
+
+<div class="figure-wrap">
+<img src="images/s1_simple_test_time_scaling_pages/p05.png" alt="Figure 4">
+<div class="fig-caption"><strong>图 4：顺序与并行测试时扩展。</strong>(a) 通过预算强制的顺序扩展显示清晰扩展趋势并可一定程度外推（最右三点分别强制延长思考 2/4/6 次）；(b) 在 Qwen2.5-32B-Instruct 上做 64 次多数投票（温度 1），展示并行扩展，但无法赶上 s1-32B 的顺序扩展性能。</div>
+</div>
+
+<h3 class="subsec-title">4.2 性能</h3>
+<p><strong>测试时扩展。</strong> 图 1 显示 s1-32B 随更多测试时计算而扩展；图 4(左) 显示预算强制在约 6 倍时最终趋平（过度抑制结束 token 会让模型陷入重复循环）。图 4(右) 表明，对基础模型用多数投票扩展测试时计算无法赶上 s1-32B，验证了顺序扩展优于并行的直觉。</p>
+<p><strong>样本效率。</strong> 图 2(右) 与表 1 显示 s1-32B 是最高效的开放数据推理模型，仅多训 1000 样本就显著超越基础模型；r1-32B 虽更强但用了 800× 的样本；s1-32B 在 AIME24 上几乎追平其蒸馏来源 Gemini 2.0 Thinking，说明蒸馏流程有效。</p>
+
+<!-- ======== ABLATIONS ======== -->
+<h2 id="sec-ablation" class="sec-title">5. 消融实验 (Ablations)</h2>
+<h3 class="subsec-title">5.1 数据数量、多样性与难度</h3>
+<p>我们检验三条准则结合的重要性：仅质量（1K-random，随机选 1000）在所有基准上远差于 s1K；仅多样性（1K-diverse，跨领域均匀采样）同样差；仅难度（1K-longest，选最长轨迹 1000）显著提升 GPQA 但仍不及 s1K；最大化数量（59K-full，训练全部 59K）模型强但耗资源多（需 394 H100 GPU 小时，s1-32B 仅 7 小时）。综合质量、难度、多样性是关键。</p>
+
+<div class="table-note">
+<strong>表 2：s1K 数据消融（节选，预算强制约 30K 思考 token）。</strong>模型 / AIME2024 / MATH500 / GPQA Diamond：1K-random 36.7/90.6/52.0；1K-diverse 26.7/91.2/54.6；1K-longest 33.3/90.4/59.6；59K-full 53.3/92.8/58.1；<strong>s1K 50.0/93.0/57.6</strong>。带 95% 自助置信区间，多数对比区间整体为负，说明显著差于 s1K。
+</div>
+
+<h3 class="subsec-title">5.2 测试时扩展方法</h3>
+<p>表 3 在 AIME24 上消融扩展方法：预算强制（BF）取得 100% Control、Scaling 15、Performance 56.7；各类条件控制（TCC/SCC/CCC）或拒绝采样（RS）在控制、扩展斜率或性能上均不及 BF。表 4 进一步比较预算强制外推所用字符串，发现 "Wait" 通常给出最佳性能（AIME24 从 50.0 提升到 53.3）。</p>
+
+<div class="table-note">
+<strong>表 3：AIME24 上扩展测试时计算的方法消融。</strong>BF：Control 100% / Scaling 15 / Performance 56.7 / |𝒜| 5；TCC 40%/-24/40.0；TCC+BF 100%/13/40.0；SCC 60%/3/36.7；CCC 50%/25/36.7；RS 100%/-35/40.0。BF 为所选最佳方法。
+</div>
+
+<div class="figure-wrap">
+<img src="images/s1_simple_test_time_scaling_pages/p07.png" alt="Figure 5">
+<div class="fig-caption"><strong>图 5：模型输出示例。</strong>分别选取 AIME24（左）、MATH500（中）、GPQA（右）各一题，s1-32B 生成正确答案。黑色为提示，浅蓝为推理轨迹，蓝色为答案（灰色省略号表示文本被截断）。</div>
+</div>
+
+<div class="figure-wrap">
+<img src="images/s1_simple_test_time_scaling_pages/p08.png" alt="Figure 6">
+<div class="fig-caption"><strong>图 6：s1-32B 在 AIME24 上的拒绝采样。</strong>以温度 1 采样直到所有生成少于（从左至右）3500/4000/5000/8000/16000 思考 token，平均需 655/97/8/3/2/1 次尝试。显示逆扩展趋势：更长的生成往往是模型走偏后回溯，因而在拒绝采样下常错误。</div>
+</div>
+
+<!-- ======== DISCUSSION ======== -->
+<h2 id="sec-discussion" class="sec-title">6. 讨论与相关工作 (Discussion and related work)</h2>
+<h3 class="subsec-title">6.1 样本高效推理模型</h3>
+<p>已有多个并行工作复现 o1：DeepSeek-r1/k1.5 用 RL，另一些用数万蒸馏样本做 SFT。我们表明仅 1000 样本 SFT 足以构建匹敌 o1-preview 的模型，并位于帕累托前沿（图 2）；预算强制结合推理模型首次复现了 OpenAI 的测试时扩展曲线。为何仅 1000 样本 SFT 就能带来如此提升？我们假设模型预训练已接触海量推理数据，推理能力本就存在，样本高效的微调阶段只是「激活」它，并在测试时用预算强制进一步扩展——类似 LIMA 的「浅对齐假设」（1000 样本足以使模型对齐用户偏好）。</p>
+<h3 class="subsec-title">6.2 测试时扩展</h3>
+<p><strong>方法。</strong> 我们区分并行与顺序扩展：并行依赖多路独立尝试并据准则选优（多数投票、Best-of-N）；顺序扩展让模型基于先前尝试逐步精炼。树搜索方法（MCTS、引导 beam search、REBASE 等）介于两者之间，奖励模型（ORM/PRM）在其中起关键作用。</p>
+<p><strong>进一步测试时扩展的局限。</strong> 预算强制可外推测试时计算（AIME24 从 50% 到 57%），但有两个关键局限：最终趋平（图 4），且受底层语言模型上下文窗口约束。未来方向包括轮换不同字符串（不只 "Wait"）、结合频率惩罚或更高温度避免重复循环，或将预算强制用于 RL 训练的推理模型以获更好外推。</p>
+
+<div class="figure-wrap">
+<img src="images/s1_simple_test_time_scaling_pages/p09.png" alt="Figure 7">
+<div class="fig-caption"><strong>图 7：用并行扩展方法进一步扩展。</strong>在 AIME24 的 30 道题上平均。REBASE（用 LLaMA-34B 初始化的过程奖励模型）结合多数投票的扩展优于多数投票乃至该场景下的顺序扩展，但 REBASE 每步需额外前向计算；顺序扩展到 512 步时有 12/30 题超出上下文窗口导致性能大降。并行扩展可作为顺序扩展局限的补充。</div>
+</div>
+
+<!-- ======== IMPACT ======== -->
+<h2 id="sec-impact" class="sec-title">影响声明 (Impact Statement)</h2>
+<p>具备强推理能力的语言模型有潜力极大提升人类生产力，从辅助复杂决策到推动科学突破。然而近期推理进展（如 OpenAI o1、DeepSeek r1）缺乏透明度，限制了更广泛的研究进展。我们的工作旨在以完全开放的方式推进推理前沿，促进创新与协作，加速最终造福社会的进步。</p>
+
+<div class="footer">本页为 s1: Simple test-time scaling 论文的中文翻译，仅供学习研究使用。原文：arXiv:2501.19393。</div>
+
+</div>
+</body>
+</html>

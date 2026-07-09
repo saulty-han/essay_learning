@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>LLMS TEER 论文全文翻译 — Improving Long-Context LLM Inference by Steering Attention on Reused Contexts</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="translation_style.css">
+<script>window.MathJax={tex:{inlineMath:[['$','$'],['\\(','\\)']],displayMath:[['$$','$$'],['\\[','\\]']]},svg:{fontCache:'global'}};</script>
+<script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+</head>
+<body>
+<div class="container">
+
+<a class="back-btn" href="index.html">&#8592; 返回目录</a>
+
+<!-- HERO -->
+<div class="hero">
+<h1 class="hero-title">LLMS TEER：通过引导复用上下文上的注意力<br><span style="font-size:1.1rem;color:#666;font-weight:400;">Improving Long-Context LLM Inference by Steering Attention on Reused Contexts</span></h1>
+<p class="hero-sub">一种免微调、与前缀缓存兼容的注意力引导框架，用于提升长上下文 LLM 的理解质量与推理效率</p>
+<div class="hero-meta">Zhuohan Gu, Jiayi Yao, Kuntai Du, Junchen Jiang · University of Chicago · NeurIPS 2024 ML for Systems Workshop (arXiv:2411.13009)</div>
+<div class="tag-row"><span class="tag">Long-Context LLM</span><span class="tag">Attention Steering</span><span class="tag">Prefix Caching</span><span class="tag">KV Cache</span><span class="tag">Fine-tuning-free</span></div>
+</div>
+
+<!-- TOC -->
+<div class="toc"><h3>目录</h3><ol>
+<li><a href="#sec-abstract">摘要 (Abstract)</a></li>
+<li><a href="#sec-intro">1. 引言 (Introduction)</a></li>
+<li><a href="#sec-posthoc">2. 事后注意力引导 (Post-hoc attention steering)</a></li>
+<li><a href="#sec-design">3. LLMS TEER 设计 (Design)</a></li>
+<li><a href="#sec-eval">4. 实验评估 (Evaluation)</a></li>
+<li><a href="#sec-limit">5. 局限与未来工作 (Limitations & Future Work)</a></li>
+<li><a href="#sec-concl">6. 结论 (Conclusion)</a></li>
+</ol></div>
+
+<!-- ======== ABSTRACT ======== -->
+<h2 id="sec-abstract" class="sec-title">摘要 (Abstract)</h2>
+<p>随着大语言模型（LLM）在复杂任务上展现出令人印象深刻的性能，它们仍然受困于较长的上下文理解能力以及高昂的计算开销。为了在效率与质量之间取得平衡，我们提出 <strong>LLMS TEER</strong>，一个通过「与查询无关的注意力引导（query-independent attention steering）」来增强 LLM 的免微调框架。在主流 LLM 与数据集上的测试表明，LLMS TEER 将性能差距相对基线缩小了 65.9%，并且相比近期的注意力引导方法将运行时延迟最多降低 4.8×。</p>
+
+<!-- ======== INTRODUCTION ======== -->
+<h2 id="sec-intro" class="sec-title">1. 引言 (Introduction)</h2>
+<p>大语言模型（LLM）在问答、摘要与推理等复杂任务上已展现出卓越能力。为提升其可靠性，LLM 常被注入超出其固有训练数据的领域或用户专属知识。然而，纳入这些动辄数千 token 的补充上下文会带来两大挑战：(1) 模型常常难以理解长上下文（例如「lost-in-the-middle」问题）；(2) 处理长上下文会带来巨大的运行时开销。</p>
+<p>由于同一段上下文文本的 Key-Value（KV）缓存常被多次复用，许多近期系统采用<strong>前缀缓存（prefix caching）</strong>：把频繁复用的上下文的 KV 缓存存储下来，使 LLM 无需反复对这些上下文做 prefill。但是，模型在 KV 对保持不变的情况下，仍会不断「丢失」上下文中的关键信息。那么，是否存在一种无需微调模型、同时获得高效率与高质量的方法？</p>
+<p>我们提出 <strong>LLMS TEER</strong>，一个开创性的、免微调的框架，通过<strong>事后注意力引导（post-hoc attention steering）</strong>高效提升模型的生成质量。具体而言，LLMS TEER 重新加权注意力分数，将模型的注意力「引导」向被选中的 token，从而改善其上下文理解。我们的核心洞察是：存储并复用 KV 缓存，提供了一个<strong>离线修改 KV 缓存以增进模型对上下文理解</strong>的机会；由于对前文上下文的 KV 缓存修改与查询无关，所有查询都能由此受益。LLMS TEER 使 LLM 能够用不同方式「重读」同一段上下文——其依据是：用不同前缀提示（prefix prompt）多次阅读同一上下文，会引导模型生成不同的 KV 缓存，代表对上下文的不同理解。</p>
+<p>我们在 LLaMA-3.1-8b-Instruct 上实现了 LLMS TEER，并与 LLaMA-3.1-8b-Instruct、LLaMA-3.1-70b-Instruct 以及当前最优的注意力引导基线进行了对比。实验表明，通过引导那些在模型多种理解中<strong>始终重要</strong>的 token，LLMS TEER 不仅显著提升了 F1 分数（如 72.9 → 82.0），而且相比基线最高快 4.8×。LLMS TEER 既降低了运行时开销，又提升了生成质量。本文是首个 (1) 在不微调的前提下提升模型生成质量，且 (2) 该方式与前缀缓存相兼容的工作。</p>
+
+<!-- ======== POST-HOC ======== -->
+<h2 id="sec-posthoc" class="sec-title">2. 事后注意力引导 (Post-hoc attention steering)</h2>
+<p>注意力引导并非凭空而来。诸如 PASTA 与 AutoPASTA 的方法，通过把 LLM 的注意力引导到输入文本的指定部分来提升生成质量。在 PASTA 中，用户手动指定输入中的 token，并通过重新加权把 LLM 的注意力导向这些高亮 token。然而，由人工标注相关输入片段并不总是可行，尤其对于超长上下文与上下文相关的任务。</p>
+<p>AutoPASTA 通过自动迭代提示来识别关键上下文信息，从而增强了 PASTA：它直接提示 LLM 基于查询生成上下文中的关键句，再对这些关键句里的 token 注意力分数进行上加权。尽管在提升生成质量上有潜力，AutoPASTA 仍存在若干局限：</p>
+<ul style="padding-left:2em;">
+<li><strong>延迟增加</strong>：迭代提示需要两次 LLM 调用，增加了运行时延迟。</li>
+<li><strong>与前缀缓存不兼容</strong>：在前缀缓存中，频繁使用的文本块的 KV 缓存被存储复用，从而可跳过这些文本块的 prefill。例如 Llama-8B 处理 5000-token 上下文需 2.04 秒，但如果 KV 缓存已预计算并存储，只需对最后的用户查询做 prefill，仅需 0.039 秒。尽管前缀缓存可应用于 AutoPASTA 的首次调用，但第二次调用无法受益于前缀缓存——因为其上下文注意力是以「查询相关」方式被引导的，导致上下文的 KV 缓存被改变，无法在不同查询间复用。</li>
+</ul>
+
+<!-- ======== DESIGN ======== -->
+<h2 id="sec-design" class="sec-title">3. LLMS TEER 设计 (Design)</h2>
+<p>我们介绍 LLMS TEER 的设计，它在降低运行时开销的同时提升推理质量。先给出基本洞察，再说明如何选取并引导 token。</p>
+<p><strong>基本洞察</strong>：当 LLM 单次处理一段上下文时，某些 token 可能未获得足够注意力。通过提示 LLM 以不同前缀提示、从而不同 KV 缓存多次阅读上下文，我们假设：在这些 KV 缓存中注意力分数始终很高的 token，正是需要更多注意力的 token。</p>
+
+<div class="figure-wrap">
+<img src="images/llmsteer_pages/p03.png" alt="Figure 1">
+<div class="fig-caption"><strong>图 1：LLMS TEER 在 LLM 推理流程中的系统示意。</strong>它用不同的前缀提示对相同上下文处理两次，生成两组 Key-Value 缓存，然后识别出 top-k token 并对所选 token 重新加权。</div>
+</div>
+
+<p><strong>关键组件</strong>：LLMS TEER 由三个高层步骤组成。第一，提示 LLM 用两个不同的前缀提示把上下文文本块处理两次，利用「前缀提示的变化会影响 LLM 对上下文的解读」这一洞察。第二，在每一层对每个注意力头的累积注意力分数进行计算，基于跨所有头的分数选出 top-k token，并找出两次处理中都排名靠前的 token。最后，放大所选 token 的注意力权重。图 1 给出示意，对应算法见 §A.2。</p>
+<p><strong>上下文重读（Contextual re-reading）</strong>：此步骤提示 LLM 用不同前缀提示把同一上下文处理两次，迫使模型以两种不同方式阅读上下文。前缀提示<strong>不含查询本身</strong>，以确保上下文以「非查询相关」的方式被阅读，从而捕获与具体查询无关的通用上下文信息。更重要的是，给定固定上下文 C 与一串查询，该方法使前缀缓存可在所有查询间复用，并减少了在线推理时为每个查询调用两次 LLM 的需要。</p>
+<p><strong>Token 选择</strong>：对每次处理，我们存储每层每头的前缀提示与上下文 token 的累积注意力分数。设输入提示张量 $X\in\mathbb{R}^{L\times D}$，其中 $L$ 为输入提示长度、$D$ 为模型隐维度。注意力矩阵计算为 $A=\mathrm{softmax}\!\left(\frac{QK^\top}{\sqrt{D}}\right)\in\mathbb{R}^{L\times L}$，其中 $Q=XW_Q$、$K=XW_K$。令 $L_p$ 为前缀提示与上下文的合并长度，则对应的注意力子矩阵为 $A_p=A[:L_p,:L_p]\in\mathbb{R}^{L_p\times L_p}$。对每列求和得到每个 token 收到的累积注意力：</p>
+<div class="eq-block">$$A_s=\sum_{i=0}^{L_p-1}A_p[i,:]\in\mathbb{R}^{L_p}$$</div>
+<p>其中 $A_s(i)$ 为 token $i$ 的累积注意力分数，表示其从所有前序 token 收到的总注意力。随后我们在所有头与层上存储累积分数及对应索引；对每个层跨所有头排序，选出该层的 top-k token，再取两次处理的交集，对其中始终排名靠前的 token 进行上加权。</p>
+<p><strong>引导（Steering）</strong>：在引导阶段，每层通过一个加权矩阵 $M$ 调整注意力机制，$M$ 对所选 token 的注意力分数进行缩放。初始定义 $M\in\mathbb{R}^{L\times L}$ 为全 1 张量；对每层所选 token，用预定义缩放因子 $\alpha$ 更新 $M$ 的对应项，再沿 batch 与头维度扩展为形状 $\mathbb{R}^{1\times H\times L\times L}$，最后逐元素乘到每层的原始注意力分数上：</p>
+<div class="eq-block">$$A_{\text{steered}}=M\odot A$$</div>
+<p>其中 $\odot$ 表示逐元素乘法，$A$ 为原始注意力矩阵。</p>
+
+<!-- ======== EVALUATION ======== -->
+<h2 id="sec-eval" class="sec-title">4. 实验评估 (Evaluation)</h2>
+<h3 class="subsec-title">4.1 实验设置</h3>
+<p><strong>数据集</strong>：评估覆盖 SQuAD（基于维基百科文章的阅读理解）、TriviaQA（需跨多句推理的大型阅读理解数据集）、GSM8K（小学多步数学应用题）。每个数据集随机采样 100 个测试用例，以 F1 分数作为质量指标、以请求延迟（秒）作为效率指标。</p>
+<p><strong>LLMS TEER 设置</strong>：将 LLMS TEER 应用于 Llama-8B，使用注意力缩放因子 $\alpha$；生成不同 KV 缓存的两个前缀提示见 §A.1。沿用 AutoPASTA 的「由粗到细（coarse-to-fine）」模型剖析来搜索最优的待引导层与头。</p>
+<p><strong>基线</strong>：对比 Llama-8B、Llama-70B（8-bit 量化）以及带 AutoPASTA 的 Llama-8B，均启用前缀缓存。实现基于 Huggingface Transformers，所有实验在两张 NVIDIA A40 GPU 上进行。</p>
+<h3 class="subsec-title">4.2 结果</h3>
+
+<div class="figure-wrap">
+<img src="images/llmsteer_pages/p04.png" alt="Figure 2">
+<div class="fig-caption"><strong>图 2：端到端延迟 vs. 生成质量。</strong>假设服务请求时 KV 缓存已在 GPU 显存中。LLMS TEER 在接近 8B 基线的延迟下取得更高质量，并显著优于 AutoPASTA。</div>
+</div>
+
+<p><strong>降低请求延迟</strong>：如图 2 所示，LLMS TEER 在所有数据集上的请求延迟都接近 8B 基线；相比 70B 模型可降低 7.1–7.5× 延迟，相比 AutoPASTA 仍可降低 1.4–4.8×。</p>
+<p><strong>更高质量</strong>：LLMS TEER 在三个数据集上均展现高生成质量。在 SQuAD 上，其 F1 比启用前缀缓存的 LLaMA-8B 高约 10%、比 AutoPASTA 高约 7%；在 TriviaQA 上超过 8B 模型 12.5%、超过 AutoPASTA 11.4%；在 GSM8K 上甚至超过 70B 模型。虽然与 70B 在 SQuAD/TriviaQA 上仍有差距，但已非常接近且无需承担大模型的高延迟。</p>
+<p><strong>对改进来源的理解</strong>：与 AutoPASTA 不同，LLMS TEER 不依赖查询信息就能引导注意力，以更少信息取得更优表现。我们测试了「查询相关」版本的 LLMS TEER，其改进小于「查询无关」方法，说明有效的注意力引导可以无需纳入查询信息。</p>
+
+<!-- ======== LIMITATIONS ======== -->
+<h2 id="sec-limit" class="sec-title">5. 局限与未来工作 (Limitations & Future Work)</h2>
+<p>我们计划将方法扩展到更长上下文（如 &gt;10k token）以充分挖掘能力，并在 Llama-8B 之外的模型上测试以评估泛化性；还将开展消融实验，量化「引导机制」与「上下文重读」各自的贡献。我们将探索与传统微调相比本方法的局限与能力（尤其考虑上下文窗口长度与模型推理能力）；此外，PagedAttention 与 FlashAttention 可进一步提升效率；在「单 token 对」粒度上做更细粒度引导（超越当前的 token 级上加权）也有望进一步提升生成质量，留作未来工作。</p>
+
+<!-- ======== CONCLUSION ======== -->
+<h2 id="sec-concl" class="sec-title">6. 结论 (Conclusion)</h2>
+<p>我们提出 <strong>LLMS TEER</strong>，一种新颖的注意力引导方法，通过让模型多次「重读」上下文来提升 LLM 的生成质量。具体而言，LLMS TEER 将小模型与大模型之间的响应质量差距缩小了 65.9%，并且相比当前最优的注意力引导基线把响应速度提升了 4.8×。</p>
+
+<!-- APPEND -->
+
+<div class="footer">
+论文全文翻译 · LLMS TEER (arXiv:2411.13009) · NeurIPS 2024 ML for Systems Workshop<br>
+翻译自 University of Chicago 原文 · 含 Figure 1–2（论文原页高清渲染图）<br>
+图片来源：论文 PDF 页面高清渲染
+</div>
+
+</div><!-- end .container -->
+</body>
+</html>

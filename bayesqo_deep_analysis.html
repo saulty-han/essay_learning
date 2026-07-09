@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>深度解读 — BayesQO: Offline Query Planning via Bayesian Optimization</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{font-family:'Noto Sans SC',system-ui,-apple-system,sans-serif;background:#0d1117;color:#c9d1d9;line-height:1.8;font-size:16px;min-height:100vh;}
+.container{max-width:1400px;margin:0 auto;padding:0 24px;background:#0d1117;position:relative;}
+.back-btn{position:fixed;top:16px;left:16px;z-index:9999;background:rgba(20,20,35,.75);color:#c9d1d9;border:1px solid rgba(255,255,255,.15);border-radius:10px;padding:8px 16px;font-size:14px;cursor:pointer;backdrop-filter:blur(6px);transition:all .3s;text-decoration:none;display:flex;align-items:center;gap:6px;}
+.back-btn:hover{background:rgba(30,30,55,.9);border-color:rgba(255,255,255,.3);}
+.hero{padding:80px 0 40px;text-align:center;}
+.hero-title{font-size:2.2rem;font-weight:700;background:linear-gradient(135deg,#e11d48,#f43f5e,#f43f5e);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:12px;line-height:1.3;}
+.hero-sub{font-size:1.1rem;color:#8b949e;margin-bottom:8px;}
+.venue{font-size:.95rem;color:#8b949e;margin-top:8px;}
+.venue a{color:#e11d48;text-decoration:none;}
+.venue a:hover{text-decoration:underline;}
+.tag-row{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:16px;}
+.tag{display:inline-block;padding:4px 14px;border-radius:20px;font-size:.85rem;border:1px solid rgba(225,29,72,.3);color:#e11d48;background:rgba(225,29,72,.06);}
+.divider{border:none;border-top:1px solid rgba(255,255,255,.08);margin:48px 0;}
+.section{margin:40px 0;}
+.section-title{font-size:1.75rem;font-weight:700;margin-bottom:20px;color:#e6edf3;display:flex;align-items:center;gap:10px;}
+.section-title .num{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#e11d48,#f43f5e);color:#0d1117;font-size:1rem;font-weight:700;flex-shrink:0;}
+.section-desc{font-size:16px;line-height:1.9;color:#c9d1d9;margin-bottom:16px;}
+.toc{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:28px 36px;margin:30px 0;}
+.toc h3{font-size:1.2rem;color:#e6edf3;margin-bottom:14px;}
+.toc ol{list-style:none;counter-reset:toc;padding:0;}
+.toc li{counter-increment:toc;margin:8px 0;}
+.toc li::before{content:counter(toc) ".";color:#e11d48;font-weight:600;margin-right:8px;}
+.toc a{color:#8b949e;text-decoration:none;transition:color .2s;}
+.toc a:hover{color:#e11d48;}
+.module-card{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:24px;margin:18px 0;transition:all .3s;}
+.module-card:hover{border-color:rgba(225,29,72,.3);transform:translateY(-2px);}
+.module-card h3{font-size:1.15rem;font-weight:600;margin-bottom:10px;color:#e11d48;}
+.module-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.arch-card{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:22px;margin:14px 0;transition:all .3s;}
+.arch-card:hover{border-color:rgba(225,29,72,.3);}
+.arch-card h4{font-size:1.05rem;font-weight:600;color:#fb7185;margin-bottom:8px;}
+.arch-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.step-flow{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:22px;margin:14px 0;}
+.step-flow h4{font-size:1.05rem;font-weight:600;color:#e11d48;margin-bottom:8px;}
+.step-flow p{font-size:15px;line-height:1.8;color:#8b949e;}
+.data-table{width:100%;border-collapse:collapse;margin:18px 0;background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:12px;overflow:hidden;font-size:14px;}
+.data-table th{background:rgba(225,29,72,.1);color:#e11d48;padding:12px 16px;text-align:left;font-weight:600;}
+.data-table td{padding:10px 16px;border-top:1px solid rgba(255,255,255,.06);color:#c9d1d9;}
+.data-table tr:hover td{background:rgba(225,29,72,.04);}
+.formula-box{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:20px 24px;margin:16px 0;font-size:17px;text-align:center;color:#e6edf3;font-family:'JetBrains Mono',monospace;}
+.code-block{background:rgba(20,20,35,.8);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:18px 22px;margin:16px 0;overflow-x:auto;}
+.code-block pre{font-family:'JetBrains Mono',monospace;font-size:14px;line-height:1.7;color:#c9d1d9;white-space:pre;}
+.ck{color:#e11d48;}.cs{color:#f43f5e;}.cf{color:#d2a8ff;}.cg{color:#8b949e;}.cv{color:#79c0ff;}
+.qa-card{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:24px;margin:16px 0;}
+.qa-q{font-size:1.05rem;font-weight:600;color:#e11d48;margin-bottom:12px;}
+.qa-a{font-size:15px;line-height:1.9;color:#8b949e;}
+.highlight-box{background:rgba(225,29,72,.06);border:1px solid rgba(225,29,72,.2);border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;}
+.warn-box{background:rgba(244,63,94,.08);border:1px solid rgba(244,63,94,.25);border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;}
+.info-box{background:rgba(225,29,72,.06);border:1px solid rgba(225,29,72,.2);border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;}
+.prompt-box{background:rgba(20,20,35,.8);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:18px 22px;margin:16px 0;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.7;color:#c9d1d9;white-space:pre-wrap;}
+.prompt-label{display:inline-block;padding:2px 10px;border-radius:6px;font-size:.85rem;font-weight:600;margin-bottom:8px;background:rgba(225,29,72,.15);color:#e11d48;}
+.fc{font-size:14px;color:#8b949e;text-align:center;margin:10px 0;line-height:1.6;}
+.comp-card{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:22px;margin:14px 0;transition:all .3s;}
+.comp-card:hover{border-color:rgba(225,29,72,.3);}
+.comp-card h4{font-size:1.05rem;font-weight:600;color:#fb7185;margin-bottom:8px;}
+.comp-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.insight-box{background:rgba(225,29,72,.06);border:1px solid rgba(225,29,72,.2);border-radius:12px;padding:18px 22px;margin:16px 0;}
+.insight-box h4{color:#e11d48;font-size:1.05rem;margin-bottom:8px;}
+.insight-box p{font-size:15px;line-height:1.8;color:#c9d1d9;}
+.limit-box{background:rgba(244,63,94,.08);border:1px solid rgba(244,63,94,.25);border-radius:12px;padding:18px 22px;margin:16px 0;}
+.limit-box h4{color:#fb7185;font-size:1.05rem;margin-bottom:8px;}
+.limit-box p{font-size:15px;line-height:1.8;color:#c9d1d9;}
+.kv-row{display:flex;border-bottom:1px solid rgba(255,255,255,.06);padding:8px 0;}
+.kv-row:last-child{border-bottom:none;}
+.kv-key{width:180px;flex-shrink:0;color:#e11d48;font-weight:500;font-size:14px;}
+.kv-val{color:#c9d1d9;font-size:14px;line-height:1.7;}
+.footer{text-align:center;color:#555;font-size:14px;padding:48px 0 32px;}
+.svg-container{background:rgba(20,20,35,.4);border:1px solid rgba(255,255,255,.06);border-radius:14px;padding:20px;margin:24px 0;overflow-x:auto;text-align:center;}
+.svg-container svg{max-width:100%;height:auto;}
+.phase-badge{display:inline-block;padding:3px 12px;border-radius:8px;font-size:.85rem;font-weight:600;margin-right:8px;}
+.phase-1{background:rgba(225,29,72,.15);color:#fb7185;}
+.phase-2{background:rgba(244,63,94,.15);color:#fda4af;}
+.phase-3{background:rgba(180,80,120,.15);color:#d6a0b8;}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
+.grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;}
+@media(max-width:900px){.grid-2,.grid-3{grid-template-columns:1fr;}.hero-title{font-size:1.6rem;}.kv-row{flex-direction:column;}.kv-key{width:auto;}}
+@keyframes flowPulse{0%,100%{opacity:.6;}50%{opacity:1;}}
+.flow-arrow{animation:flowPulse 2s ease-in-out infinite;}
+.translation h3{font-size:1.3rem;color:#fb7185;margin:26px 0 12px;font-weight:700;}
+.translation h4{font-size:1.1rem;color:#e11d48;margin:18px 0 8px;font-weight:600;}
+.translation p{font-size:15.5px;line-height:1.95;color:#c9d1d9;margin-bottom:12px;}
+.fig-note{background:rgba(225,29,72,.07);border-left:3px solid #e11d48;border-radius:8px;padding:12px 18px;margin:14px 0;font-size:14.5px;color:#e0a3b4;line-height:1.8;}
+.fig-note b{color:#fb7185;}
+</style>
+</head>
+<body>
+<div class="container">
+
+<a class="back-btn" href="index.html">&#8592; 返回目录</a>
+
+<a href="bayesqo_full_translation.html" style="display:block;max-width:860px;margin:18px auto 0;padding:13px 22px;background:linear-gradient(90deg,rgba(31,111,235,.16),rgba(137,87,227,.16));border:1px solid rgba(137,87,227,.5);border-radius:12px;color:#e6edf3;text-decoration:none;font-weight:500;font-size:15px;text-align:center;box-shadow:0 2px 14px rgba(0,0,0,.35);">阅读本文逐段完整中文翻译（Full Translation）</a>
+
+<!-- HERO -->
+<div class="hero">
+  <h1 class="hero-title">BayesQO: 基于贝叶斯优化的离线查询规划</h1>
+  <p class="hero-sub">为「会被重复执行成千上万次」的分析型查询，投入远超单次执行时间的离线优化，用 VAE + 贝叶斯优化搜出极致计划</p>
+  <div class="venue">
+    arXiv 2025 (2502.05256) &nbsp;|&nbsp;
+    <a href="https://arxiv.org/abs/2502.05256">arXiv: 2502.05256</a> &nbsp;|&nbsp; 无公开代码（需自实现）
+  </div>
+  <div class="tag-row">
+    <span class="tag">Offline Query Optimization</span>
+    <span class="tag">Bayesian Optimization</span>
+    <span class="tag">VAE</span>
+    <span class="tag">Censored Observation</span>
+    <span class="tag">TuRBO</span>
+    <span class="tag">LLM Initialization</span>
+  </div>
+</div>
+
+<!-- TOC -->
+<div class="toc">
+  <h3>目录</h3>
+  <ol>
+    <li><a href="#sec-1">研究动机：离线查询优化与「打破优化契约」</a></li>
+    <li><a href="#sec-2">核心洞察：RL 错配，BO 才是离线搜索的正确工具（含对比图）</a></li>
+    <li><a href="#sec-3">系统模型与问题定义：VAE 编码 + BO 闭环（含架构图）</a></li>
+    <li><a href="#sec-4">计划字符串格式与 VAE 编解码（含具体编码例子）</a></li>
+    <li><a href="#sec-5">贝叶斯优化：TuRBO、右删失 Tobit、SVGP</a></li>
+    <li><a href="#sec-6">超时策略与初始化策略（含 LLM 跨查询学习）</a></li>
+    <li><a href="#sec-7">实验评估：JOB/CEB/Stack/DSB 与案例研究</a></li>
+    <li><a href="#sec-8">敏感性分析与鲁棒性：超时消融、数据漂移、LLM 少样本</a></li>
+    <li><a href="#sec-9">代码使用与实战（复现路线）</a></li>
+    <li><a href="#sec-10">总结与未来展望</a></li>
+    <li><a href="#sec-11">全文中文翻译（对应嵌入图片）</a></li>
+  </ol>
+</div>
+
+<!-- SEC 1 -->
+<div class="section" id="sec-1">
+  <h2 class="section-title"><span class="num">1</span>研究动机：离线查询优化与「打破优化契约」</h2>
+  <p class="section-desc">传统查询优化器遵循「查询优化契约」：必须在数百毫秒内产出计划，因为计划本身可能执行得极快。BayesQO 提出<strong>反其道而行</strong>——对会被反复执行的分析型查询，离线投入远超单次执行的时间去寻找最优计划，是值得的。</p>
+  <div class="highlight-box">
+    <b>为什么值得？</b> 分析型负载里大量计算花在重复报表/dashboard 查询上：Redshift 研究表明中位数数据库中 60% 的查询是逐字重复的，约 10% 的集群其全部负载由「在一天内重复出现」的查询组成。某查询每天执行数百次、每年数十万次，哪怕把它的延迟降低一点点，也会被放大无数倍。
+  </div>
+  <div class="module-card">
+    <h3>工业界的「离线/在线」折中</h3>
+    <p>Meta、Microsoft、Alibaba 等部署 LQO 时，都把系统拆成两部分：<b>离线组件</b>测试新计划并缓存优于传统优化器的计划；<b>在线组件</b>先查缓存，命中则用之，否则调用传统优化器。这种做法避免了「查询回归」（昨天快今天慢）和把 ML 原语塞进查询处理管道的风险。BayesQO 把这一离线组件形式化为<b>离线查询优化问题</b>：用尽可能少的离线资源（离线查询时间）找到最佳计划。</p>
+  </div>
+  <div class="warn-box">
+    <h4>离线优化必须解决两个子问题</h4>
+    <p>① <b>搜索策略</b>：决定测试哪些计划。粗粒度（预定义备选计划集）搜索空间受限；细粒度 RL 则面临「目标函数错配」。② <b>超时策略</b>：某些计划比最优慢好几个数量级，必须有策略处理会执行过久的计划——既要选超时阈值，又要从超时查询中学习。</p>
+  </div>
+</div>
+
+<!-- SEC 2 -->
+<div class="section" id="sec-2">
+  <h2 class="section-title"><span class="num">2</span>核心洞察：RL 错配，BO 才是离线搜索的正确工具</h2>
+  <p class="section-desc">论文 Figure 1 一针见血地指出：强化学习（RL）的目标函数与离线查询优化根本不对齐。RL 最小化「随时间累积的延迟（曲线下面积，即 regret）」，被迫频繁选「低风险」计划；而离线优化只关心「在时间预算内发现的<strong>最佳计划</strong>的延迟（函数图像的最低点），根本不在乎中间踩过多少坑。</p>
+  <div class="svg-container">
+    <svg viewBox="0 0 920 250" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif">
+      <defs><marker id="ba" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#fda4af"/></marker></defs>
+      <rect x="20" y="20" width="420" height="210" rx="10" fill="rgba(20,20,35,.5)" stroke="rgba(225,29,72,.3)"/>
+      <text x="230" y="46" fill="#fb7185" font-size="15" font-weight="700" text-anchor="middle">RL（左）：最小化曲线下面积</text>
+      <polyline points="50,210 120,150 190,170 260,90 330,110 400,70" fill="none" stroke="#e11d48" stroke-width="2.5"/>
+      <path d="M50,210 L120,150 L190,170 L260,90 L330,110 L400,70 L400,210 L50,210 Z" fill="rgba(225,29,72,.18)"/>
+      <text x="230" y="225" fill="#8b949e" font-size="12" text-anchor="middle">时间 → ，阴影=累积延迟（负奖励）</text>
+      <rect x="480" y="20" width="420" height="210" rx="10" fill="rgba(20,20,35,.5)" stroke="rgba(225,29,72,.3)"/>
+      <text x="690" y="46" fill="#fb7185" font-size="15" font-weight="700" text-anchor="middle">BO（右）：最小化发现的最佳延迟</text>
+      <polyline points="510,210 580,150 650,170 720,90 790,110 860,70" fill="none" stroke="#e11d48" stroke-width="2.5"/>
+      <circle cx="720" cy="90" r="6" fill="#fda4af"/>
+      <text x="720" y="78" fill="#fda4af" font-size="12" text-anchor="middle">min</text>
+      <text x="690" y="225" fill="#8b949e" font-size="12" text-anchor="middle">只关心最低点，不在意探索时踩坑</text>
+    </svg>
+    <div class="fc">图 1（对应论文 Figure 1）：RL 与 BO 的目标对比。离线优化场景下 BO 才是正确工具——我们不在乎「回归」，只在乎最优计划的质量。</div>
+  </div>
+  <div class="insight-box">
+    <h4>超时（timeout）是被忽视的难题</h4>
+    <p>某些计划比其他计划慢几个数量级，任何 LQO 都有概率撞上极差计划。常见做法是固定阈值超时。但超时值有两个问题：① 浪费大量时间；② <b>没有获得新信息</b>——把超时值喂给 RL 模型会让模型系统性低估该查询的代价。因此成功的离线优化器必须有一套「选择超时值 + 从超时查询学习」的策略。这正是贝叶斯优化的用武之地。</p>
+  </div>
+</div>
+
+<!-- SEC 3 -->
+<div class="section" id="sec-3">
+  <h2 class="section-title"><span class="num">3</span>系统模型与问题定义：VAE 编码 + BO 闭环</h2>
+  <p class="section-desc">BayesQO 借鉴计算药物发现：用学到的编码器/解码器把查询计划在「潜在空间（latent space）」与向量间互转，使相似计划在潜在空间里靠近；再用成熟的贝叶斯优化在潜在空间里搜索，以查询执行为奖励信号。Figure 2 展示完整工作流。</p>
+  <div class="svg-container">
+    <svg viewBox="0 0 960 320" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif">
+      <defs><marker id="bb" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#fda4af"/></marker></defs>
+      <rect x="20" y="30" width="180" height="60" rx="10" fill="rgba(20,20,35,.8)" stroke="#e11d48"/>
+      <text x="110" y="56" fill="#e6edf3" font-size="12" text-anchor="middle" font-weight="700">① 用户提交</text>
+      <text x="110" y="76" fill="#8b949e" font-size="11" text-anchor="middle">查询 Q</text>
+      <rect x="230" y="30" width="180" height="60" rx="10" fill="rgba(20,20,35,.8)" stroke="#e11d48"/>
+      <text x="320" y="56" fill="#e6edf3" font-size="12" text-anchor="middle" font-weight="700">② 初始化策略</text>
+      <text x="320" y="76" fill="#8b949e" font-size="11" text-anchor="middle">hint/Bao/LLM</text>
+      <rect x="440" y="30" width="200" height="60" rx="10" fill="rgba(20,20,35,.8)" stroke="#e11d48"/>
+      <text x="540" y="56" fill="#e6edf3" font-size="12" text-anchor="middle" font-weight="700">③ 编码→潜在空间</text>
+      <text x="540" y="76" fill="#8b949e" font-size="11" text-anchor="middle">VAE Encoder</text>
+      <rect x="670" y="30" width="270" height="60" rx="10" fill="rgba(20,20,35,.8)" stroke="#fb7185"/>
+      <text x="805" y="56" fill="#e6edf3" font-size="12" text-anchor="middle" font-weight="700">④ 初始化代理模型</text>
+      <text x="805" y="76" fill="#8b949e" font-size="11" text-anchor="middle">(计划, 延迟) 观测</text>
+      <line x1="200" y1="60" x2="228" y2="60" stroke="#fda4af" stroke-width="2" marker-end="url(#bb)"/>
+      <line x1="410" y1="60" x2="438" y2="60" stroke="#fda4af" stroke-width="2" marker-end="url(#bb)"/>
+      <line x1="640" y1="60" x2="668" y2="60" stroke="#fda4af" stroke-width="2" marker-end="url(#bb)"/>
+
+      <rect x="230" y="150" width="200" height="55" rx="10" fill="rgba(20,20,35,.8)" stroke="#e11d48"/>
+      <text x="330" y="172" fill="#e6edf3" font-size="12" text-anchor="middle" font-weight="700">⑤ 采集函数</text>
+      <text x="330" y="192" fill="#8b949e" font-size="11" text-anchor="middle">选潜在空间点</text>
+      <rect x="460" y="150" width="180" height="55" rx="10" fill="rgba(20,20,35,.8)" stroke="#e11d48"/>
+      <text x="550" y="172" fill="#e6edf3" font-size="12" text-anchor="middle" font-weight="700">⑥ 解码</text>
+      <text x="550" y="192" fill="#8b949e" font-size="11" text-anchor="middle">→ 查询计划</text>
+      <rect x="670" y="150" width="270" height="55" rx="10" fill="rgba(20,20,35,.8)" stroke="#fb7185"/>
+      <text x="805" y="172" fill="#e6edf3" font-size="12" text-anchor="middle" font-weight="700">⑦ 执行（带超时 TO）</text>
+      <text x="805" y="192" fill="#8b949e" font-size="11" text-anchor="middle">只读快照 DB</text>
+      <line x1="430" y1="177" x2="458" y2="177" stroke="#fda4af" stroke-width="2" marker-end="url(#bb)"/>
+      <line x1="640" y1="177" x2="668" y2="177" stroke="#fda4af" stroke-width="2" marker-end="url(#bb)"/>
+
+      <path d="M805,205 C805,250 330,260 330,208" fill="none" stroke="#fda4af" stroke-width="2" marker-end="url(#bb)" stroke-dasharray="6 4"/>
+      <text x="560" y="255" fill="#fda4af" font-size="11" text-anchor="middle">⑧ 用观测延迟更新代理模型 → 循环 ⑤~⑧ 至预算耗尽</text>
+
+      <rect x="20" y="280" width="270" height="34" rx="8" fill="rgba(20,20,35,.8)" stroke="#fb7185"/>
+      <text x="155" y="302" fill="#e6edf3" font-size="12" text-anchor="middle">⑨ 最佳计划入缓存（在线命中即用）</text>
+    </svg>
+    <div class="fc">图 2（对应论文 Figure 2）：BayesQO 工作流。VAE 在计划字符串与潜在向量间互转；BO 循环用采集函数探索潜在空间、解码执行、按延迟（含超时）更新代理模型，最终最佳计划入缓存。</div>
+  </div>
+  <div class="module-card">
+    <h3>问题定义（公式 1）</h3>
+    <p>目标是用尽量少的开销为查询 Q 找到低延迟计划。设 BayesQO 在时间 t 产出的计划序列 S<sub>t</sub>=P₁…Pₙ，Iᵢ 为指示变量（Iᵢ=0 表示完成、Iᵢ=1 表示超时）。代价与最佳延迟定义为：</p>
+    <div class="formula-box">Cost(S<sub>t</sub>) = Σ<sub>i</sub> [ I<sub>i</sub>·TO(P<sub>i</sub>) + (1−I<sub>i</sub>)·L(P<sub>i</sub>) ]</div>
+    <div class="formula-box">Latency(S<sub>t</sub>) = min<sub>i</sub> { L(P<sub>i</sub>) if I<sub>i</sub>=0 ; ∞ if I<sub>i</sub>=1 }</div>
+    <p>目标：min Latency(S<sub>t</sub>) subject to Cost(S<sub>t</sub>) &lt; B（预算）。与传统优化器 B&lt;500ms 不同，这里 B 大到足以真正执行计划测试。</p>
+  </div>
+  <div class="grid-2">
+    <div class="arch-card"><h4>假设</h4><p>① 有默认优化器产出「合理但非全局最优」的计划；② 查询可在数据库只读快照上执行；③ 执行引擎接受指定连接顺序与物理连接算子的物理计划/hint；④ 查询内连接为 PK-FK 等值连接。</p></div>
+    <div class="arch-card"><h4>跨查询学习（ virtuous cycle）</h4><p>每次优化一个查询都会执行大量计划，这些轨迹可作跨查询模型的训练数据。BayesQO 用过往轨迹微调 LLM，使其为下一查询生成好的初始化点——形成「每次优化→收集数据→微调 LLM→更好初始化」的良性循环。</p></div>
+  </div>
+</div>
+
+<!-- SEC 4 -->
+<div class="section" id="sec-4">
+  <h2 class="section-title"><span class="num">4</span>计划字符串格式与 VAE 编解码</h2>
+  <p class="section-desc">要让 BO（定义在连续实数域）能优化离散的计划树，需把计划编码成字符串再映射进连续潜在空间。论文设计了一套借鉴分子 SELFIES 的字符串语言，并训练 VAE 学习该空间的平滑结构。</p>
+  <div class="module-card">
+    <h3>4.1 字符串语言的两条要求</h3>
+    <p><b>① 完备性（Completeness）：</b>任何合法计划都能表示，否则好计划不可被发现。<b>② 解码有效性（Decoding validity）：</b>任何字符序列都唯一对应一个合法计划，避免优化时额外加可行性约束。理想情况下还要单射（一一对应），但论文选择「完备 + 解码有效但非单射」（同一计划可有多个字符串），因为 SELFIES 经验表明这样优于单射表示。</p>
+  </div>
+  <div class="highlight-box">
+    <b>具体编码格式（含论文原例）。</b> 连接树用「每个非叶节点 = (左, 右, 算子)」的三符号序列，物理算子（hash/merge/nested loops）各有唯一符号；叶子是表。关键技巧：表符号首次出现指基本表，之后出现指代「该表所在的最大子树」。例如三表连接 A⊲⊳<sub>hash</sub>(B⊲⊳<sub>merge</sub>C) 的合法编码串为 <code>(B, C, ⊲⊳m, A, B, ⊲⊳h)</code> 与 <code>(B, C, ⊲⊳m, A, C, ⊲⊳h)</code>（两种都合法，体现非单射）。解码时维护部分连接树状态，遇非法符号则按「有效符号列表 + 非法符号的整数值作索引」确定性地解析为合法符号——保证所有串都解出合法计划，且相似非法串映射到相近合法计划。
+  </div>
+  <div class="module-card">
+    <h3>4.2 VAE 编解码与训练数据</h3>
+    <p>VAE 的编码器 Φ: X→Z、解码器 Γ: Z→X，训练最大化 ELBO：E[log Γ(X|Z) − KL(Φ(Z|X)‖p(Z))]。KL 正则让潜在空间平滑，便于 BO 搜索。</p>
+    <p><b>训练数据（~100 万编码计划）：</b>从 schema 采样随机 PK-FK 等值连接查询（构造「alias-k reference graph」，选随机连通子图），用默认优化器（PostgreSQL）规划并编码；额外用 hint（禁 nested loop、禁 seq scan）扩充多样性。仅用 DBMS 元数据，<b>无需任何查询执行</b>。每个 schema 训练一次 VAE 即可复用。潜在维度选 64（Table 2：128 维重建精度 97.93%，64 维 89.67%，性价比最佳），在 2×A6000 上训约 24 小时，成本约 $24。</p>
+  </div>
+</div>
+
+<!-- SEC 5 -->
+<div class="section" id="sec-5">
+  <h2 class="section-title"><span class="num">5</span>贝叶斯优化：TuRBO、右删失 Tobit、SVGP</h2>
+  <p class="section-desc">BO 用概率代理模型刻画「潜在空间点 → 查询延迟」的关系，通过反复测试少量点高效找到最优。BayesQO 针对查询计划做了三项关键改造。</p>
+  <div class="grid-3">
+    <div class="arch-card"><h4>局部 BO：TuRBO</h4><p>高维（64 维）下标准 BO 易陷维度灾难。TuRBO 维护一个超矩形「信任域（trust region）」，动态调其大小与位置，平衡全局探索与局部利用。虽叫「local」，本质仍是全局优化，但能在高维空间高效找到高质量计划。</p></div>
+    <div class="arch-card"><h4>右删失观测（Tobit）</h4><p>计划超时被杀，我们只知道其真实延迟 ≥ 超时阈值 τ（f(x) ≥ τ）。用 Tobit 模型似然（公式 2）直接建模：p(y|f)=φ(z)<sup>1−I</sup>(1−Φ(z))<sup>I</sup>，其中 I 区分是否删失。这让「坏到执行不完」的区域也能被模型学习为「至少这么差」。</p></div>
+    <div class="arch-card"><h4>近似高斯过程 SVGP</h4><p>计划空间大、需测试很多点，故选可扩展的稀疏变分高斯过程（SVGP），用诱导点 + 变分推断（公式 3 ELBO）支持大量观测的概率推断。</p></div>
+  </div>
+  <div class="insight-box">
+    <h4>把 SVGP 扩展到 censored BO（§4.3.1 的核心贡献）</h4>
+    <p>从 SVGP 的 ELBO（公式 3）出发，代入 Tobit 似然（公式 2），把未删失项（Z<sub>u</sub>）用标准 SVGP 方式解析计算，删失项（Z<sub>c</sub>）用一维高斯-埃尔米特求积数值计算，得到 censored BO 的新 ELBO。这样 BayesQO 既能从超时中学，又能逐计划地、基于不确定性选择超时阈值。</p>
+  </div>
+</div>
+
+<!-- SEC 6 -->
+<div class="section" id="sec-6">
+  <h2 class="section-title"><span class="num">6</span>超时策略与初始化策略</h2>
+  <p class="section-desc">初始化点质量直接影响 BO 表现；超时阈值决定能否高效从坏计划学习。两者是 BayesQO 相对前人的关键工程贡献。</p>
+  <div class="module-card">
+    <h3>6.1 基于不确定性的超时选择</h3>
+    <p>在第 t 步评估候选计划 x<sub>t</sub> 前，动态设定超时阈值 τ<sub>t</sub>：要求「在观测到 (x<sub>t</sub>, τ<sub>t</sub>) 这个右删失观测后，我们有把握当前最佳计划 x*<sub>t</sub> 仍优于 x<sub>t</sub>」。即求最小 τ 满足 y*<sub>t</sub> ≤ μ'<sub>t</sub>(τ) − κσ'<sub>t</sub>(τ)。由于 μ'−κσ' 随 τ 单调，可用二分搜索求解；利用 SVGP 的在线更新（如 Maddox 等的方法）廉价评估约束。相比固定乘子或固定百分位，此法确保模型「足够确信某点次优」才超时，既学到空间信息又不浪费时间。</p>
+  </div>
+  <div class="grid-2">
+    <div class="comp-card"><h4>初始化策略对比</h4><p><b>Hinted (Bao)：</b>穷举 join/scan hint 组合生成 49 个初始化点，保证涵盖 Bao 可能选出的最佳计划。<b>Default：</b>仅用默认优化器单点，实践证明不佳。<b>LLM：</b>收集 606 次 BayesQO 运行的 top-1/5 计划微调 GPT-4o-mini 一轮，每新查询采样 50 个初始化点——实验证明常是最好的一类初始化。</p></div>
+    <div class="comp-card"><h4>随机计划（§4.5）</h4><p>与 BO 无关，纯探索：从不含 cross-join 的计划空间随机采样（用 schema 子图的生成树构造随机连接树，物理算子均匀随机）。它暗示「即便没有传统优化器也能做离线优化」，本身即可作为基线。</p></div>
+  </div>
+  <div class="insight-box">
+    <h4>LLM 跨查询学习（ virtuous cycle 落地）</h4>
+    <p>用 606 次 BayesQO 运行轨迹（每查询取 top-1 与 top-5 计划）构建微调数据集，对 GPT-4o-mini 微调 1 轮。对每个新查询，微调模型采样 50 个初始化点。评估（§5.6）显示该 LLM 初始化常优于所有其他初始化策略——把离线优化的「副产品」变成下一查询的「起跑线」。</p>
+  </div>
+</div>
+
+<!-- SEC 7 -->
+<div class="section" id="sec-7">
+  <h2 class="section-title"><span class="num">7</span>实验评估：JOB/CEB/Stack/DSB</h2>
+  <p class="section-desc">在 PostgreSQL 16.3 上评测 4 个负载：JOB(113查询/7连接)、CEB(234/10)、Stack(200/6)、DSB(90/5)。每个技术给予相同预算（4000 次计划执行），对比 PostgreSQL、Bao（执行全部 49 个 hint 取最快）、Balsa、Random。VAE 潜在维 64。</p>
+  <div class="data-table">
+    <caption style="color:#8b949e;padding:6px;">表 1（论文 Table 1）：四个评测负载特征</caption>
+    <thead><tr><th>负载</th><th>磁盘大小</th><th>查询数</th><th>每查询中位连接数</th></tr></thead>
+    <tbody><tr><td>JOB</td><td>8GB</td><td>113</td><td>7</td></tr><tr><td>CEB</td><td>8GB</td><td>234</td><td>10</td></tr><tr><td>Stack</td><td>64GB</td><td>200</td><td>6</td></tr><tr><td>DSB</td><td>89GB</td><td>90</td><td>5</td></tr></tbody>
+  </div>
+  <div class="svg-container">
+    <svg viewBox="0 0 700 240" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif">
+      <rect x="20" y="20" width="660" height="200" rx="10" fill="rgba(20,20,35,.4)" stroke="rgba(225,29,72,.3)"/>
+      <text x="350" y="48" fill="#fb7185" font-size="14" font-weight="700" text-anchor="middle">Figure 3 直觉：各技术「相对 Bao 的改进」累积分布（越靠右上越好）</text>
+      <polyline points="60,200 200,180 340,150 480,110 600,70" fill="none" stroke="#e11d48" stroke-width="3"/>
+      <polyline points="60,200 200,195 340,185 480,165 600,140" fill="none" stroke="#fb7185" stroke-width="2.5"/>
+      <polyline points="60,200 200,198 340,195 480,190 600,182" fill="none" stroke="#8b949e" stroke-width="2.5" stroke-dasharray="5 4"/>
+      <text x="610" y="68" fill="#e11d48" font-size="12">BayesQO</text>
+      <text x="610" y="138" fill="#fb7185" font-size="12">Balsa</text>
+      <text x="610" y="180" fill="#8b949e" font-size="12">Random</text>
+      <text x="350" y="220" fill="#8b949e" font-size="11" text-anchor="middle">JOB/Stack 上 BayesQO 明显领先；CEB 上三者接近</text>
+    </svg>
+    <div class="fc">图 3（对应论文 Figure 3）：优化结束时各技术找到的最佳计划相对 Bao 最优的改进累积分布。BayesQO 在更多查询上找到更好计划，Stack 上 50% 查询超 2× 改进。</div>
+  </div>
+  <div class="insight-box">
+    <h4>关键发现</h4>
+    <p>① <b>Figure 3：</b>BayesQO 在几乎所有查询上都找到最多改进，JOB/Stack 上领先明显（Stack 上 50% 查询 ≥2× 改进，约 25% 查询其他技术毫无改进时 BayesQO 仍有改进）；CEB 上三者接近。② <b>Figure 4 案例：</b>4a 中 BO 前 1.5h 在初始化点附近探索，之后在信任域内发现大幅更优计划并快速利用；Random 与 Balsa 都未能超过 Bao 最优。4c 中某查询计划仅 2ms（噪声级），Balsa 因「为最小化 regret 而反复利用已知计划」到达最慢。③ 实验显示某些查询可获得 10–100× 的性能提升。</p>
+  </div>
+</div>
+
+<!-- SEC 8 -->
+<div class="section" id="sec-8">
+  <h2 class="section-title"><span class="num">8</span>敏感性分析与鲁棒性</h2>
+  <div class="grid-2">
+    <div class="comp-card"><h4>超时消融（Figure 5a）</h4><p>用「当前最佳运行时」作超时阈值（0th 百分位）反而让 BO 找到最差计划——过低阈值统一抑制探索。基于不确定性的方法在更少预算下找到更快计划。censored 观测使「都超时 1 秒」的两种计划（一个 1.2s、一个 2h）看起来相同，更长超时让模型确知该区域是否还值得探索。</p></div>
+    <div class="comp-card"><h4>信任域消融（Figure 5b）</h4><p>全局 BO 即便跑数小时也追不上局部 BO——因它必须探索指数更大的计划空间。局部 BO 虽理论上可能漏掉全局最优，但实践中基于 PostgreSQL 优化器初始化的局部 BO 能为大量查询找到高度优化计划。</p></div>
+    <div class="comp-card"><h4>数据漂移（Figure 6/7）</h4><p>把 Stack 数据删至 2017 快照（较 2019 原快照约减 20%）。过去计划在未来数据集上表现≈从头 BO，仍远优于 Bao 最优——多数计划的最优性不受漂移影响。重训 VAE 有不可忽略的正向影响（成本低，建议周期重训）。用「过去计划作初始化」重优化，平均 1.5h 收敛，远低于从头 8.2h，且整体计划最好。</p></div>
+    <div class="comp-card"><h4>LLM 少样本（Figure 8）</h4><p>用 CEB 上 BO 最快 10 个计划微调 GPT-4o-mini。同模板查询上 LLM 初始化表现好；但<b> withholding 两个模板</b>后，LLM 表现显著下降——说明 LLM 初始化高度依赖「是否见过同模板的 BO 结果」。</p></div>
+  </div>
+  <div class="limit-box">
+    <h4>开销（Figure 9）与 LimeQO 对比（Figure 10）</h4>
+    <p>单次 BO 运行时 CPU 开销为个位数秒（对长查询可接受）；5 路并发时 VAE 采样在 GPU 上远优于 CPU（得益于 scaled dot-product attention 硬件加速），故长查询推荐 GPU。与 LimeQO 比：LimeQO 仅在有限 hint 集里找最优（类似 Bao 上限），穷尽 hint 后无路可走；BayesQO 构造完整连接顺序，能继续探索找到更好计划（Figure 10 显示 BayesQO 持续下降、LimeQO 早期就停滞）。</p>
+  </div>
+</div>
+
+<!-- SEC 9 -->
+<div class="section" id="sec-9">
+  <h2 class="section-title"><span class="num">9</span>代码使用与实战（复现路线）</h2>
+  <div class="kv-row"><div class="kv-key">是否开源</div><div class="kv-val">论文未提供官方代码；需自行实现（以下为推荐复现路线）</div></div>
+  <div class="kv-row"><div class="kv-key">依赖</div><div class="kv-val">PostgreSQL 16.3 + pg_hint_plan；PyTorch + transformer-VAE（参考 Maus et al. 2024 架构）；BoTorch（TuRBO、SVGP、Thompson 采样）；可选 GPT-4o-mini 做 LLM 初始化</div></div>
+  <div class="code-block"><pre><span class="cg"># 1) 准备 PostgreSQL + pg_hint_plan，禁用 JIT、join_collapse_limit=1</span>
+<span class="ck">psql</span> -c "CREATE EXTENSION IF NOT EXISTS pg_hint_plan;"
+<span class="ck">psql</span> -c "ALTER SYSTEM SET join_collapse_limit = 1; ALTER SYSTEM SET jit = off;"
+
+<span class="cg"># 2) 训练 VAE：从 schema 采样随机 PK-FK 等值连接查询，用默认优化器规划并编码为字符串</span>
+<span class="ck">python</span> train_vae.py --schema imdb --latent_dim 64 --steps 800000
+
+<span class="cg"># 3) 贝叶斯优化（TuRBO + SVGP + Thompson 采样 + censored Tobit 似然）</span>
+<span class="ck">python</span> bayesqo_opt.py --query job_1a --vae ckpt/vae_64.pt \
+    --init bao_hints --budget 4000 --trust_region --censored
+
+<span class="cg"># 4) （可选）LLM 初始化：用历史 BO 轨迹微调 GPT-4o-mini，采样 50 初始化点</span>
+<span class="ck">python</span> finetune_llm_init.py --traces ./bo_runs_606 --model gpt-4o-mini</pre></div>
+  <p>复现要点：VAE 训练仅需元数据无需执行；BO 循环中每个候选点解码为 hint 字符串后前缀到原 SQL，用 pg_hint_plan 执行并测延迟；超时按文中基于不确定性的二分搜索设定；最终最佳计划入缓存供在线命中。</p>
+</div>
+
+<!-- SEC 10 -->
+<div class="section" id="sec-10">
+  <h2 class="section-title"><span class="num">10</span>总结与未来展望</h2>
+  <div class="qa-card">
+    <div class="qa-q">Q：BayesQO 最核心的贡献？</div>
+    <div class="qa-a">首次把贝叶斯优化（而非 RL）用于「离线、单查询」的查询计划超优化；并贡献了把 SVGP 扩展到右删失观测的 censored BO、基于不确定性的逐计划超时选择，以及用 LLM 跨查询初始化形成良性循环。</div>
+  </div>
+  <div class="qa-card">
+    <div class="qa-q">Q：为什么 BO 比 RL 更适合离线优化？</div>
+    <div class="qa-a">离线优化只关心「预算内发现的最佳计划延迟」，不关心探索途中的 regret；RL 的目标（最小化累积延迟/面积）与之一致性低，且会为降 regret 而反复利用已知计划，在离线场景反而不利。BO 用代理模型+采集函数直接瞄准最低点。</div>
+  </div>
+  <div class="qa-card">
+    <div class="qa-q">Q：局限与未来？</div>
+    <div class="qa-a">当前字符串语言不表示子查询/CTE；假设 PK-FK 等值连接；VAE 需按 schema 重训。未来：集成更多 DBMS、闭合 LLM 初始化循环、把 BO 用到自动索引选择/数据布局/基准生成等问题。</div>
+  </div>
+  <div class="insight-box">
+    <h4>一句话总结</h4>
+    <p>BayesQO 把离线查询优化重新定义为「在 VAE 潜在空间里用贝叶斯优化搜寻最快计划」的超优化问题，用右删失 Tobit 模型从超时中学、用不确定性驱动超时、用 LLM 跨查询初始化，为重复执行的分析型查询榨出数量级级的性能提升。</p>
+  </div>
+</div>
+
+<!-- SEC 11: TRANSLATION -->
+<div class="section translation" id="sec-11">
+  <h2>全文中文翻译（对应嵌入图片）</h2>
+
+  <h3>摘要（Abstract）</h3>
+  <p>分析型数据库负载常包含被反复执行的查询。现有优化技术普遍优先保持优化成本低（通常远低于执行单条查询实例的时间）。若某查询将执行成千上万次，投入显著更多的优化时间是否值得？与传统的在线查询优化器不同，我们提出一个离线查询优化器，它搜索各种各样的计划，并把查询执行作为一个基本操作。我们的离线优化器将变分自编码器（VAE）与贝叶斯优化结合，为给定查询寻找优化后的计划。我们把该技术与 PostgreSQL 可能达到的最优计划以及近期基于 RL 的系统在多个数据集上比较，表明我们的技术能找到更快的查询计划。</p>
+
+  <div class="fig-note">📌 <b>对应图 1（Figure 1: RL vs BO）：</b>左图 RL 试图最小化阴影面积（随时间累积的延迟/负奖励），需平衡探索-利用；右图 BO 试图最小化「固定时间后看到的最佳延迟（目标）」——离线搜索只关心最优计划的质量，不在乎中途回归。故 BO 更契合离线查询优化。</div>
+
+  <h3>1. 引言（Introduction）</h3>
+  <p>查询优化是数据库界长期存在的问题。近期学习型查询优化（LQO）展现巨大潜力，常带来 2–10× 的查询运行时间改进，但部署 LQO 受两大挑战困扰：① 查询回归（「我的查询昨天快，今天怎么慢了？」）；② 机器学习组件与核心查询处理管道深度集成（可靠性参差不齐）。尽管有多种努力应对，多数真实部署（Meta、Microsoft、Alibaba）都把 LQO 拆成离线组件与在线组件：离线组件测试新计划并缓存优于传统优化器的计划；在线组件查缓存，未命中则调传统优化器。这种「离线多花资源为特定查询找好计划」的折中，既解决回归问题、又避免把 ML 原语放进查询管道，且契合分析型负载的本质——多数计算花在重复报表/dashboard 查询上，某些查询每天执行数百次、每年数十万次。Amazon Redshift 研究显示中位数数据库 60% 的查询是逐字重复的，约 10% 的集群其全部负载由「当天内重复」的查询构成。大量重复意味着即便微小延迟改进也会被放大，值得投入额外优化资源。我们把离线组件的目标称为<b>离线查询优化问题</b>：用尽可能少的离线资源（离线查询时间）找到最佳计划。与力求「优化时间相对执行时间可忽略」的传统优化器不同，离线优化器预期耗时远超单次执行。</p>
+  <p>现有「离线/在线」折中的系统隐式地在做离线优化，但必须解决两个基本问题：① 搜索策略（决定测哪些计划）；② 超时策略（处理执行过久的计划）。<b>搜索策略：</b>粗粒度（预定义备选计划集）探索空间受限，重大改进可能在搜索空间外；细粒度 RL 的缺陷更微妙——RL 的目标函数与离线优化错配（Figure 1 左，RL 最小化阴影面积即累积延迟/负奖励，需平衡探索-利用，被迫频繁选「低风险」计划）。而离线优化真正关心的是「时间受限优化阶段观测到的最佳计划」（函数最小值，非曲线下面积，Figure 1 右）。<b>超时难题：</b>某些计划慢好几个数量级，任何 LQO 都有非零概率撞上差计划。现有方法用固定阈值超时，但超时值有问题：① 浪费大量时间；② 没有获得新信息（用超时值更新 RL 模型会让模型系统性低估该查询代价）。成功的离线优化器必须有「选择超时值 + 从超时查询学习」的策略。</p>
+  <p><b>贝叶斯优化（BO）。</b> 我们提出 BayesQO，借鉴计算药物发现：用学到的编码器/解码器把计划在向量（潜在空间）间互转，使相似计划映射到相近向量；再用成熟的 BO 在潜在空间里操纵编码向量，以查询执行为奖励信号。现有粗粒度技术（每查询生成固定计划变体集）可用于初始化，确保找到的最佳计划至少不差于初始化集里最好的。我们展示现成 BO 技术可易适配离线优化目标，且 BO 框架支持从超时中鲁棒学习、以及逐计划地基于学习选择超时——即把「查询延迟&gt;x」在模型中表示为<b>右删失（censored）观测</b>，模型的置信区间提供选择超时以最大化信息增益的鲁棒方式。最后，我们展示如何用微调语言模型把跨查询信息融入 BayesQO，为 BO 搜索提供数据库特定的初始化点。实验显示离线优化对某些查询可带来 10–100× 性能提升，且对多个基准中几乎每个查询都能找到适度改进。贡献：① 形式化离线查询优化问题；② 实现 BayesQO；③ 展示如何把高维与删失观测的 BO 进展整合进 BayesQO；④ 展示微调 LLM 融入跨查询信息；⑤ 展示 BayesQO 在离线设定下优于在线 LQO。</p>
+
+  <h3>2. 相关工作（Related Work）</h3>
+  <p>System R 提出启发性方案（代价模型+基数估计+动态规划）。传统优化器遵循「优化契约」（数百毫秒内产出计划），本文属「打破契约」一类（如侵入式检查基数据、花长时间优化、执行中自适应改计划）。Query reoptimization 是首批契约打破者。编译器里的「超优化（superoptimization）」用大时间预算为程序找最优汇编序列，本文可视为「查询计划的超优化」。GenesisDB（聚焦关系算子快速实现）、Kepler（遗传算法+穷举执行映射参数化查询计划空间）、SlabCity（SQL 级语义重写）、DataFarm/HitTheGym（为 ML 数据库组件造数据集）均相关工作。近年 ML 用于基数估计、代价模型、增强/替换优化器（多数为在线设定、用 RL 管理 regret）。相较之下，我们用 BO 于超优化问题，只关心最佳延迟、忽略次优计划。BO 非唯一样本高效技术（NeuroCARD、Reiner 等）。我们的计划编码受分子动力学 SELFIES 启发，但与 Reiner 等不同：我们只编码连接顺序不编码谓词，且同一连接顺序可有多种表示。随机搜索启发式可视为 QuickPick 的改进版——不是采样随机计划后用代价模型评估，而是直接执行随机计划（在离线场景，执行糟糕计划只要最终导向更好计划就值得）。BO 虽老，但近期注意力 transformer 使其能应用于高维非连续输入；BO 在数据库多用于调参 knob，本文是首个把 BO 直接用于单查询优化。最相近的是 LimeQO（离线执行为每查询找最优 hint），但它只在有限 hint 集里找，而我们是完整构造计划，故可能找到更好计划；且 LimeQO 一次优化整个负载，我们聚焦单查询。</p>
+
+  <h3>3. 系统模型与问题定义（System Model & Problem Definition）</h3>
+  <p><b>挑战。</b> 朴素离线优化是穷举所有计划——即便少表查询也不可行（n 表连接顺序数随 n 超阶乘增长：n!·C<sub>n</sub>）。即便「完美基数」也需数月穷举，且自适应只测优化器用到的基数会陷入「逃离知识」问题。计划空间含大量坏计划（慢好几个数量级），离线方法须高效探索同时避免执行完这些坏计划；且必须用执行候选计划获得的信息指导探索——可运行更久以获得更好结果。</p>
+  <p><b>系统模型（Figure 2）。</b> ❶ 用户指定要离线优化的查询 Q；❷ 初始化策略产生一组计划；❸ 计划转字符串并经学得模型嵌入向量空间；❹ 嵌入计划及其观测延迟初始化代理模型；❺ 采集函数选潜在空间点；❻ 解码回查询计划；❼ 给计划设超时 TO(P) 并在只读快照上执行，要么成功（L(P)&lt;TO(P)）要么超时；❽ BO 用新观测延迟改进对查询空间的理解；循环 ❺→❽ 至预算耗尽或用户满意；❾ 最佳计划入缓存。在线时，用户提交查询，若缓存命中则用缓存计划，否则用 DBMS 优化器；看运行时统计，BayesQO 决定是否重优化。</p>
+  <p><b>问题定义（公式 1）。</b> 目标用尽量少资源为 Q 找低延迟计划 P。设 BayesQO 在时间 t 产出序列 S<sub>t</sub>=P₁…Pₙ，Iᵢ=0 表示完成、Iᵢ=1 表示超时。Cost(S<sub>t</sub>)=Σ<sub>i</sub>[Iᵢ·TO(Pᵢ)+(1−Iᵢ)·L(Pᵢ)]；Latency(S<sub>t</sub>)=min<sub>i</sub>{L(Pᵢ) if Iᵢ=0; ∞ if Iᵢ=1}。目标：min Latency(S<sub>t</sub>) s.t. Cost(S<sub>t</sub>)&lt;B。传统/先前 LQO 用极小 B（如 Neo B&lt;500ms），这里 B 大到足以真正测试计划；我们假设优化时间远超查询延迟。</p>
+  <p><b>假设：</b>① 有默认优化器产出合理但非全局最优计划；② 查询可在只读快照执行；③ 执行引擎接受指定连接顺序与物理连接算子的物理计划/hint；④ 查询内连接为 PK-FK 等值连接。为何只读快照？优化过程会执行许多计划，有些中间结果巨大，为避免干扰正在运行的负载，假设能在只读快照上执行。<b>平凡离线优化器例子：</b>随机计划搜索（类 Quickpick 但忽略代价估计）——测默认计划 P<sub>d</sub> 延迟，随机选 P₁ 执行（超时=默认延迟），忽略反馈继续随机执行至预算 B；虽找到更好计划概率低，但永不超预算且最终计划至少等同默认优化器。这作为简单基线。<b>跨查询学习：</b>每次优化都执行大量计划，这些轨迹可作跨查询模型训练数据；BayesQO 用过往轨迹微调 LLM 为给定查询条件生成计划字符串，作为未来优化的合理起点，形成「良性循环」。</p>
+
+  <h3>4. 用于查询计划的贝叶斯优化（Bayesian Optimization for Query Plans）</h3>
+  <p>BO 能优化「评估昂贵、黑盒」的函数且只需少量评估，但 BO 定义在连续实数域，而计划是离散树结构。潜空间贝叶斯优化（LSBO）用深度自编码器（DAE）把离散结构化搜索空间 X 转成连续数值空间 Z。受 Maus et al.（药物发现）启发，我们定义能表示所有计划、且每串能无歧义解码回特定计划的字符串编码（§4.1），在字符串上训练 VAE（§4.2），在 VAE 潜在空间做 BO（§4.3），并在超时选择上做新贡献（§4.3.1），最后讨论初始化策略（§4.4）。</p>
+  <p><b>4.1 查询计划字符串格式。</b> 期望属性：① 完备性（任何合法计划可表示）；② 解码有效性（任何字符序列唯一对应合法计划）；理想还应单射，但我们选「完备+解码有效但非单射」（SELFIES 经验表明更好），留待未来研究。字符串语言编码「定义连接顺序与算子的二叉树（join tree）」，不含选择/谓词/聚合；解码时把 join tree 转成 hint 字符串前缀到含这些信息的原 SQL。每个非叶节点用 (左, 右, 算子) 三符号序列，物理算子（hash/merge/nested loops）各有唯一符号；叶子是表，每表一符号；表符号首次指基本表、之后指代其所在最大子树。多别名表重命名为 movies1/movies2…，每表-编号对一符号。例子：三表 A⊲⊳<sub>hash</sub>(B⊲⊳<sub>merge</sub>C) 的合法编码为 (B,C,⊲⊳m,A,B,⊲⊳h) 与 (B,C,⊲⊳m,A,C,⊲⊳h)。解码时用「从左到右维护部分连接树状态」，遇非法符号则构造有效符号列表、用非法符号整数值作索引确定性解析为合法符号。该确保解码有效性、相似非法串映射到相近合法计划、且解码是输入串的有效函数。<b>局限性：</b>不表示子查询与 CTE。</p>
+  <p><b>4.2 编码与解码。</b> DAE 含编码器 Φ:X→Z 与解码器 Γ:Z→X；我们用变分自编码器 VAE，编码器产出 Φ(Z|X) 分布、解码器产出 Γ(X|Z) 分布，训练最大化 ELBO：E[log Γ(X|Z) − KL(Φ(Z|X)‖p(Z))]。VAE 的 KL 正则使搜索空间平滑，便于 BO。训练数据（~100 万编码计划）仅用 DBMS 元数据、无需执行：从 schema 采样随机 PK-FK 等值连接查询（构造 alias-k reference graph，选随机连通子图），用默认优化器规划并编码，额外用 hint 扩充多样性。两个设计选择：① 从 schema 采样随机查询（保证覆盖广）；② 用默认优化器生成计划（保证合理）。VAE 每 schema 训一次复用。</p>
+  <p><b>4.3 BO 背景。</b> BO 构建目标函数的概率代理模型，迭代精化；步骤：① 初始化代理模型；② 采集函数选下一点；③ 执行对应计划得真值；④ 用观测更新模型。我们用 Thompson 采样作采集函数。高维下用 TuRBO（信任域局部 BO，动态调域大小位置，平衡全局探索与局部利用）。<b>右删失观测：</b>普通观测得 f(x)=y；右删失观测只知 y≥τ（超时）。在查询优化中极重要——坏计划可能执行数天，超时并告诉模型「运行时间至少 τ」即可，不必知确切多差。<b>近似高斯过程 SVGP：</b>计划空间大需测很多点，故选可扩展的 SVGP（诱导点+变分推断，ELBO 见公式 3）。</p>
+  <p><b>4.3.1 带删失观测的 BO（核心贡献）。</b> 从公式 3 出发，代入 Tobit 似然（公式 2）推导新 ELBO：未删失项 Z<sub>u</sub> 解析计算，删失项 Z<sub>c</sub> 用一维高斯-埃尔米特求积数值计算。超时阈值选择关键：过低剥夺 BO 空间知识、过高浪费时间。先前工作用「最佳观测的固定乘子」或「所有观测的固定百分位」；Balsa 也用固定乘子。我们用<b>基于不确定性的方法</b>：第 t 步评估 x<sub>t</sub> 前动态设 τ<sub>t</sub>，使在观测 (x<sub>t</sub>,τ<sub>t</sub>) 后，我们有把握当前最佳 x*<sub>t</sub> 仍优于 x<sub>t</sub>，即求最小 τ 满足 y*<sub>t</sub>≤μ'<sub>t</sub>(τ)−κσ'<sub>t</sub>(τ)；利用 SVGP 在线更新廉价评估约束，因 μ'−κσ' 随 τ 单调，可用二分搜索求解。</p>
+  <p><b>4.4 初始化策略。</b> BO 起点通常在潜在空间随机采样，理论上给足时间可得最优，但高维下用少量预计算高质量 (x,f(x)) 初始化更实用。<b>Hinted (Bao)：</b>穷举 join/scan hint 组合（如 Bao 的 hint 集）产生 49 个初始化点，保证涵盖 Bao 可能选出的最佳计划，无需剪枝 hint 集。<b>Default：</b>仅用默认优化器单点，实践不佳。<b>LLM：</b>受 LLM 优化程序运行时启发，收集 606 次 BayesQO 运行的 top-1/top-5 计划构建数据集，微调 GPT-4o-mini 一轮，每新查询采样 50 初始化点——评估显示常是最好的一类。<b>可扩展性：</b>BayesQO 只接纳 (x,f(x)) 对集合，任何策略皆可。</p>
+  <p><b>4.5 随机计划。</b> 与 BO 无关，纯探索：连接可交换但 cross-join 通常差；从不含 cross-join 的空间随机采样（用 schema 子图生成树构造随机 join tree，物理算子均匀随机）。其可行性暗示「无传统优化器也能做离线优化」，本身即可作为离线优化技术。</p>
+
+  <h3>5. 实验（Experiments）</h3>
+  <p>研究问题：RQ1 给定预算 BayesQO 降低延迟的效果（§5.2/5.3）；RQ2 BO 改造的重要性（§5.4）；RQ3 对数据漂移的鲁棒性与重优化（§5.5）；RQ4 能否从离线结果训 LLM 泛化到未见查询（§5.6）。<b>5.1 设置：</b>四负载 JOB/CEB/Stack/DSB（特征见表 1）。离线优化文献关注少，本文是最早演示之一；对比 PostgreSQL、Bao（执行全部 49 hint 取最快，即 Bao 离线设定下能达到的最优）、Balsa、Random（代表「重思优化契约」的纯探索收益）。所有 BO 运行用 49 个 Bao hint 初始化。Balsa 设 S=1.5（超时乘子，普遍改善）。Random 以 PostgreSQL 默认计划运行时为初始超时。全部 PostgreSQL 16.3，禁 JIT、join_collapse_limit=1，pg_hint_plan 指定物理算子 hint，32GB 共享缓冲、16MB 工作内存。VAE 基于 transformer VAE 架构，每库 80/20 划分训 800k 步；潜在维选 64（Table 2：128 维重建 97.93%、64 维 89.67%、32 维 58.71%——64 为平衡之选），2×A6000 训约 24h、成本约 $24。</p>
+  <p><b>5.2 计划优化（RQ1）。</b> 每技术每查询跑数小时，Figure 3 比较「相对 Bao 的改进」累积分布（如 1s→200ms 为 80% 改进）。为公平，各技术给相同预算（4000 次计划执行，只计执行耗时）。BayesQO 在三个负载上都找到更多更好计划：JOB/Stack 差异明显，CEB 上接近；DSB 上多数查询无技术能超 Bao，但能改进的查询 BayesQO 略优。</p>
+  <p><b>5.3 案例研究（Figure 4）。</b> 4a：BO 前 1h 在初始化点附近探索（因不确定性超时执行略久于 Bao 初始），约 1.5h 在信任域发现大幅更优计划并快速利用，之后超时降低；Random 与 Balsa 都未能超 Bao 最优。4b：所有策略数小时后收敛到同一最佳，但 BO 明显更慢——Random 很快找到说明空间里有很多好计划但不同于 BO 初始化点；Balsa 即便给了 Bao 最优作训练例，也从更差计划起步。4c：某查询所有技术快速收敛到同一（约 2ms，噪声级）计划，Balsa 最慢到达（为最小化 regret 反复利用已知计划），进一步证明 RL 不适于离线优化。</p>
+  <div class="fig-note">📌 <b>对应图 3（Figure 3）：</b>各负载上各技术优化结束时找到的最佳计划相对 Bao 最优的改进 CDF。❶ Random 在 30–50% 查询上无任何改进；❷ BayesQO 总找到最多改进（JOB/Stack 更明显，Stack 上 50% 查询超 2×）；❸ Balsa 作离线优化器在 Stack 上因长查询限制 RL 探索而欠佳；❹ BayesQO 在另两者找不到改进的约 25% Stack 查询上仍有改进。</div>
+  <p><b>5.4 超时消融（RQ2，Figure 5）。</b> 5a：用不同超时方案优化单条 JOB 查询。用长于当前最佳的超时（0th 百分位）让代理模型学到更多关于不确定区域的知识；censored 观测使「都超时 1s」的两种计划看起来相同（即便一个 1.2s、一个 2h），更长超时让模型确知该区域是否仍值得探索。基于不确定性的方法找到更快计划且耗更少预算；用最佳运行时作超时反而找到最差计划。5b：信任域局部 BO vs 全局 BO——即便数小时全局 BO 也追不上局部 BO，因它须探索指数更大的空间。</p>
+  <p><b>5.5 优化后的数据漂移（RQ3）。</b> 把 Stack 数据删至 2017 快照（较 2019 原快照约减 20%）作最坏情况。RQ3.1：过去计划在「未来」数据集上表现≈从头 BO，且远优于 Bao 最优——多数计划最优性不受漂移影响（Figure 6 左、Figure 7）。RQ3.2：用过去 VAE 在「未来」上 BO，保持 VAE 最新对计划最优性有不可忽略影响（VAE 训练成本低，建议周期重训）。RQ3.3：用「Bao 初始化 + 过去优化计划」初始化未来 BO，重优化不仅可行且整体计划最好（Figure 6 红），且收敛远快于从头（重优化平均 1.5h vs 从头 8.2h）。</p>
+  <p><b>5.6 从 BO 结果训少样本 LLM（RQ4）。</b> 用 CEB 上 BO 最快 10 个计划微调 GPT-4o-mini，每查询让 LLM 生成 50 计划取最佳与 Bao 最优比。实验一（同模板）LLM 表现好；实验二（withhold 两个模板）LLM 表现明显下降——说明 LLM 初始化高度依赖是否见过同模板 BO 结果。</p>
+  <p><b>5.7 开销（Figure 9）。</b> 单次 BO 运行时 CPU 开销个位数秒（长查询可接受）；5 路并发时 VAE 采样 GPU 远优于 CPU（FlashAttention 硬件加速）。<b>5.8 与 LimeQO 对比（Figure 10）。</b> LimeQO 只在有限 hint 集找最优（同 Bao hint 集），穷尽 hint 后无路可走；BayesQO 构造完整连接顺序，持续探索找到更好计划。</p>
+
+  <h3>6. 结论（Conclusion）</h3>
+  <p>本文提出 BayesQO——一个离线学习型查询优化器，用现代贝叶斯优化技术为重要重复查询搜寻快速计划。实验表明 BayesQO 能为多个常见非合成基准中几乎每个查询做优化，有时获得多个数量级的改进。未来计划把 BayesQO 集成进更多数据库系统；鉴于 LLM 实验的 promising 结果，研究如何「闭合循环」用 LLM 为未来优化运行生成初始化数据；也期待把 BO 用于自动索引选择、数据布局、基准生成等数据库问题。</p>
+
+  <p class="fc">— 全文翻译结束 —</p>
+</div>
+
+<div class="footer">BayesQO 深度解读 · 基于 arXiv:2502.05256 · 翻译与解读仅供学习交流</div>
+
+</div>
+</body>
+</html>

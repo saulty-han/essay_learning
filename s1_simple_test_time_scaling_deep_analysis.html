@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>深度解读 — s1: Simple Test-Time Scaling</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{
+  font-family:'Noto Sans SC',system-ui,-apple-system,sans-serif;
+  background:#0d1117;color:#c9d1d9;
+  line-height:1.8;font-size:16px;
+  min-height:100vh;
+}
+.container{
+  max-width:1400px;margin:0 auto;padding:0 24px;
+  background:#0d1117;position:relative;
+}
+.back-btn{
+  position:fixed;top:16px;left:16px;z-index:9999;
+  background:rgba(20,20,35,.75);color:#c9d1d9;
+  border:1px solid rgba(255,255,255,.15);border-radius:10px;
+  padding:8px 16px;font-size:14px;cursor:pointer;
+  backdrop-filter:blur(6px);transition:all .3s;
+  text-decoration:none;display:flex;align-items:center;gap:6px;
+}
+.back-btn:hover{background:rgba(30,30,55,.9);border-color:rgba(255,255,255,.3);}
+.hero{padding:80px 0 40px;text-align:center;}
+.hero-title{
+  font-size:2.2rem;font-weight:700;
+  background:linear-gradient(135deg,#be185d,#ec4899,#ec4899);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  background-clip:text;margin-bottom:12px;line-height:1.3;
+}
+.hero-sub{font-size:1.1rem;color:#8b949e;margin-bottom:8px;}
+.venue{font-size:.95rem;color:#8b949e;margin-top:8px;}
+.venue a{color:#be185d;text-decoration:none;}
+.venue a:hover{text-decoration:underline;}
+.tag-row{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:16px;}
+.tag{
+  display:inline-block;padding:4px 14px;border-radius:20px;font-size:.85rem;
+  border:1px solid rgba(190,24,93,.3);color:#be185d;
+  background:rgba(190,24,93,.06);
+}
+.divider{border:none;border-top:1px solid rgba(255,255,255,.08);margin:48px 0;}
+.section{margin:40px 0;}
+.section-title{
+  font-size:1.75rem;font-weight:700;margin-bottom:20px;
+  color:#e6edf3;display:flex;align-items:center;gap:10px;
+}
+.section-title .num{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:36px;height:36px;border-radius:50%;
+  background:linear-gradient(135deg,#be185d,#ec4899);
+  color:#0d1117;font-size:1rem;font-weight:700;flex-shrink:0;
+}
+.section-desc{font-size:16px;line-height:1.9;color:#c9d1d9;margin-bottom:16px;}
+.toc{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:16px;padding:28px 36px;margin:30px 0;
+}
+.toc h3{font-size:1.2rem;color:#e6edf3;margin-bottom:14px;}
+.toc ol{list-style:none;counter-reset:toc;padding:0;}
+.toc li{counter-increment:toc;margin:8px 0;}
+.toc li::before{content:counter(toc) ".";color:#be185d;font-weight:600;margin-right:8px;}
+.toc a{color:#8b949e;text-decoration:none;transition:color .2s;}
+.toc a:hover{color:#be185d;}
+.module-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:24px;margin:18px 0;transition:all .3s;
+}
+.module-card:hover{border-color:rgba(190,24,93,.3);transform:translateY(-2px);}
+.module-card h3{font-size:1.15rem;font-weight:600;margin-bottom:10px;color:#be185d;}
+.module-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.arch-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:22px;margin:14px 0;transition:all .3s;
+}
+.arch-card:hover{border-color:rgba(190,24,93,.3);}
+.arch-card h4{font-size:1.05rem;font-weight:600;color:#ec4899;margin-bottom:8px;}
+.arch-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.step-flow{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:22px;margin:14px 0;
+}
+.step-flow h4{font-size:1.05rem;font-weight:600;color:#be185d;margin-bottom:8px;}
+.step-flow p{font-size:15px;line-height:1.8;color:#8b949e;}
+.data-table{
+  width:100%;border-collapse:collapse;margin:18px 0;
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;overflow:hidden;font-size:14px;
+}
+.data-table th{
+  background:rgba(190,24,93,.1);color:#be185d;
+  padding:12px 16px;text-align:left;font-weight:600;
+}
+.data-table td{
+  padding:10px 16px;border-top:1px solid rgba(255,255,255,.06);
+  color:#c9d1d9;
+}
+.data-table tr:hover td{background:rgba(190,24,93,.04);}
+.formula-box{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;padding:20px 24px;margin:16px 0;
+  font-size:18px;text-align:center;color:#e6edf3;
+  font-family:'JetBrains Mono',monospace;
+}
+.code-block{
+  background:rgba(20,20,35,.8);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;padding:18px 22px;margin:16px 0;
+  overflow-x:auto;
+}
+.code-block pre{
+  font-family:'JetBrains Mono',monospace;font-size:14px;
+  line-height:1.7;color:#c9d1d9;white-space:pre;
+}
+.ck{color:#be185d;}.cs{color:#ec4899;}.cf{color:#d2a8ff;}.cg{color:#8b949e;}.cv{color:#79c0ff;}
+.qa-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:24px;margin:16px 0;
+}
+.qa-q{font-size:1.05rem;font-weight:600;color:#be185d;margin-bottom:12px;}
+.qa-a{font-size:15px;line-height:1.9;color:#8b949e;}
+.highlight-box{
+  background:rgba(190,24,93,.06);border:1px solid rgba(190,24,93,.2);
+  border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;
+}
+.warn-box{
+  background:rgba(240,136,62,.08);border:1px solid rgba(240,136,62,.25);
+  border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;
+}
+.info-box{
+  background:rgba(190,24,93,.06);border:1px solid rgba(190,24,93,.2);
+  border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;
+}
+.prompt-box{
+  background:rgba(20,20,35,.8);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;padding:18px 22px;margin:16px 0;
+  font-family:'JetBrains Mono',monospace;font-size:13px;
+  line-height:1.7;color:#c9d1d9;white-space:pre-wrap;
+}
+.prompt-label{
+  display:inline-block;padding:2px 10px;border-radius:6px;
+  font-size:.85rem;font-weight:600;margin-bottom:8px;
+  background:rgba(190,24,93,.15);color:#be185d;
+}
+.fc{font-size:14px;color:#8b949e;text-align:center;margin:10px 0;line-height:1.6;}
+.comp-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:22px;margin:14px 0;transition:all .3s;
+}
+.comp-card:hover{border-color:rgba(190,24,93,.3);}
+.comp-card h4{font-size:1.05rem;font-weight:600;color:#ec4899;margin-bottom:8px;}
+.comp-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.insight-box{
+  background:rgba(190,24,93,.06);border:1px solid rgba(190,24,93,.2);
+  border-radius:12px;padding:18px 22px;margin:16px 0;
+}
+.insight-box h4{color:#be185d;font-size:1.05rem;margin-bottom:8px;}
+.insight-box p{font-size:15px;line-height:1.8;color:#c9d1d9;}
+.limit-box{
+  background:rgba(240,136,62,.08);border:1px solid rgba(240,136,62,.25);
+  border-radius:12px;padding:18px 22px;margin:16px 0;
+}
+.limit-box h4{color:#ec4899;font-size:1.05rem;margin-bottom:8px;}
+.limit-box p{font-size:15px;line-height:1.8;color:#c9d1d9;}
+.kv-row{
+  display:flex;border-bottom:1px solid rgba(255,255,255,.06);padding:8px 0;
+}
+.kv-row:last-child{border-bottom:none;}
+.kv-key{width:180px;flex-shrink:0;color:#be185d;font-weight:500;font-size:14px;}
+.kv-val{color:#c9d1d9;font-size:14px;line-height:1.7;}
+.footer{text-align:center;color:#555;font-size:14px;padding:48px 0 32px;}
+/* SVG architecture */
+.svg-container{
+  background:rgba(20,20,35,.4);border:1px solid rgba(255,255,255,.06);
+  border-radius:14px;padding:20px;margin:24px 0;overflow-x:auto;
+  text-align:center;
+}
+.svg-container svg{max-width:100%;height:auto;}
+/* Phase badge */
+.phase-badge{
+  display:inline-block;padding:3px 12px;border-radius:8px;
+  font-size:.85rem;font-weight:600;margin-right:8px;
+}
+.phase-1{background:rgba(99,102,241,.15);color:#818cf8;}
+.phase-2{background:rgba(190,24,93,.15);color:#ec4899;}
+.phase-3{background:rgba(34,197,94,.15);color:#4ade80;}
+/* Grid layout */
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
+.grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;}
+@media(max-width:900px){
+  .grid-2,.grid-3{grid-template-columns:1fr;}
+  .hero-title{font-size:1.6rem;}
+  .kv-row{flex-direction:column;}
+  .kv-key{width:auto;}
+}
+/* Animated arrow */
+@keyframes flowPulse{
+  0%,100%{opacity:.6;}
+  50%{opacity:1;}
+}
+.flow-arrow{animation:flowPulse 2s ease-in-out infinite;}
+
+</style>
+</head>
+<body>
+<div class="container">
+
+<a class="back-btn" href="index.html">&#8592; 返回目录</a>
+
+<a href="s1_simple_test_time_scaling_full_translation.html" style="display:block;max-width:860px;margin:18px auto 0;padding:13px 22px;background:linear-gradient(90deg,rgba(31,111,235,.16),rgba(137,87,227,.16));border:1px solid rgba(137,87,227,.5);border-radius:12px;color:#e6edf3;text-decoration:none;font-weight:500;font-size:15px;text-align:center;box-shadow:0 2px 14px rgba(0,0,0,.35);">阅读本文逐段完整中文翻译（Full Translation）</a>
+
+<!-- ========== HERO ========== -->
+<div class="hero">
+  <h1 class="hero-title">s1: Simple Test-Time Scaling</h1>
+  <p class="hero-sub">用 1000 个样本 + Budget Forcing 实现 o1 级推理性能——完全开源</p>
+  <div class="venue">arXiv 2025 &nbsp;|&nbsp; <a href='https://arxiv.org/abs/2501.19393'>arXiv:2501.19393</a></div>
+  <div class="tag-row">
+    <span class="tag">Test-Time Scaling</span><span class="tag">Budget Forcing</span><span class="tag">Data Curation</span><span class="tag">Open Source</span><span class="tag">Stanford</span>
+  </div>
+</div>
+
+<!-- ========== TOC ========== -->
+<div class="toc">
+  <h3>目录</h3>
+  <ol>
+    <li><a href="#sec-1">研究动机</a></li>
+    <li><a href="#sec-2">框架概览</a></li>
+    <li><a href="#sec-3">数据策划：1000 个样本</a></li>
+    <li><a href="#sec-4">Budget Forcing 测试时控制</a></li>
+    <li><a href="#sec-5">s1-32B 微调</a></li>
+    <li><a href="#sec-6">数据与推理控制的整合</a></li>
+    <li><a href="#sec-7">实验评估</a></li>
+    <li><a href="#sec-8">敏感性分析</a></li>
+    <li><a href="#sec-9">代码使用与实战（含 GitHub 源码、安装命令、使用示例）</a></li>
+    <li><a href="#sec-10">总结与未来展望</a></li>
+  </ol>
+</div>
+
+<hr class="divider">
+
+<hr class="divider">
+
+<!-- ========== 1. MOTIVATION ========== -->
+<div class="section" id="sec-1">
+  <h2 class="section-title"><span class="num">1</span> 研究动机：复现 o1 的测试时扩展</h2>
+  <p class="section-desc">LLM 性能长期靠训练期扩展，o1 验证了测试期扩展（test-time scaling）但方法未公开。复现工作（MCTS、多智能体、RL）均未公开复现出清晰的测试期扩展曲线。核心问题：用最简单方法同时实现测试期扩展与强推理。</p>
+  <div class="grid-2">
+    <div class="module-card">
+      <h3>o1 的方法未公开</h3>
+      <p>测试期扩展被证明有效，但复现工作（MCTS、多智能体、RL）都未能复现出清晰的扩展曲线，缺乏一个简单可复现的基线。</p>
+    </div>
+    <div class="module-card">
+      <h3>本文主张</h3>
+      <p>s1 用最简单方法：1000 个精心策划的样本微调 + Budget Forcing 测试时控制，完全开源，首个复现出 o1 式扩展曲线的工作。</p>
+    </div>
+  </div>
+  <div class="insight-box">
+    <h4>核心创新</h4>
+    <p>数据策划（质量 / 难度 / 多样性筛选得 s1K）+ Budget Forcing（强制控制思考 token 数），用极简流程在 Qwen2.5-32B 上激活推理能力，实现随思考 token 增多精度上升的扩展曲线。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 2. OVERVIEW ========== -->
+<div class="section" id="sec-2">
+  <h2 class="section-title"><span class="num">2</span> 框架概览：数据策划 + 微调 + 控制</h2>
+  <p class="section-desc">三步：(1) 用 Gemini 2.0 Flash Thinking API 生成 59K 三元组（题 + 推理链 + 解）→ 按质量 / 难度 / 多样性过滤得 s1K（1000 题）；(2) 在 Qwen2.5-32B-Instruct 上 SFT 26 分钟（16×H100）；(3) 推理时用 Budget Forcing 控制思考 token 数。</p>
+  <div class="svg-container">
+    <svg viewBox="0 0 920 250" xmlns="http://www.w3.org/2000/svg" font-family="Noto Sans SC, sans-serif">
+      <defs><marker id="s1S" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#ec4899"/></marker></defs>
+      <rect x="20" y="95" width="150" height="60" rx="12" fill="rgba(190,24,93,.12)" stroke="#ec4899" stroke-width="1.5"/>
+      <text x="95" y="130" text-anchor="middle" fill="#c9d1d9" font-size="14" font-weight="600">Gemini 生成</text>
+      <rect x="200" y="55" width="200" height="130" rx="12" fill="rgba(190,24,93,.18)" stroke="#ec4899" stroke-width="2"/>
+      <text x="300" y="88" text-anchor="middle" fill="#e6edf3" font-size="13" font-weight="700">数据策划</text>
+      <text x="300" y="110" text-anchor="middle" fill="#8b949e" font-size="10">质量筛选</text>
+      <text x="300" y="128" text-anchor="middle" fill="#8b949e" font-size="10">难度筛选</text>
+      <text x="300" y="146" text-anchor="middle" fill="#8b949e" font-size="10">多样性采样</text>
+      <text x="300" y="164" text-anchor="middle" fill="#8b949e" font-size="10">59K → s1K</text>
+      <rect x="450" y="55" width="200" height="130" rx="12" fill="rgba(190,24,93,.18)" stroke="#ec4899" stroke-width="2"/>
+      <text x="550" y="88" text-anchor="middle" fill="#e6edf3" font-size="13" font-weight="700">SFT 微调</text>
+      <text x="550" y="110" text-anchor="middle" fill="#8b949e" font-size="10">Qwen2.5-32B</text>
+      <text x="550" y="128" text-anchor="middle" fill="#8b949e" font-size="10">16×H100</text>
+      <text x="550" y="146" text-anchor="middle" fill="#8b949e" font-size="10">26 分钟</text>
+      <text x="550" y="164" text-anchor="middle" fill="#8b949e" font-size="10">激活推理</text>
+      <rect x="700" y="55" width="200" height="130" rx="12" fill="rgba(190,24,93,.12)" stroke="#ec4899" stroke-width="1.5"/>
+      <text x="800" y="88" text-anchor="middle" fill="#e6edf3" font-size="13" font-weight="700">Budget Forcing</text>
+      <text x="800" y="110" text-anchor="middle" fill="#8b949e" font-size="10">最大：强制结束</text>
+      <text x="800" y="128" text-anchor="middle" fill="#8b949e" font-size="10">最小：Wait 延长</text>
+      <text x="800" y="146" text-anchor="middle" fill="#8b949e" font-size="10">扩展曲线</text>
+      <text x="800" y="164" text-anchor="middle" fill="#8b949e" font-size="10">AIME +7%</text>
+      <line x1="170" y1="120" x2="195" y2="120" stroke="#ec4899" stroke-width="2" marker-end="url(#s1S)"/>
+      <line x1="400" y1="120" x2="435" y2="120" stroke="#ec4899" stroke-width="2" marker-end="url(#s1S)"/>
+      <line x1="650" y1="120" x2="695" y2="120" stroke="#ec4899" stroke-width="2" marker-end="url(#s1S)"/>
+    </svg>
+  </div>
+  <div class="step-flow">
+    <h4>端到端流程</h4>
+    <p>SFT 激活模型已有推理能力 → 推理时按预算强制控制思考长度，最小控制靠 "Wait" 触发二次检查纠错，实现随思考 token 增多精度上升的扩展曲线。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 3. DATA ========== -->
+<div class="section" id="sec-3">
+  <h2 class="section-title"><span class="num">3</span> 数据策划：1000 个样本</h2>
+  <p class="section-desc">s1K 数据筛选三标准：质量（去 API 错误 / 格式问题）、难度（用 7B/32B 两模型筛掉易题 + 推理链长度）、多样性（按 MSC 分类 50 领域均匀采样）。</p>
+  <div class="module-card">
+    <h3>为何只训 1000 样本</h3>
+    <p>预训练已含海量推理数据，SFT 仅"激活"能力（类 LIMA 浅对齐假设）。59K 全量仅略优于 1K 但耗 394 vs 7 H100 时，故 1K 样本高效且足够。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 4. BUDGET ========== -->
+<div class="section" id="sec-4">
+  <h2 class="section-title"><span class="num">4</span> Budget Forcing 测试时控制</h2>
+  <p class="section-desc">Budget Forcing 用两种控制：最大控制（超思考 token 上限则追加 end-of-thinking 分隔符强制结束）与最小控制（抑制结束符、追加 "Wait" 延长思考促自纠）。</p>
+  <div class="grid-2">
+    <div class="module-card">
+      <h3>最大控制</h3>
+      <p>超思考 token 上限则追加 end-of-thinking 分隔符强制结束，限制推理长度。</p>
+    </div>
+    <div class="module-card">
+      <h3>最小控制</h3>
+      <p>抑制结束符、追加 "Wait" 延长思考，促使模型二次检查 / 纠错，实现外推（2x "Wait" 把 AIME24 从 50% 推到 57%）。</p>
+    </div>
+  </div>
+  <div class="arch-card">
+    <h4>顺序扩展优于并行</h4>
+    <p>后续计算可基于中间结果迭代精修，多数投票追不上顺序扩展；"Wait" 外推优于 "Hmm" / "Alternatively" / 无字符串。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 5. SFT ========== -->
+<div class="section" id="sec-5">
+  <h2 class="section-title"><span class="num">5</span> s1-32B 微调</h2>
+  <div class="module-card">
+    <h3>极简训练</h3>
+    <p>在 Qwen2.5-32B-Instruct 上 SFT 26 分钟（16×H100），仅用 s1K 数据。模型 s1-32B 在 AIME24 56.7、MATH500 93.0、GPQA 59.6，超 o1-preview，接近 Gemini 2.0；s1.1（换 DeepSeek-r1 蒸馏）进一步达 MATH500 95.4。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 6. INTEGRATION ========== -->
+<div class="section" id="sec-6">
+  <h2 class="section-title"><span class="num">6</span> 数据与推理控制的整合</h2>
+  <div class="arch-card">
+    <h4>端到端数据流</h4>
+    <p>数据策划得 s1K → SFT 激活推理能力 → 推理时按预算强制控制思考长度，最小控制靠 "Wait" 触发二次检查纠错，实现随思考 token 增多精度上升的扩展曲线。BF 控制命中率 100%，Scaling 变体为 15 最优。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 7. EXPERIMENT ========== -->
+<div class="section" id="sec-7">
+  <h2 class="section-title"><span class="num">7</span> 实验评估：超 o1-preview</h2>
+  <div class="module-card">
+    <h3>设置与基线</h3>
+    <p>基准 AIME24、MATH500、GPQA Diamond。对比 o1-preview、Gemini 2.0 及多种缩放方法。s1-32B（1K 样本）。</p>
+  </div>
+  <div class="highlight-box">
+    <p><b>主结果</b>：s1-32B 得分 AIME24 56.7、MATH500 93.0、GPQA 59.6，超 o1-preview（44.6/85.5/73.3 部分）；2x "Wait" 把 AIME24 从 50% 推到 57%（外推）。s1.1（DeepSeek-r1 蒸馏）达 MATH500 95.4、AIME24 56.7。</p>
+  </div>
+  <table class="data-table">
+    <tr><th>模型</th><th>AIME24</th><th>MATH500</th><th>GPQA</th></tr>
+    <tr><td>o1-preview</td><td>44.6</td><td>85.5</td><td>73.3</td></tr>
+    <tr><td>s1-32B</td><td>56.7</td><td>93.0</td><td>59.6</td></tr>
+    <tr><td>s1.1</td><td>56.7</td><td>95.4</td><td>—</td></tr>
+    <tr><td>Gemini 2.0</td><td>~</td><td>~</td><td>接近</td></tr>
+  </table>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 8. SENSITIVITY ========== -->
+<div class="section" id="sec-8">
+  <h2 class="section-title"><span class="num">8</span> 敏感性分析：数据与缩放</h2>
+  <div class="module-card">
+    <h3>数据消融</h3>
+    <p>仅随机 / 仅多样 / 仅最长链均显著变差（AIME24 约 -30%）；59K 全量仅略优于 1K 但耗 394 vs 7 H100 时。方法对比：BF 控制 100%、Scaling 15 最优；条件控制与拒绝采样差（拒绝采样反扩展）。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 9. INSIGHT ========== -->
+<div class="section" id="sec-9">
+  <h2 class="section-title"><span class="num">9</span> 代码使用与实战（含 GitHub 源码、安装命令、使用示例）</h2>
+  <div class="module-card">
+    <h3>官方仓库</h3>
+    <p>完全开源：<a href="https://github.com/simplescaling/s1" style="color:#ec4899;">https://github.com/simplescaling/s1</a>（Stanford / UW / Allen AI / Contextual AI，arXiv:2501.19393）。含模型权重、数据、代码。</p>
+  </div>
+  <div class="code-block"><pre># 1) 克隆仓库
+git clone https://github.com/simplescaling/s1.git
+cd s1
+
+# 2) 准备 s1K 数据（质量/难度/多样性筛选）
+python prepare_data.py --src 59k.jsonl --out s1k.jsonl
+
+# 3) SFT 微调 Qwen2.5-32B（16×H100，约 26 分钟）
+python train.py --model Qwen2.5-32B-Instruct --data s1k.jsonl
+
+# 4) 推理时用 Budget Forcing 控制思考长度
+python infer.py --model s1-32B --budget_forcing --max_think 4096</pre></div>
+  <div class="highlight-box">
+    <p>复现要点：s1K 的三筛选（质量 / 难度 / 多样性）是关键；SFT 仅激活能力；Budget Forcing 用 "Wait" 触发二次检查实现外推。扩展上限受上下文窗口限制（512 步时 12/30 题超窗掉点）。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 10. SUMMARY ========== -->
+<div class="section" id="sec-10">
+  <h2 class="section-title"><span class="num">10</span> 总结与未来展望</h2>
+  <p class="section-desc">s1 用 1000 个精心策划的样本 + Budget Forcing 实现 o1 级推理性能，是首个复现 o1 式测试时扩展曲线的工作，完全开源、样本高效（SFT 仅 26 分钟），s1-32B 在 AIME24 / MATH500 / GPQA 上超过 o1-preview。</p>
+  <div class="qa-card">
+    <div class="qa-q">Q1：为何只训 1000 样本就有效？</div>
+    <div class="qa-a">预训练已含海量推理数据，SFT 仅"激活"能力，类 LIMA 浅对齐假设；59K 全量仅略优但耗时 56×。</div>
+  </div>
+  <div class="qa-card">
+    <div class="qa-q">Q2：顺序扩展为何优于并行？</div>
+    <div class="qa-a">后续计算可基于中间结果迭代精修，多数投票追不上；"Wait" 触发二次检查纠错实现外推。</div>
+  </div>
+  <div class="qa-card">
+    <div class="qa-q">Q3：如何突破扩展上限？</div>
+    <div class="qa-a">可轮换字符串 / 加频率惩罚 / 结合 RL，或用 REBASE 树搜索等并行方法补上下文窗口限制。</div>
+  </div>
+  <div class="limit-box">
+    <h4>局限与未来</h4>
+    <p>扩展最终会趋于平缓；受上下文窗口限制（512 步时 12/30 题超窗掉点）；频繁抑制结束符易陷入重复循环。未来可结合 RL 与树搜索突破窗口限制。</p>
+  </div>
+</div>
+
+<div class="footer">论文深度解读 · 生成自 s1: Simple Test-Time Scaling · 阅读时间约 30 分钟</div>
+
+</div>
+</body>
+</html>

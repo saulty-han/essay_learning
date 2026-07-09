@@ -1,0 +1,702 @@
+=== PAGE 1 ===
+Re as on i ng Ban k: Scaling Agent
+Self-Evolving with Reasoning Memory
+Siru Ouyang1*, Jun Yan2†, I-Hung Hsu2, Yanfei Chen2, Ke Jiang2, Zifeng Wang2, Rujun Han2, Long T. Le2,
+Samira Daruki2, Xiangru Tang3, Vishy Tirumalashetty2, George Lee2, Mahsan Rofouei4, Hangfei Lin4, Jiawei
+Han1, Chen-Yu Lee2† and Tomas Pfister2
+1University of Illinois Urbana-Champaign,2Google Cloud AI Research,3Yale University,4Google Cloud AI
+With the growing adoption of large language model agents in persistent real-world roles, they naturally
+encounter continuous streams of tasks. A key limitation, however, is their failure to learn from the
+accumulated interaction history, forcing them to discard valuable insights and repeat past errors. We
+propose Re as on i ng Ban k, a novel memory framework that distills generalizable reasoning strategies
+from an agent’s self-judged successful and failed experiences. At test time, an agent retrieves relevant
+memories fromRe as on i ng Ban kto inform its interaction and then integrates new learnings back,
+enabling it to become more capable over time. Building on this powerful experience learner, we further
+introduce memory-aware test-time scaling (M aT T S), which accelerates and diversifies this learning
+process by scaling up the agent’s interaction experience. By allocating more compute to each task, the
+agent generates abundant, diverse experiences that provide rich contrastive signals for synthesizing
+higher-quality memory. The better memory in turn guides more effective scaling, establishing a pow-
+erful synergy between memory and test-time scaling. Across web browsing and software engineering
+benchmarks, Re as on i ng Ban k consistently outperforms existing memory mechanisms that store
+raw trajectories or only successful task routines, improving both effectiveness and efficiency;M aT T S
+further amplifies these gains. These findings establishmemory-driven experience scaling as a new scaling
+dimension, enabling agents to self-evolve with emergent behaviors naturally arise. Our code can be
+found athttps://github.com/google-research/reasoning-bank.
+1. Introduction
+Therapidadvancementoflargelanguagemodels(LLMs)hassignificantlyacceleratedthedevelopment
+of interactive LLM agents (Liu et al., 2025a; Wang et al., 2024), which are crucial in tackling
+complex real-world tasks that require multi-turn interactions with environments. These agents have
+demonstrated great potential across diverse scenarios, including web browsing (Gur et al., 2024),
+computer use (Xie et al., 2024; Yang et al., 2024), and scientific discovery (Ghafarollahi and Buehler,
+2025). As these agents are increasingly deployed in persistent, long-running roles, they naturally
+encounter a continuous stream of tasks and interactions. However, a critical limitation persists: they
+largely fail to learn from this accumulated experience. By approaching each new task in isolation, they
+are doomed to (i) repeat similar errors observed in the past (Yin et al., 2025), (ii) discard valuable
+insights gained from related problems, and, most importantly, (iii) lack self-evolving capabilities that
+make the agent system more capable over time (Gao et al., 2026). This phenomenon highlights the
+necessity of building memory-aware agent systems that could learn from their past experiences (Zhang
+et al., 2025b).
+Recent efforts on agent memory (Huang et al., 2026) have primarily focused on storing past
+interactions for reuse (Chen et al., 2025; Sun et al., 2025; Tang et al., 2025b; Zhao et al., 2024).
+However, these approaches are often limited to leveraging raw trajectories (Kagaya et al., 2024; Kong
+et al., 2025; Zheng et al., 2024) or successful routines (i.e., workflows, procedures) (Fang et al., 2025;
+Main contact: siruo2@illinois.edu, {junyann, chenyulee}@google.com
+* This work was done while Siru interned at Google Cloud AI Research.† Corresponding authors.
+arXiv:2509.25140v2  [cs.AI]  16 Mar 2026
+=== PAGE 2 ===
+Re as on i ng Ban k: Scaling Agent Self-Evolving with Reasoning Memory
+0 10 20 30 40Number of Tested Tasks
+Number of Successful Tasks0
+3
+6
+12
+15
+18
+Top-3 best-selling products in Jan 2023
+Best-selling product type in Jan 2023
+Top-2 searches in the store
+ Num of reviews mentioning “decent”
+Monthly counts of top-3 products for 01/2023-05/2023 in MM:COUNT format Grand total of invoice
+Trajectory Memory
+ReasoningBank Memory
+Workﬂow Memory
+<action> click('188') </action>  <think> I have successfully navigated to the 'My Account' page. The user wants to know the date of their first purchase. On this page, I see a "Recent Orders" section. To ensure I find the *first* purchase, I need to view the complete order history, not just the recent ones. There is a "View All" link next to "Recent Orders" which should take me to the full order history. </think> <action> click('1530') </action>  <think> I am on the "My Orders" page. The user wants to know the date of their first purchase. The orders are currently displayed from most recent to oldest. …</think>  <action> click('1614') </action>
+Earliest order for customer
+Workﬂow: Retrieve Information from Specific Page Section  <think> This workflow is designed to access a specific section … </think>  <action> click(‘section_or_tab_id') </action> <action> send_msg_to_user('extracted_info_message') </action>
+## Title Navigation Strategy ## Description When searching for specific information within history … ## Content … 1. Detect pagination mode and examine all items in relevant orders, …; 2. Avoid infinite scrolls, use fallbacks if primary mode fails, …; 3. Cross-reference with common …
+Solution: ReasoningBankWe get rich task insights from expensive test-time exploration / scaling.  We store them in a ReasoningBank.  When a new task comes, we incorporate the relevant insights to aid decision making.
+9
+ReasoningBank
+No Memory
+Figure 1 | Re as on i ng Ban kinduces reusable reasoning strategies, making memory items more
+transferable for future use. This enables agents to continuously evolve and achieve higher cumulative
+success rates than the “No Memory” baseline on the WebArena-Admin subset.
+Wang et al., 2025d). They suffer from two fundamental drawbacks. First, they lack the ability to distill
+higher-level, transferable reasoning patterns. Second, by over-emphasizing successful experiences,
+they leave the valuable lessons from an agent’s own failures largely underexplored (Zhang et al.,
+2024). Consequently, existing memory designs often remain limited to passive record-keeping rather
+than providing actionable, generalizable guidance for future decisions.
+To bridge this gap, we proposeRe as on i ng Ban k, a novel memory framework for agent systems.
+Re as on i ng Ban kdistills and organizes memory items fromboth successful and failed experiences
+judged by the agent itself without ground-truth labels. As shown in Figure 1, it captures not only
+effective strategies from successes but also crucial preventative lessons from failures, abstracting them
+into a collection of actionable principles. This process operates in a closed loop: when facing a new
+task, the agent retrieves relevant memories fromRe as on i ng Ban kto guide its actions. Afterward,
+the new experience is analyzed, distilled, and consolidated back into theRe as on i ng Ban k, allowing
+the agent to continuously evolve and improve its strategic capabilities.
+With Re as on i ng Ban kas a strong experience learner, we study experience scaling to establish
+a powerfulsynergy between memory and test-time scaling. Instead of scaling experience through
+breadth by adding more tasks, we focus on scaling experience through depth by tackling each single
+task with more exploration. We introduce memory-aware test-time scaling (M aT T S) in both parallel
+and sequential settings, which generates diverse exploration to provide contrastive signals, enabling
+Re as on i ng Ban kto synthesize better memories. It creates a synergy between memory and test-time
+scaling: high-quality memory steers the scaled exploration toward more promising paths, while the
+rich experiences generated forge even stronger memories. This positive feedback loop positions
+memory-driven experience scalingas a new scaling dimension for agents.
+We conduct extensive experiments on challenging benchmarks for web browsing (WebArena,
+Mind2Web) and software engineering (SWE-Bench-Verified). We demonstrate thatRe as on i ng -
+Ban k outperforms baselines in both effectiveness (up to 20% relative improvement, Table 1) and
+efficiency (up to 16% fewer interaction steps, Table 1). Additionally,Re as on i ng Ban ksynergizes
+best with M aT T S, making it an essential component for memory-driven experience scaling.
+Our contributions are threefold: (1) We proposeRe as on i ng Ban k, a novel memory framework
+that distills generalizable reasoning strategies from both successful and failed experiences, beyond
+prior work that primarily stores raw trajectories or success-only routines. (2) We introduceM aT T S
+2
+=== PAGE 3 ===
+Re as on i ng Ban k: Scaling Agent Self-Evolving with Reasoning Memory
+thatestablishesapowerful, bidirectionalsynergybetweenmemoryandtest-timescaling, withmemory-
+driven experience as a new scaling dimension. (3) We conduct extensive experiments on web browsing
+(WebArena, Mind2Web) and software engineering (SWE-Bench-Verified) tasks. We demonstrate that
+our approaches not only outperform baselines in effectiveness (up to 20% relative improvement) and
+efficiency (up to 16% fewer interactions), but also uniquely learn from failures and enable agents to
+develop increasingly complex, emergent reasoning strategies over time.
+2. Related Work
+Memory for LLM Agents.Memory has emerged as an essential module in modern agent systems (He
+et al., 2026; Hu et al., 2025b; Zhang et al., 2025b) to enhance their performance by utilizing past
+information. Existingmemorysystemsorganizeandstoreinformationinvariousforms, includingplain
+text (Packer et al., 2023), latent embeddings (Wang et al., 2025b), and structured graphs (Chhikara
+et al., 2025; Li et al., 2025b; Xu et al., 2025). Beyond memory content, those methods usually
+involve retrieval mechanisms (e.g., semantic search) with memory management strategies (e.g.,
+updating) (Hu et al., 2025a; Tan et al., 2025). More recently, with the growing development of
+reinforcement learning (RL) in LLM agents, RL has also been leveraged for memory management
+in agent systems (Yu et al., 2025a; Zhou et al., 2025). While most efforts primarily emphasize
+personalization (Zhang et al., 2025a; Zhong et al., 2024) and long-context management (Hu et al.,
+2025c; Maharana et al., 2024; Wu et al., 2025), this paper falls in the research line of learning
+from past experiences as memory (Su et al., 2025; Zhao et al., 2024), which is a critical aspect
+for developing self-evolving agent systems (Gao et al., 2026; Liang et al., 2024). Different from
+previous works that emphasize reusing successful trajectories (Tang et al., 2025a; Zheng et al., 2024),
+procedural workflows (Fang et al., 2025; Liu et al., 2025b; Nottingham et al., 2024; Qian et al.,
+2024; Wang et al., 2025d), or instance-level concepts (Liu et al., 2025c; Suzgun et al., 2025; Zhao
+et al., 2024),Re as on i ng Ban kstores high-level strategies and reasoning hints. By abstracting
+experiences into reusable reasoning units,Re as on i ng Ban kenables agents to generalize not only
+from successful cases (Alazraki et al., 2025; Fu et al., 2024; Zhao et al., 2024) but also by learning
+from failures, providing richer guidance for test-time learning.
+Agent Test-Time Scaling.Test-time scaling (TTS) (Snell et al., 2025) has demonstrated strong
+effectiveness and has become a widely adopted practice in end-to-end problem-solving, such as
+coding (Li et al., 2025a; Yu et al., 2025c) and math reasoning (Muennighoff et al., 2025), where
+methods including best-of-N (Chow et al., 2025), beam search (Wu et al., 2024b), and leveraging
+verifiers(Setluretal.,2025)arecommonlyemployed. However,itsapplicationtomulti-turninteractive
+scenarios, particularly agentic tasks, remains underexplored. Existing works mainly adapt the lessons
+learned from reasoning tasks (Zhu et al., 2025) and scale different dimensions of agentic systems,
+including the search space for each action (Yu et al., 2025b), the number of agents in multi-agent
+systems (Jin et al., 2025), and the number of interactions with the environment (Shen et al., 2025).
+We found that none of these efforts considers the role ofagent memoryin scaling, where an agent
+can learn from past experiences to guide future decisions. Our work extends this line of research
+by introducing memory-aware test-time scaling (M aT T S). As we will show in our empirical results
+(§4.3 and §4.4), memory offers benefits beyond mere computational scaling, where memory and
+scaling synergistically work towards better performance.
+3. Methodology
+In this section, we introduce the problem setup (§3.1), and present our proposedRe as on i ng Ban k
+(§3.2), based on which we further develop memory-aware test-time scaling (M aT T S) (§3.3).
+3
+=== PAGE 4 ===
+Re as on i ng Ban k: Scaling Agent Self-Evolving with Reasoning Memory
+MethodologyProblem Formulation: Streaming nature of testing tasks  Given a test set of tasks , the agent works on the tasks sequentially:  •   •No ground-truth feedback during testing
+{t1,t2,⋯,tn}t1→t2→⋯→tn
+Failure Reflection
+TimeTask q1 Task q2 …… ……Task qNTask qi
+qi Agent
+Env
+ReasoningBank:  a collection of memory items
+: experience/trajectoryℋ
+(i) Memory Retrieval
+Memory Items
+(ii) Memory Extraction
+(iii) Memory Consolidation
+Task : Tell me the status of my latest order and when it will arriveqi
+Experience/Trajectory ℋ<think>… I need to navigate to …</think> <action> click(‘188’) </action>
+Memory Item j Title: Prioritize user account sections for personal dataDescription When a query requests user-speciﬁc …Content: Systematically look for and click on links …
+Memory Extractor
+LLM-as-a-Judge
+Success Insights
+Figure 2 | Overview of Re as on i ng Ban k. Experiences are distilled into structured memory items
+with a title, description, and content. For each new task, the agent retrieves relevant items to interact
+with the environment and constructs new ones from both successful and failed trajectories, using
+LLM-as-a-Judge as a signal provider. These items are then consolidated intoRe as on i ng Ban k,
+forming a closed-loop memory process.
+3.1. Problem Formulation
+Agent Configuration. The scope of this work focuses on LLM-based agents. The agent policy
+𝜋L (·|M, A) is parameterized by the backbone LLML, conditioned on a memory moduleM, and the
+action spaceA, denoted as𝜋L for short. The agent needs to perform a task via interacting with the
+environment, which can be viewed as a sequential decision-making process. Formally, the transition
+function of the environment is defined asT (𝑠𝑡+1|𝑠𝑡, 𝑎𝑡) where 𝑠𝑡 is the state and𝑎𝑡 is the action selected
+by 𝜋L at time 𝑡. We focus on web browsing and software engineering (SWE) tasks.A is a set of web
+navigation operations for web browsing and bash commands for SWE tasks,M is Re as on i ng Ban k
+and initialized as empty. For each given task, the agent generates a trajectory of(𝑜0:𝑡, 𝑎0:𝑡) for 𝑡 steps,
+where observation𝑜𝑡 is from the current state𝑠𝑡. Observations are text-based accessibility tree of web
+pages1 for web browsing tasks and code snippets for SWE. The agent needs to generate an action
+𝑎𝑡+1 ∈ A via 𝜋L (𝑜0:𝑡, 𝑎0:𝑡; M, A) → 𝑎𝑡+1. For implementation, the memory moduleM contributes
+relevant memories as additional system instruction for𝜋L.
+Test-Time Learning.We focus on the test-time learning paradigm (Wang et al., 2025c; Wu et al.,
+2024a) where a sequence of task queriesQ = {𝑞1, 𝑞2, ..., 𝑞 𝑁 } arrives in a streaming fashion, i.e., each
+query is revealed and must be completed sequentially without access to future ones. In this setting,
+no ground truth is available during test-time, so the agent must continuallyevolveby only leveraging
+its own past trajectories and any self-verification without relying on external labels. This streaming
+setting highlights two key challenges: (i) how to extract and preserve useful memory from past
+trajectories, and (ii) how to effectively leverage such memory for future queries to avoid redundantly
+re-discovering already successful strategies or repeating past mistakes.
+3.2. Re as on i ng Ban k
+Past raw trajectories (or experiences), while being comprehensive and original, are often too lengthy
+andnoisytobedirectlyappliedtothecurrentuserquery. AsillustratedinFigure2, Re as on i ng Ban k
+distills useful strategies and reasoning hints from past experiences into structured memory items,
+which are then stored in the agent’s memory for future reuse.
+1Weusethethinkingprocessof 𝜋L astheapproximationof 𝑜0:𝑡 duetolengthyobservationrepresentationsfollowingWang
+et al. (2025d).
+4
+=== PAGE 5 ===
+Re as on i ng Ban k: Scaling Agent Self-Evolving with Reasoning Memory
+Memory Schema.Memory items inRe as on i ng Ban kare designed and induced from past experi-
+ences as structured knowledge units that abstract away low-level execution details while preserving
+transferrable reasoning patterns and strategies. Each memory item specifies three components: (i)
+a title, which serves as a concise identifier summarizing the core strategy or reasoning pattern;
+(ii) adescription, which provides a brief one-sentence summary of the memory item; and (iii) the
+content, which records the distilled reasoning steps, decision rationales, or operational insights ex-
+tracted from past experiences. Together, memory items extracted are both human-interpretable and
+machine-usable, facilitating efficient usage and integration with agents.
+Integrating Re as on i ng Ban k with Agents. An agent 𝜋L equipped with Re as on i ng Ban k
+can draw upon a curated pool of transferable strategies to guide decision-making. This enables
+the agent to recall effective insights, avoid previously observed pitfalls, and adapt more robustly to
+unseen queries. The integration proceeds in three steps: (i)memory retrieval, (ii)memory extraction,
+and (iii)memory consolidation, as shown in Figure 2. Duringmemory retrieval, the agent queries
+Re as on i ng Ban kwith the current query context to identify the top-𝑘 relevant experiences and
+their corresponding memory items using embedding-based similarity search. Retrieved items are
+injected into the agent’s system instruction, ensuring that action prediction fromA is grounded
+with useful past experiences. When the current query task is completed, we will performmemory
+extraction to extract new memory items. The first step is to obtain proxy correctness signals for
+trajectories: we adopt an LLM-as-a-judge (Gu et al., 2024) to label outcomes as success or failure
+given the query and trajectory without any ground-truth reference. Based on these signals, we apply
+different extraction strategies: successful experiences contribute validated strategies, while failed
+ones supply counterfactual signals and pitfalls that help sharpen guardrails. In practice, we extract
+multiple memory items for each trajectory/experience as detailed in Appendix A.1. Finally,memory
+consolidation incorporates these items intoRe as on i ng Ban kwith a simple addition operation,
+maintaining an evolving repository of memory items. Details are in Appendix A.2. Together, these
+steps form a closed-loop process: the agent leverages past experiences, constructs new memory
+from current tasks, and continually updates its memory, enabling sustained evolvement in test-time
+learning scenarios.2
+3.3. M aT T S: Memory-aware Test-Time Scaling
+Re as on i ng Ban kenables learning from experiences to translate more experiences into greater
+improvements. As test-time scaling (Snell et al., 2025) recently emerged as a powerful strategy for
+boosting the performance of LLM agents (Zhu et al., 2025), it shows strong potential by allocating ad-
+ditional inference-time computation to generate abundant exploration histories. A direct combination
+of Re as on i ng Ban kand test-time scaling is depicted in Figure 3(a), where more trajectories are
+independently converted to more memory items. However, this vanilla form is suboptimal because
+it does not leverage inherent contrastive signal that arises from redundant exploration on the same
+problem, which limits the resulting performance advantage brought by test-time scaling. To address
+this, we proposeMemory-aware Test-Time Scaling(M aT T S), a novel integration of test-time scaling
+with Re as on i ng Ban k. Unlike the vanilla approach,M aT T Sdeliberately learns from the abundant
+successful and failure trajectories generated during scaling for more effective memory curation. We
+design two complementary instantiations forM aT T S, parallel scaling and sequential scaling, as
+illustrated in Figure 3(b) and 3(c) with detailed implementation in Appendix A.3.
+Parallel Scaling.In the parallel setting, we generate multiple trajectories for the same query under
+2We deliberately keep the memory usage pipeline simple, avoiding additional complexity in retrieval or consolidation so
+as to highlight the contribution ofRe as on i ng Ban kitself. These components, however, can be further enhanced with
+more sophisticated techniques, which could provide additional benefits.
+5
+=== PAGE 6 ===
+Re as on i ng Ban k: Scaling Agent Self-Evolving with Reasoning Memory
+MethodologyMemory-aware test-time scaling (MaTS): Leverage contrastive signals from past experiences: •Parallel Scaling: use self-contrast for memory curation •Sequential Scaling: use self-refinement for memory curation
+Task qi Task qi+1
+Current memory
+ New memory
+Self-Reﬁne
+TrajTraj’…
+(c) MaTTS - SequentialTask qi Task qi+1(b) MaTTS - Parallel
+Current memory
+Trajectory 1
+Trajectory 2
+Trajectory n
+New memory
+Self-Contrast……
+Traj 1
+Traj 2
+Traj n
+New Mem 1
+Mem 1
+New Mem 2
+New Mem n
+Mem 2
+Mem n
+………………
+Task qi Task qi+1
+(a) Vanilla TTS (MaTTS w/o aggregation)
+Figure 3 | Comparison of(a) vanilla TTSand M aT T Swith (b) parallel scaling, where self-contrast
+across multiple trajectories curates reliable memory, and(c) sequential scaling, where self-refinement
+enriches memory with intermediate reasoning signals.
+the guidance of retrieved memory items. By comparing and contrasting (self-contrast (Chen et al.,
+2020)) across different trajectories, the agent can identify consistent reasoning patterns while filtering
+out spurious solutions. This process enables more reliable memory curation from multiple trials of a
+single query that promotes diverse exploration.
+Sequential Scaling. We iteratively refines its reasoningwithin a single trajectoryafter the initial
+completion, following the principle ofself-refinement (Madaan et al., 2023). During this process, the
+intermediate notes generated in self-refinement are also used as valuable signals for memory, since
+they capture reasoning attempts, corrections, and insights that may not appear in the final solution.
+We define the scaling factor𝑘, denoting the number of trajectories for parallel scaling and refine-
+ment steps for sequential scaling. Equipped withRe as on i ng Ban k, both parallel and sequential
+strategies become memory-aware, ensuring that the additional computation allocated at test time
+translates into more transferable and higher-quality memory for future tasks.
+4. Experiments
+4.1. Setup
+Following existing work (Wang et al., 2025d), we conduct experiments on WebArena (Zhou
+et al., 2024) which features general web navigation across diverse domains3, and Mind2Web (Deng
+et al., 2023) that tests generalization of agents on versatile operations and environments. We also
+conduct experiment on SWE-Bench-Verified for repository-level issue-resolving. For comparison,
+we consider baselines ranging from memory-free agents (No Memory) to trajectory-based memory
+(Synapse) (Zheng et al., 2024) and workflow-based memory (AWM) (Wang et al., 2025d). Our
+agents are built on Gemini-2.5 (Comanici et al., 2025) and Claude-3.7 (Anthropic, 2025) models
+using BrowserGym (de Chezelles et al., 2025) for web browsing and bash-only for SWE, following
+ReAct (Yao et al., 2023) style with default decoding configurations. We evaluate effectiveness (success
+rate, SR) and efficiency (average steps, AS), with specific metrics varying for each dataset. Full
+descriptions for datasets, baselines, implementations, and evaluation are in Appendix B.
+4.2. Results of Re as on i ng Ban k
+Tables 1, 3, 2 summarize the main evaluation results ofRe as on i ng Ban kon WebArena, Mind2Web,
+and SWE-Bench-Verified accordingly. We have the following observations.
+3We exclude the domain ofMap due to website issues following Miyai et al. (2025) for a fair comparison.
+6
+=== PAGE 7 ===
+Re as on i ng Ban k: Scaling Agent Self-Evolving with Reasoning Memory
+Table 1| Experiment results ofRe as on i ng Ban kand M aT T S(parallel scaling, 𝑘 = 5, pass@1)
+on WebArena benchmark. Success rate (SR↑) and the number of steps (Step↓) are reported on 5
+subsets for 3 different backbone LLMs.
+Models Shopping Admin Gitlab Reddit Multi Overall
+(187) (182) (180) (106) (29) (684)
+SR Step SR Step SR Step SR Step SR Step SR Step
+Gemini-2.5-flash
+No Memory 39.0 8.2 44.5 9.5 33.9 13.3 55.7 6.7 10.3 10.0 40.5 9.7
+Synapse 40.6 7.0 45.1 9.1 35.6 13.0 59.4 6.5 10.3 10.5 42.1 9.2
+AWM 44.4 7.0 46.7 8.8 37.2 13.2 62.3 6.1 3.4 7.7 44.1 9.0
+Re as on i ng Ban k 49.7 6.1 51.1 8.2 40.6 12.3 67.0 5.6 13.8 8.8 48.8 8.3
++M aT T S 53.0 6.3 53.8 7.6 42.8 11.9 70.8 5.4 17.2 8.0 51.8 7.9
+Gemini-2.5-pro
+No Memory 45.5 7.6 51.1 8.7 35.0 11.6 71.7 6.0 6.9 8.8 46.7 8.8
+Synapse 46.5 6.6 52.2 8.9 38.3 11.3 68.9 5.9 6.9 9.0 47.7 8.5
+AWM 48.1 6.4 49.3 9.8 40.0 11.2 68.9 6.4 3.4 9.3 47.6 8.7
+Re as on i ng Ban k 51.9 6.0 56.6 7.7 44.4 9.8 80.2 5.1 13.8 8.2 53.9 7.4
++M aT T S 54.0 5.9 58.2 7.4 46.7 9.1 83.0 5.3 20.7 7.2 56.3 7.1
+Claude-3.7-sonnet
+No Memory 38.5 6.1 49.5 8.4 36.7 10.6 53.8 5.5 0.0 11.6 41.7 8.0
+Synapse 39.6 5.8 50.5 8.5 38.0 10.0 53.8 6.1 0.0 11.8 42.6 7.9
+AWM 39.6 7.2 47.8 9.3 34.6 10.9 52.8 7.0 0.0 12.4 40.8 8.9
+Re as on i ng Ban k 44.9 5.6 53.3 7.6 41.1 9.5 57.5 5.2 3.4 10.5 46.3 7.3
++M aT T S 47.1 5.8 55.5 7.4 43.3 9.4 60.4 5.0 10.3 9.1 48.8 7.2
+Re as on i ng Ban kconsistently outperforms baselines across LLM backbones on all datasets.
+Specifically, Re as on i ng Ban kimproves the overall success rate on WebArena (Table 1) by+8.3,
++7.2, and +4.6 with three different backbone LLMs compared to memory-free agents. A similar
+pattern holds on Mind2Web (Table 3), whereRe as on i ng Ban kdelivers clear gains across cross-
+task, cross-website, and cross-domain settings, underscoring both the consistency and scalability
+of its benefits across datasets and model sizes. Results on SWE-Bench-Verified (Table 2) further
+confirm its robustness. Crucially, unlike baselines such as Synapse and AWM that rely on a narrow,
+homogeneous memory source derived exclusively from successful trajectories,Re as on i ng Ban k
+employs a superior extraction strategy that is key to its consistent out-performance.
+Table 2 | Experiment results of Re a -
+s on i ng Ban kon SWE-Bench-Verified
+dataset for issue-resolving in a given
+repository.
+Methods Resolve Rate AS
+Gemini-2.5-flash
+No Memory 34.2 30.3
+Synapse 35.4 30.7
+Re as on i ng Ban k 38.8 27.5
+Gemini-2.5-pro
+No Memory 54.0 21.1
+Synapse 53.4 21.0
+Re as on i ng Ban k 57.4 19.8
+Re as on i ng Ban kenhances generalization with bet-
+ter transferrable memory across tasks.We also evalu-
+ate in challenging generalization settings. On WebArena
+(Table 1), theMulti subset requires transferring mem-
+ory across multiple websites, whereRe as on i ng Ban k
+achieves a notable gain of+4.6 averaged SR over the
+strongest baseline. In contrast, strong baselines such as
+AWM fail to provide gains and even degrade in this set-
+ting. On Mind2Web (Table 3), which includes cross-task,
+cross-website, and cross-domain evaluations that impose
+progressively higher demands,Re as on i ng Ban kcon-
+sistently improves success rates. The gains are especially
+pronounced in the cross-domain setting, which requires
+the highest level of generalization. These results demon-
+7
+=== PAGE 8 ===
+Re as on i ng Ban k: Scaling Agent Self-Evolving with Reasoning Memory
+Table 3| Results on Mind2Web benchmark for cross-task, cross-website, and cross-domain generaliza-
+tion test. EA (↑) is short for element accuracy, AF1 (↑) is short for action F1, and SSR (↑) is short for
+step success rate. SR (↑) is the task-level success rate measuring if all steps are correct.
+Models Cross-Task Cross-Website Cross-Domain
+EA AF 1 SSR SR EA AF 1 SSR SR EA AF 1 SSR SR
+Gemini-2.5-flash
+No Memory 46.0 59.1 40.3 3.3 39.8 45.1 31.7 1.7 35.8 37.9 31.9 1.0
+Synapse 47.0 59.5 41.2 3.5 40.3 46.0 32.1 1.9 36.3 38.5 32.4 1.1
+AWM 46.3 56.1 41.0 3.5 39.1 42.2 31.7 2.1 33.3 36.5 30.1 0.7
+Re as on i ng Ban k 52.1 60.4 44.9 4.8 44.3 52.6 33.9 2.3 40.6 41.3 36.6 1.6
+Gemini-2.5-pro
+No Memory 49.3 60.2 44.4 3.5 41.2 49.8 34.8 3.4 37.9 37.7 35.0 1.4
+Synapse 50.1 61.0 44.7 3.6 41.8 51.2 35.0 3.2 38.5 39.8 35.6 1.5
+AWM 48.6 61.2 44.4 3.7 41.9 47.9 34.8 2.3 37.3 38.1 34.4 1.2
+Re as on i ng Ban k 53.6 62.7 45.6 5.1 46.1 54.8 36.9 3.8 42.8 45.2 38.1 1.7
+stratethatmemorycuratedby Re as on i ng Ban kismore
+robust and transferable, enabling agents to generalize effectively across diverse scenarios.
+Re as on i ng Ban kachieves superior efficiency by leveraging past experiences as memory.In
+addition to higher success rates,Re as on i ng Ban kalso reduces the number of interaction steps
+needed to complete tasks, as shown in theStep metric of Table 1 and 2. On WebArena, across
+almost all subsets and backbones,Re as on i ng Ban klowers the average step count by up to1.4
+compared with “No Memory”, and1.6 compared with other memory baselines. The average step
+on SWE-Bench-Verified is also smaller by saving2.8 and 1.3 steps respectively. This indicates that
+Re as on i ng Ban kenables agents to solve tasks more efficiently by reusing and refining reasoning
+knowledge, thus avoiding unnecessary or redundant exploration.
+4.3. Results of M aT T S
+We first present the overall results ofM aT T Son WebArena in Table 1, which demonstrate additional
+strong performance improvement and efficiency gains withRe as on i ng Ban k.4 To study the scaling
+effect in-depth with both parallel and sequential variants, we experimentedM aT T Swith Gemini-2.5-
+flash on Webarena-Shopping subset. To investigate the overall scaling effect, we benchmark with(i)
+M aT T Sw/o memory, which represents the scaling setting without memory mechanism,(ii) M aT T S
+w/o aggregation, which is equal to Vanilla TTS in Figure 3(a) and(iii) M aT T Sto demonstrate
+the effect with respect to scaling factor𝑘. Notably,𝑘 = 1 is the setting without scaling. For parallel
+scaling, we compute Best-of-N (BoN) as the final metric detailed in Appendix A.3. Results are shown
+in Figure 4.
+Both parallel scaling and sequential scaling boost performance.Increasing 𝑘 generally improves
+success rate, confirming the benefit of allocating more inference-time computation. WithM aT T S,
+parallel scaling grows from49.7 (𝑘 = 1) to55.1 (𝑘 = 5), while sequential scaling rises from49.7 to
+54.5. For the baseline ofM aT T Sw/o memory, the gains are smaller and less consistent (e.g., parallel
+scaling fluctuates between39.0 and 42.2 and sequential scaling fluctuates between37.4 and 40.6).
+In contrast, M aT T Senables stronger and more stable improvements across both scaling strategies,
+highlighting its role in making scaling more effective.
+M aT T Sis consistently better than vanilla TTS.With Re as on i ng Ban k, M aT T Sconsistently
+4By default, M aT T Sintegrates Re as on i ng Ban k, but it could also use other memory mechanisms.
+8
+=== PAGE 9 ===
+Re as on i ng Ban k: Scaling Agent Self-Evolving with Reasoning Memory
+surpasses M aT T Sw/o aggregation (vanilla TTS), showing that memory-aware coordination and
+aggregationisimportant. Specifically,at 𝑘 = 5, M aT T Sachieves 55.1inparallelscalingcomparedwith
+52.4 for vanilla TTS, and54.5 versus 51.9 in sequential scaling. These improvements highlight that
+memory-aware scaling effectively directs the agent toward more promising solutions by synthesizing
+insights from multiple trajectories or interaction steps to leverage contrastive signals.
+Experiment ResultsEvaluation of MaTS
+(b) Sequential Scaling
+36
+40
+44
+48
+52
+56
+(a) Parallel Scaling
+Success Rate (SR)40.641.742.2
+39.439.0
+49.7
+50.3
+49.7
+52.454.055.1
+51.352.952.4
+36
+40
+44
+48
+52
+56
+40.640.138.537.439.0
+49.7
+51.953.554.054.5
+51.952.451.950.8
+12345
+MaTTSMaTTS w/o aggregationMaTTS w/o memory
+12345
+Figure 4 | Effect of scaling factor𝑘 for M aT T Sunder with
+Re as on i ng Ban kon WebArena-Shopping subset. We com-
+pare (a) parallel and (b) sequential test-time scaling.
+Sequential scaling shows short-
+term advantage, but parallel domi-
+nates at larger scales forRe as on -
+i ng Ban k. With stronger memory
+mechanisms such as Re as on i ng -
+Ban k, sequential refinement brings
+higher gains at small𝑘, but its bene-
+fit quickly saturates—once the model
+either succeeds or fails decisively, fur-
+ther refinements add little new in-
+sight. In contrast, parallel scaling con-
+tinues to provide diverse rollouts that
+allow the model to critique and im-
+prove upon its own generations, lead-
+ing it to surpass sequential at larger𝑘 (e.g., 55.1 vs. 54.5 at 𝑘 = 5). In contrast, for vanilla TTS which
+is not equipped with memory module, sequential scaling yields little or even no benefit as scaling
+goes on, and parallel scaling consistently dominates.
+4.4. Synergy of Memory and Test-Time Scaling
+While the previous section establishes the overall effectiveness ofM aT T S, we highlight the synergy
+between memory and TTS in this section. Figure 5 presents a snapshot ofM aT T Son the WebArena-
+Shopping subset with parallel scaling factor𝑘 = 5, where we report both Pass@1 (randomly selected
+trajectory)andBest-of-5(BoN).Thissettingallowsustoexaminethebidirectionalinteractionbetween
+memory quality and scaling effectiveness.
+Experiment ResultsSynergy of Memory and TTS
+35
+40
+45
+50
+55
+60
+35
+40
+45
+50
+55
+60
+No MemorySynapseAWMReasoningBank
+No ScalingPass@1Best-of-5
+39.040.6
+44.4
+49.7
+42.244.4
+47.6
+55.1
+Success Rate (SR)41.2
+45.5
+53.0
+39.0
+Better memory mechanism enables stronger test-time scaling performance. 
+Scaling yields better memory curation.
+Figure 5 | Snapshot of M aT T S on WebArena-
+Shopping subset with different memory mecha-
+nisms with 𝑘 = 5. We compute BoN for all5 tra-
+jectories and Pass@1 with one randomly selected
+trajectory.
+Better memory enables stronger test-time
+scaling performance. To see how memory
+improves the effectiveness of scaling, we fo-
+cus on the BoN results, which directly measure
+an agent’s ability to surface the best outcome
+among multiple rollouts. As shown bybluebars
+in Figure 5, the benefit of scaling depends criti-
+cally on the underlying memory. Without mem-
+ory, scaling yields slight improvement, with BoN
+rising only from39.0 to 42.2. Weaker memory
+mechanisms such as Synapse and AWM provide
+moderate gains, reaching44.4 and 47.6, respec-
+tively. In contrast,M aT T Swith Re as on i ng -
+Ban k delivers the strongest benefit, with BoN
+climbing from49.7 to 55.1. These results show
+thathigh-qualitymemorydirectsscalingtoward
+more promising rollouts, ensuring that the ad-
+ditional trajectories are not wasted but converted into higher success rates.
+9
+=== PAGE 10 ===
+Re as on i ng Ban k: Scaling Agent Self-Evolving with Reasoning Memory
+Find reviewer who complain of customer service
+Emergent advanced strategiesRegularly cross-referencing the current view with the task requirements helps prevent errors and guides efficient navigation. If the current data doesn't align with expectations (e.g., contents are incorrect or irrelevant), reassess available navigation options such as specific page numbers, search filters, or alternative sections.
+…, actively look for and click on ”Next Page," "Page X," or "Load More" links.
+… it’s crucial to ﬁrst re-check the element's current identifier …
+Procedural/execution strategy
+Atomic self-reflection
+Test-time Learning Timeline
+Before scanning, always leverage any available search or filter functionalities, ensure completeness before reporting …
+Regularly cross-referencing the current view with the task requirements helps prevent errors… If the current data doesn't align with expectations (e.g., contents are incorrect or irrelevant), reassess available options such as search filters,  alternative sections …
+Generalized complex/effective strategy
+Evolved adaptive check
+Figure 6 | A case study illustrating emergent behaviors inRe as on i ng Ban kthrough memory items.
+Scaling yields better memory curation.To fairly evaluate how scaling feeds back into memory,
+we report Pass@1, which measures the average quality of trajectories after memory curation and
+allows direct comparison with the no-scaling case. The trend is depicted inpick bars and is striking:
+scaling actually reduces performance for weaker memories, where Synapse slightly increases from
+40.6 to 41.2, and AWM from44.4 to 45.5. These phenomenon suggest that without strong guidance,
+the extra rollouts generated by scaling offer diminishing returns. In contrast,Re as on i ng Ban k
+provides far more benefits: Pass@1 rises from49.7 to 53.0, showing that high-quality memory can
+harness the diversity of scaling to extract constructive contrastive signals. This asymmetry highlights
+that scaling alone is insufficient; only when paired with good memory mechanism does it contribute
+to curation of more effective memory, closing the virtuous cycle.
+5. Analysis
+We analyze Re as on i ng Ban kthrough several aspects: incorporating failure trajectories, examining
+emergent strategies, and evaluating efficiency across both successful and failed cases. Additional
+analyses are presented in Appendix C, including but not limited to number of retrieved experiences,
+additional results on smaller open-source model, and inference cost study.
+AnalysisAblation Study
+35
+38
+41
+44
+47
+50
+SynapseAWMReasoningBank
+No mem: 39.0
+Success only
+w/ Failure
+40.6
+44.446.5
+41.742.2
+49.7
+38
+41
+44
+47
+50
+01234
+Number of experiences
+39
+49.7
+46
+45.5
+44.4
+Success Rate
+Success Rate
+Figure 7 | Ablation results of incorpo-
+rating failure trajectories for memory
+induction.
+Emergent behaviors withRe as on i ng Ban k. We find
+that the strategies in Re as on i ng Ban k are not flat or
+monolithic, but instead evolve over time, exhibiting emer-
+gent behaviors that resemble the learning dynamics of
+RL(Wangetal.,2025a). Asillustratedinahumancasestudy
+in Figure 6, memory items describing a specific strategy
+“User-Specific Information Navigation” inRe as on i ng Ban k
+could gradually evolve during test-time learning process. It
+starts from execution-oriented or procedural strategies (e.g.,
+find navigation links), where the agent follows straight-
+forward action rules. It then progresses to adaptive self-
+reflections such as re-verifying identifiers to reduce simple
+mistakes. With more experiences, the same memory item
+evolves into adaptive checks, where the agent systematically
+leverages available search or filters to ensure completeness before results. Finally, it eventually
+matures into compositional strategies such as cross-referencing task requirements and reassessing
+options. This evolution highlights howRe as on i ng Ban kenables agents to refine strategies from
+low-level actions to high-level reasoning during test-time learning.
+Re as on i ng Ban kmakes good use of failure trajectories.
+10
+=== PAGE 11 ===
+Re as on i ng Ban k: Scaling Agent Self-Evolving with Reasoning Memory
+Table 4 | Average number of steps on successful and failed test instances across four WebArena
+domains. Re as on i ng Ban k consistently reduces the number of steps compared to the vanilla
+baseline, with notably larger reductions on successful instances.
+Models Shopping Admin Gitlab Reddit
+Successful Failed Successful Failed Successful Failed Successful Failed
+No Memory 6.8 8.7 8.4 10.4 8.6 15.7 6.1 7.6
+Re as on i ng Ban k 4.7 ↓2.1 7.3 ↓1.4 7.0 ↓1.4 9.5 ↓0.9 7.6 ↓1.0 15.5 ↓0.2 5.0 ↓1.1 6.8 ↓0.8
+Figure 7 compares different memory designs on WebArena-Shopping with Gemini-2.5-flash under
+two settings: using only successful trajectories versus leveraging both successes and failures. Baseline
+methods such as Synapse and AWM build memory solely from successful trajectories, and thus are not
+equipped to benefit from failures. As a result, when failures are added, their performance is limited or
+even degraded: Synapse increases only from40.6 (success only) to41.7 (with failures), while AWM
+drops from44.4to 42.2. In contrast, the design ofRe as on i ng Ban kenables distillation of reasoning
+patterns fromboth successes and failures, achieving46.5 on success-only traces and further improving
+to 49.7 when failures are included. This highlights that, unlike baselines,Re as on i ng Ban kcan
+transform failures into constructive signals rather than noise, enabling more robust generalization.
+47
+48.2
+49.4
+50.6
+51.8
+53
+1009080706050
+47.6
+47.6
+49.7
+48.7
+49.7
+52.4Simulated LLM-as-a-Judge Accuracy
+Success Rate
+Figure 8 | Results for SR w.r.t. simu-
+lated LLM-as-a-judge accuracy.
+Re as on i ng Ban k exhibits robustness to LLM-as-a–
+Judge calibration. A critical step in our method is sourc-
+ing proxy correctness signals for agent trajectories via an
+LLM-as-a-Judge. Here we quantitatively calibrate this judge
+and analyze its robustness to verification noise. We con-
+duct our analysis on the WebArena-Shopping subset, using
+Gemini-2.5-flash as the judge. We first establish the base-
+line accuracy by comparing the judge’s predictions against
+ground-truth labels, which we find to be 72.7%. To sys-
+tematically study the robustness ofRe as on i ng Ban kto
+the judge quality, we simulate different levels of verification
+accuracy. This is achieved by probabilistically correlating
+the judge’s labels with the ground-truth. For example, a
+100% accurate verifier uses the ground-truth labels directly. A 90% accurate verifier is simulated by
+using the correct (ground-truth) label 90% of the time and the incorrect (flipped) label 10% of the
+time. We extend this simulation down to 50% accuracy, which represents a random-guess baseline
+for this binary (success/failure) classification task. The results are presented in Figure 8. We observe
+that the judge’s accuracy does not significantly impact the performance ofRe as on i ng Ban k, as
+all variants achieve similar success rates within reasonable accuracy range (70%-90%). Intuitively,
+the 100% (ground-truth) accuracy setting yields the best performance. These findings confirm that
+Re as on i ng Ban kis robust to noise in the verification step.
+Re as on i ng Ban kdelivers targeted efficient gains.
+While the overall number of steps in Table 1 provides a general view of model efficiency, it does
+not distinguish whether reductions come from successful or failed trajectories. To gain deeper insight,
+we further separate the analysis into successful and failed test cases, which allows us to understand
+the source of step reduction: a desirable system should reduce unnecessary exploration when it is on
+the right track, rather than merely cutting short failed attempts. The results are shown in Table 4. We
+11
+=== PAGE 12 ===
+Re as on i ng Ban k: Scaling Agent Self-Evolving with Reasoning Memory
+find that Re as on i ng Ban kconsistently reduces the number of steps across all domains compared
+to the baseline. More importantly, the reduction is particularly pronounced on successful cases,
+reaching up to2.1 fewer steps (a26.9% relative reduction) than on failed ones. This indicates that
+Re as on i ng Ban kprimarily helps the agent reach solutions with fewer interactions by strengthening
+its ability to follow effective reasoning paths rather than simply truncating failed trajectories, which
+highlight the role of memory in guiding purposeful decision-making and improving efficiency in
+practice.
+6. Conclusion
+We introduceRe as on i ng Ban k, a memory framework that distills strategy-level reasoning signals
+from both successes and failures and integrates them into test-time scaling (M aT T S). Extensive exper-
+iments show thatRe as on i ng Ban kconsistently improves performance while reducing redundant
+exploration. Further results reveal a strong synergy between memory and scaling:Re as on i ng Ban k
+guides scaling toward more promising rollouts, while diverse rollouts enrich memory with valuable
+contrastive signals. We also provide analyses of individual components and emergent behaviors. Our
+findings suggest a practical pathway toward building adaptive and lifelong-learning agents, with
+additional future directions and limitations in Appendix D and E.
+7. Acknowledgments
+We thank Jiao Sun, Jing Nathan Yan, Chi Wang, and members from Google Cloud AI Research for
+their valuable feedback during the preparation of the paper. Siru was supported by the Molecule
+Maker Lab Institute: An AI Research Institutes program supported by NSF under Award No. 2019897.

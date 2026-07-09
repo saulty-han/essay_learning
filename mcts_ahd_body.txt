@@ -1,0 +1,976 @@
+=== PAGE 1 ===
+Monte Carlo Tree Search for Comprehensive Exploration in
+LLM-Based Automatic Heuristic Design
+Zhi Zheng 1 Zhuoliang Xie 2 Zhenkun Wang 2 Bryan Hooi 1
+Abstract
+Handcrafting heuristics for solving complex op-
+timization tasks (e.g., route planning and task al-
+location) is a common practice but requires ex-
+tensive domain knowledge. Recently, Large Lan-
+guage Model (LLM)-based automatic heuristic
+design (AHD) methods have shown promise in
+generating high-quality heuristics without manual
+interventions. Existing LLM-based AHD meth-
+ods employ a population to maintain a fixed num-
+ber of top-performing LLM-generated heuristics
+and introduce evolutionary computation (EC) to it-
+eratively enhance the population. However, these
+population-based procedures cannot fully develop
+the potential of each heuristic and are prone to
+converge into local optima. To more comprehen-
+sively explore the space of heuristics, this paper
+proposes to use Monte Carlo Tree Search (MCTS)
+for LLM-based heuristic evolution. The pro-
+posed MCTS-AHD method organizes all LLM-
+generated heuristics in a tree structure and can bet-
+ter develop the potential of temporarily underper-
+forming heuristics. In experiments, MCTS-AHD
+delivers significantly higher-quality heuristics on
+various complex tasks. Our code is available3.
+1. Introduction
+Manually designed heuristics are promising in addressing
+complex optimization tasks (e.g., combinatorial optimiza-
+tion (CO) problems) (Desale et al., 2015). They are widely
+used in real-world applications, such as traffic control (He
+et al., 2011), job scheduling (Rajendran, 1993), and robotics
+(Tan et al., 2021). However, manually crafted heuristics of-
+ten contain intricate workflows and parameter settings, mak-
+ing their design labor-intensive and reliant on task-specific
+expert knowledge. To achieve easier heuristic design across
+1School of Computing, National University of Singapore, Sin-
+gapore 2School of System Design and Intelligent Manufacturing,
+Southern University of Science and Technology, Shenzhen, China.
+Correspondence to: Bryan Hooi <bhooi@comp.nus.edu.sg>.
+3Our code is available at https://github.com/
+zz1358m/MCTS-AHD-master/tree/main.
+© Copyright National University of Singapore. All Rights Reserved. 
+MCTS advantages
+The general adoptted population in exsiting LLM-based AHD methods will discard emporarily underperforming codes. MCTS allows 
+developing based on temporarily underperforming codes which can help to jump out of local optima.
+MCTS
+Population is difficult to maintain diversity and MCTS can explore a wider heuristic function space
+Performance
+ Feature of heuristic functions
+Performance
+ Feature of heuristic functions
+Heuristic functions in the original 
+elite population
+LLM(       )-based heuristic evolution
+Newly generated heuristic functions 
+Population
+Update
+√
+√
+√
+√√
+❌
+❌
+❌
+❌
+❌
+Heuristic functions preserved 
+in the updated elite population
+Discarded heuristic functions❌ ❌
+√ √
+Performance
+ Feature of heuristic functions
+Iterations of
+Tree Search
+1 2
+3
+22
+3
+4
+3
+3
+Tree node of heuristic 
+function on MCTS depth k
+Exsiting MCTS Edges
+k
+Performance
+ Feature of heuristic functions
+1 2
+3
+22
+3
+4
+3
+3
+4
+Better-performing tree nodes of 
+heuristics outside local optima
+New MCTS expansions
+4
+4
+555
+(a) Populations in LLM-based AHD
+© Copyright National University of Singapore. All Rights Reserved. 
+MCTS advantages
+The general adoptted population in exsiting LLM-based AHD methods will discard emporarily underperforming codes. MCTS allows 
+developing based on temporarily underperforming codes which can help to jump out of local optima.
+MCTS
+Population is difficult to maintain diversity and MCTS can explore a wider heuristic function space
+Performance
+ Feature of heuristic functions
+Performance
+ Feature of heuristic functions
+Heuristic functions in the original 
+elite population
+LLM(       )-based heuristic evolution
+Newly generated heuristic functions 
+Population
+Update
+√
+√
+√
+√√
+❌
+❌
+❌
+❌
+❌
+Heuristic functions preserved 
+in the updated elite population
+Discarded heuristic functions❌ ❌
+√ √
+Performance
+ Feature of heuristic functions
+Iterations of
+Tree Search
+1 2
+3
+22
+3
+4
+3
+3
+Tree node of heuristic 
+function on MCTS depth k
+Exsiting MCTS Edges
+k
+Performance
+ Feature of heuristic functions
+1 2
+3
+22
+3
+4
+3
+3
+4
+Better-performing tree nodes of 
+heuristics outside local optima
+New MCTS expansions
+4
+4
+555
+(b) MCTS for higher-quality LLM-based AHD (Ours)
+Figure 1. The generally adopted population (a) in existing LLM-
+based AHD methods (Liu et al., 2024b; Ye et al., 2024a) directly
+discards low-performance heuristics (under the red dashed line in
+(a)), thus falling into local optima. MCTS provides chances to de-
+velop low-performance heuristics, so it can more comprehensively
+explore the space of heuristic functions with different features.
+various tasks, the concept of Automatic Heuristic Design
+(AHD) (Burke et al., 2013) (also known as Hyper-Heuristics
+(Ye et al., 2024a)) has attracted extensive attention. It seeks
+the best-performing heuristic algorithm among valid options.
+Genetic Programming (GP) (Langdon & Poli, 2013) is com-
+monly employed for AHD, with GP-based AHD methods
+introducing a series of mutation operators to gradually refine
+heuristic algorithms (Duflo et al., 2019). Nevertheless, the
+effectiveness of GP-based methods still relies on human def-
+initions of permissible operators (Liu et al., 2024b), which
+poses additional implementation difficulties.
+In recent years, large language models (LLMs) have shown
+exceptional effectiveness in various domains (Hadi et al.,
+2023; 2024; Naveed et al., 2023). Leveraging LLMs to au-
+tomatically enhance heuristics, LLM-based AHD methods
+(Liu et al., 2024c; Yu & Liu, 2024) can design high-quality
+1
+arXiv:2501.08603v3  [cs.AI]  31 Jan 2025
+=== PAGE 2 ===
+Monte Carlo Tree Search for Comprehensive Exploration in LLM-Based Automatic Heuristic Design
+heuristics for various complex tasks without manual inter-
+ventions. EoH (Liu et al., 2023; 2024b) and Funsearch
+(Romera-Paredes et al., 2024) innovatively apply LLMs to
+AHD by designing a population-based evolutionary compu-
+tation (EC) procedure. For a given task, several established
+general frameworks may exist for implementing heuristics,
+e.g., greedy solving frameworks or frameworks with search-
+based ideas for CO problems. LLM-based AHD methods
+focus on designing key heuristic functions within one of
+these predefined general frameworks, rather than developing
+heuristics from scratch. These methods maintain a popula-
+tion of outstanding heuristic functions based on their per-
+formances on an evaluation dataset and iteratively prompt
+LLMs to generate new heuristic functions taking the existing
+ones as starting points. Building on this population-based
+EC framework, studies also introduce effective components.
+EoH develops several prompt strategies that guide LLMs
+in generating effective heuristics. ReEvo (Ye et al., 2024a)
+incorporates the reflection mechanism (Shinn et al., 2024)
+to enhance the reasoning of LLMs among heuristic function
+samples. HSEvo (Dat et al., 2024) presents diversity metrics
+and harmony search (Shi et al., 2013) to increase the diver-
+sity of the population without compromising effectiveness.
+These population-based methods eliminate inferior heuristic
+functions in order to focus more on top-performance ones.
+However, lower-performance heuristic functions still have
+the potential to be outstanding after steps of LLM-based
+refinement. Thus, as shown in Figure 1, the population
+structure may guide the evolution of heuristics getting stuck
+in suboptimal local optima. Funsearch and HSEvo employ
+multiple-population structures (Cant´u-Paz et al., 1998) and
+diversity metrics, respectively, to improve the diversity of
+populations. Populations with these components can reduce
+the probability of premature convergence but still fail to
+explore the complex space of heuristics.
+To address these drawbacks, this paper proposes MCTS-
+AHD, the first tree search method for LLM-based AHD,
+which employs a tree structure over all the heuristic func-
+tions generated so far and uses the Monte Carlo Tree Search
+(MCTS) algorithm with progressive widening technique
+(Coulom, 2007) to guide the evolution of further heuristics.
+Its advantages are: 1) Instead of directly discarding inferior
+heuristic functions, MCTS-AHD enables steps of LLM-
+based evolution on temporarily underperforming heuristic
+functions while keeping focus on better-performing ones,
+achieving a more comprehensive exploration of the heuristic
+space. 2) The tree structure in MCTS can benefit the LLM-
+based heuristic refinement, where MCTS-AHD presents a
+novel tree-special prompt strategy to inspire LLMs with the
+organized function samples in the MCTS tree paths. More-
+over, as components, MCTS-AHD proposes an exploration-
+decay technique, which linearly decreases the rate at which
+we perform branching in MCTS as the algorithm progresses.
+We also present a novel thought-alignment procedure to
+generate precise linguistic descriptions of functions. In ex-
+periments, we implement MCTS-AHD to design heuristics
+with several general frameworks for a wide range of NP-
+hard (Ausiello et al., 2012) CO problems and a Bayesian
+Optimization (BO)-related optimization task. MCTS-AHD
+achieves significantly higher-quality heuristics than hand-
+crafted heuristics and existing LLM-based AHD methods.
+2. Preliminary
+2.1. Definition: AHD & LLM-based AHD
+AHD: For a given task P (e.g., a CO problem), AHD meth-
+ods search for the best-performing heuristic h∗ within a
+heuristic space H as follows:
+h∗ = arg max
+h∈H
+g(h). (1)
+The heuristic space H contains all feasible heuristics for
+tasks P . Given a task P , heuristic h ∈ H is an algorithm
+mapping the set of task inputs (also called instances)IP into
+the corresponding set of solutions SP , i.e., h : IP → SP .
+For example, heuristics for an NP-hard CO task, Traveling
+Salesman Problem (TSP), map city coordinates (TSP in-
+stances) to travel tours (solutions). The functiong(·) is a per-
+formance measure function for heuristics, g : H → R. For
+a CO task P minimizing an objective function f : SP → R,
+AHD methods estimate the performance function g by eval-
+uating the heuristic h on a task-specific dataset D. Formally,
+we enumerate instances ins ∈ D ⊆ IP , obtain their so-
+lutions h(ins) by h, and calculate the expectation of the
+objective function values for the solutions as follows:
+g(h) = Eins∈D[−f (h(ins))], (2)
+The heuristics in H belong to a wide range of general frame-
+works, and the optimal heuristic could be implemented with
+multiple frameworks. To focus more on critical heuristic
+designs within each framework, AHD methods typically pre-
+define a general framework and design only a key heuristic
+function with specified inputs and outputs within this frame-
+work. For example, heuristics for TSP within a step-by-step
+construction framework sequentially build TSP tours one
+city after another. AHD methods within this framework for
+TSP will design a key heuristic function to select the next
+city based on the partial tour of previously visited cities. For
+simplicity, we still denote the function to be designed as h.
+LLM-based AHD: LLM-based AHD introduces LLMs
+into the search process for the optimal heuristic function
+h∗ (within a predefined framework). Existing LLM-based
+AHD methods (Liu et al., 2024b; Ye et al., 2024a) main-
+tain a population of M heuristic functions {h1, . . . , hM }
+and employ EC to update the population iteratively. Imi-
+tating mutation or crossover operators in EC, LLM-based
+2
+=== PAGE 3 ===
+Monte Carlo Tree Search for Comprehensive Exploration in LLM-Based Automatic Heuristic Design
+© Copyright National University of Singapore. All Rights Reserved. 
+?(·)
+?(·)
+?(·)
+LLM-base Actions
+Prompt
+Action: m1
+Mutation: Modify the given heuristic function 
+with its description (    ), e.g., add new 
+mechanisms or code segments.
+Prompt
+Action: i1
+Initialization: Generate a heuristic function for 
+Task P & general framework
+New MCTS node
+Function Description
+ Function Description
+New MCTS node
+Prompt
+Action: m2
+Mutation: Modify the given heuristic function 
+with its description (    ), e.g., change parameter 
+settings.
+Function Description
+New MCTS node
+Prompt
+Action: e1
+Crossover: Given several functions with their 
+descriptions and performances(      ), generate a 
+totally different one.
+Description
+New MCTS node
+Prompt
+Action: e2
+Description
+New MCTS node
+Crossover: Based on a function with its 
+description and performance (    ), learn from 
+another one (    ) and generate a new function.
+Function Function Prompt
+Action: s1
+Description
+Reasoning: Given several related functions with 
+their descriptions and performances, reason and 
+generate a new function with better performance.
+Function
+New MCTS node?(·)
+?(·)?(·)
+?(·)
+ ?(·)
+?(·)
+...
+Elite 
+set ?
+Sample
+ ??
+??
+Figure 2. LLM-based actions in MCTS-AHD for heuristic evolution. Actions include initializing a new heuristic (i1); two mutation
+actions (m1 and m2) to mutate an existing heuristic function into a new one with diverse mechanism or detail settings; two crossover
+actions (e1 and e2) to generate a new heuristic from multiple existing ones; and a novel tree-path reasoning action (s1) to get a better
+heuristic function from organized function samples on an MCTS tree path from the root node nr to a leaf node nl.
+AHD methods prompt LLMs to generate heuristics given
+existing heuristics from the population. In these methods,
+a heuristic h will only be retained for the next iteration if
+its performance g(h) estimated in the evaluation dataset
+D exceeds the worst-performing heuristic in the original
+population, i.e., g(h) > mini∈{1,...,M } g(hi). This property
+makes it difficult for population-based methods to adopt a
+worse-before-better strategy for the optimal heuristic h∗.
+2.2. Monte Carlo Tree Search
+MCTS Algorithm. MCTS ( ´Swiechowski et al., 2023) is
+a decision-making algorithm widely used in games (Silver
+et al., 2016) and complex decision-making tasks (Fu et al.,
+2021). Recent studies also verify the power of MCTS in
+assisting LLMs to conduct multi-hop reasoning (Feng et al.,
+2023). In the MCTS tree, each node nc represents a state,
+and the MCTS will repeatedly select and expand the node
+with the highest potential judged by a UCT algorithm (Koc-
+sis & Szepesv´ari, 2006). Each MCTS tree node nc records
+a quality value Q(nc) and a visit count N (nc) represent-
+ing the number of times the node has been selected. From
+an initial root node nr, MCTS gradually builds the MCTS
+tree to explore the entire state space. Each round of MCTS
+consists of four stages as follows:
+Selection: The selection stage identifies the most potential
+MCTS tree node for subsequent node expansions. From the
+root node nr, the selection stage iteratively selects the child
+node with the largest UCT value until it reaches a leaf node.
+Given a current node nc, the UCT values for its child nodes
+c ∈ Children(nc) are calculated as follows:
+UCT(c) =
+
+Q(c) + λ ·
+s
+ln(N (nc) + 1)
+N (c)
+
+. (3)
+Expansion: The expansion stage obtains multiple child
+nodes from the current (leaf) node nc by sampling several
+actions from the state of nc among all possible options.
+Simulation: The simulation stage evaluates all newly ex-
+panded leaf nodes for their quality value Q(·).
+Backpropagation: The backpropagation process uses the
+results of simulations to update the values of Q(·), N(·) for
+nodes on the tree path from nc to the root nr.
+After several iterations of MCTS, the MCTS tree can contain
+nodes with high-quality states for games or tasks.
+Progressive Widening. Conventional MCTS is not suitable
+for tasks with extensive action options or dynamically chang-
+ing environments (Lee et al., 2020b). Progressive widening
+(Coulom, 2007) is a technique designed for MCTS to fit
+such tasks. It gradually adds new child nodes to non-leaf
+nodes as their visit counts N (·) increases. Formally, for
+node nc with child nodes children(nc), a new child node
+will be added every time the following condition is satisfied:
+⌊N (n)α⌋ ≥ | children(nc)|, (4)
+where |children(nc)| is the number of child nodes of nc.
+3. MCTS-AHD
+To address the challenges faced by population-based LLM-
+based AHD methods in overcoming local optima and explor-
+3
+=== PAGE 4 ===
+Monte Carlo Tree Search for Comprehensive Exploration in LLM-Based Automatic Heuristic Design
+© Copyright National University of Singapore. All Rights Reserved. 
+MCTS settings
+Selection
+MCT Root
+Initial
+nodes
+?(·)
+?(·)
+Expansion
+MCT Root
+Initial
+nodes
+?(·)
+?(·)
+?(·)
+?(·)
+?(·)
+?(·)
+?(·)
+?(·)
+?(·)
+?(·)
+?(·)
+?(·)
+?(·)
+?(·)
+A virtual node
+e2 m2m1 s1
+Simulation
+?(·) = 1
+?(·) = g(      )
+?(·) = 1
+?(·) = g(      )
+?(·) = 1
+?(·) = g(      )
+?(·) = 1
+?(·) = g(      )
+Backpropagation
+Initial
+nodes
+?(·) 
+?(·)
+?(·) 
+?(·) 
+?(·)
+?(·)
+Potential 
+Progressive 
+Widening
+Repeated until evaluating g(       ) for T times
+e2
+?(·) = 1
+?(·) = g(      )
+e2
+e1
+MCT Root
+Initial
+nodes
+e2
+e1
+?(·) = 1
+?(·) = g(      )
+e1
+MCT Root
+To a child node with the largest UCT(·)
+e2 m2m1 s1 e2 m2m1 s1
+Figure 3. The MCTS process in MCTS-AHD contains four stages, i.e., selection, expansion, simulation, and backpropagation. MCTS-
+AHD simulates the quality value of each node as the performance function values of their heuristics and the MCTS will terminate
+after total T performance evaluations. MCTS-AHD introduces the progressive widening technique to better crossover original heuristic
+functions with continuously generated new ones. It conducts the crossover actions e1 for the root node and action e2 for other nodes.
+ing complex heuristic spaces, this paper proposes a novel
+method called MCTS-AHD. It preserves all heuristic func-
+tions LLMs generated so far in an MCTS tree and employs
+MCTS with progressive widening for heuristic evolution.
+The MCTS root node nr is a virtual node without represent-
+ing any heuristics, and each of the other nodes represents an
+executable Python implementation of a heuristic function
+h ∈ H along with its linguistic description. As LLM-based
+actions for MCTS node expansion, MCTS-AHD prompts
+LLMs in existing strategies (e.g., mutation, crossover) and a
+novel tree-path reasoning strategy. Moreover, to encourage
+the exploration of the heuristic space H in the early stages
+of MCTS and ensure convergence in the later stages, MCTS-
+AHD presents an exploration-decay technique that linearly
+reduces the exploration factor in UCT.
+3.1. LLM-based actions in MCTS-AHD
+To simulate the mutation or crossover operators in EC, LLM-
+based AHD methods prompt LLMs with several prompt
+strategies to generate new heuristic functions from existing
+ones (Liu et al., 2024b). Utilizing the advantage that the
+MCTS tree can record the relationships of all the generated
+heuristics, as shown in Figure 2, MCTS-AHD presents a
+novel MCTS-specific set of actions for LLM-based heuristic
+evolution, including action i1, e1, e2, m1, m2, and s1. The
+detailed prompts for these actions are in Appendix E.1. As a
+commonality, all prompts contain descriptions of the taskP ,
+the predefined general framework, and the inputs and out-
+puts of the key heuristic function along with their meanings.
+For actions except i1, prompts also contain implementations
+and descriptions of existing heuristic functions. For each
+action, LLMs are supposed to output the Python code of a
+heuristic function and its linguistic description.
+Initial Action i1: As an action for initialization, the action
+i1 aims to directly generate a heuristic function and its
+corresponding description from scratch by LLMs.
+Mutation Action m1 & m2: MCTS-AHD incorporates two
+mutation actions, m1 & m2, to attempt more detailed de-
+signs within the original function workflow. Based on the
+inputted heuristic function, action m1 prompts LLMs to
+introduce new mechanisms and formulas, and action m2
+prompts LLMs to modify the parameter settings.
+Crossover Action e1: To explore heuristic functions with
+new workflows, we employ a crossover action e1 to generate
+a new heuristic function that diverges from multiple existing
+ones. These existing heuristic functions are inputted to
+LLMs with their performances g(·) and descriptions.
+Crossover Action e2 : The crossover action e2 prompts
+LLMs with a parent heuristic function, a reference heuris-
+tic function, and their respective performances. LLMs are
+supposed to identify the beneficial traits and settings in the
+reference one and craft an improved heuristic function based
+on the parent one. The reference is sampled from a dynami-
+cally maintained elite heuristic function set E consisting
+of heuristic functions with top 10 performances g(·).
+Tree-path Reasoning Action s1: The MCTS tree paths from
+the root nr to leaf nodes record the evolution history of
+heuristic functions. So, utilizing this feature, MCTS-AHD
+presents a novel action s1 to analyze all unique heuristic
+functions from the leaf node to be developed nl up to the
+root nr, identify advantageous designs in these heuristics,
+and generate an enhanced heuristic function.
+Generating Descriptions: The Thought-Alignment Pro-
+cess. Linguistic descriptions of heuristic functions can as-
+sist the reasoning of LLMs (Liu et al., 2024b), where EoH
+prompts LLMs for a description before outputting the func-
+tion code. However, due to LLM hallucination (Huang et al.,
+2023), such a procedure could lead to uncorrelated codes
+and descriptions. For correlated and detailed descriptions,
+MCTS-AHD proposes a thought-alignment process that
+summarizes descriptions after the code generations. There-
+4
+=== PAGE 5 ===
+Monte Carlo Tree Search for Comprehensive Exploration in LLM-Based Automatic Heuristic Design
+fore, performing all the MCTS-AHD actions calls LLMs
+twice. In the first call, we adopt the LLM-generated Python
+implementation of a heuristic function with action prompts.
+Then, we conduct a thought-alignment process, prompting
+LLMs to generate linguistic code descriptions in up to three
+sentences (refer to Appendix E.2 for prompts). The second
+LLM call is significantly shorter than the first one, so it will
+not cause a severe increase in execution time and token cost.
+3.2. MCTS settings
+Figure 3 displays the MCTS process in MCTS-AHD. It first
+generates NI initial nodes representing and links them to
+a virtual root node nr that does not represent any heuris-
+tics. Subsequently, similar to the regular MCTS introduced
+in Section2.2, MCTS-AHD repeatedly performs the selec-
+tion, expansion, simulation, and backpropagation stages as
+follows until the number of evaluations of heuristics ap-
+proaches a limit T :
+Selection: In the selection process of MCTS-AHD, MCTS-
+AHD normalizes the quality value Q(·) to enhance the ho-
+mogeneity of different tasks in calculating UCT value for
+child nodes c ∈ Children(nc) of a node nc as follows:
+UCT(c) =
+ 
+Q(c) − qmin
+qmax − qmin
++ λ ·
+s
+ln(N (nc) + 1)
+N (c)
+!
+,
+(5)
+where qmax and qmin are the upper and lower limits of qual-
+ity values Q(·) that ever encountered in MCTS, respectively.
+From the root nr, MCTS iteratively selects a child node
+with the largest UCT value until reaching a leaf node.
+Expansion: For the leaf node selected in the selection stage,
+the expansion stage prompts LLMs with actions e2, m1, m2,
+and s1 to build its child nodes. To attempt various detail
+designs, in a single expansion stage, MCTS-AHD generates
+k child nodes with the actions m1 and m2, one with e2 and
+s1, respectively (2k + 2 child nodes in total).
+Simulation: Then, MCTS-AHD evaluates these newly gen-
+erated heuristic functions h on the evaluation dataset D for
+their performances g(h) and directly sets their quality value
+as their performances, i.e., Q(nl) ← g(h). We also record
+their visit count N (nl) ← 1. Simultaneously, the elite set
+E for the action e2, qmax, and qmin will be updated.
+Backpropagation: The backpropagation process updates the
+quality values and the visit counts in MCTS as follows:
+Q(nc) ← max
+c∈Children(nc)
+Q(c),
+N (nc) ←
+X
+c∈Children(nc)
+N (c). (6)
+Progressive Widening. Since the elite heuristic function
+set E for the action e2 updates gradually as the search pro-
+gresses. MCTS-AHD introduces the progressive widening
+technique to enable the re-exploration of non-leaf nodes,
+especially nodes with higher visit counts. The progressive
+widening process will occur when the condition in Eq. (4)
+is satisfied and we have α = 0.5 for MCTS-AHD. We call
+the action e1 for a new child node when the root node nr
+qualifies the condition in Eq.(4), and we call action e2 when
+other nodes qualify. Heuristic functions inputted to the ac-
+tion e1 are uniformly selected from 2 to 5 different subtrees
+of MCTS. We implement the progressive widening process
+during the selection stage, then these nodes will also be
+processed in the simulation and backpropagation stages.
+Eventually, MCTS-AHD will output a heuristic function
+with the highest performance value throughout the MCTS.
+3.3. Exploration-Decay
+The setting of the exploration factor λ in Eq.(5) determines
+the preferences of MCTS on exploration or exploitation
+(Browne et al., 2012). A larger λ promotes the exploration
+of temporarily inferior nodes, while a smaller λ stimulates
+concentration on nodes with higher quality values Q(·). To
+facilitate a more comprehensive exploration in the early it-
+erations of MCTS and ensure convergence in the later ones,
+MCTS-AHD presents an exploration-decay technique, lin-
+early decaying the exploration factor λ in Eq.(5) as follows:
+λ = λ0 ∗ T − t
+T . (7)
+Although having a task-specific setting λ0 is helpful for
+high-quality heuristics, MCTS-AHD strives to keep the
+generalization ability, so we set λ0 = 0.1 for all tasks.
+4. Experiments
+This section evaluates the proposed MCTS on complex tasks,
+including NP-hard CO problems and a Cost-aware Acquisi-
+tion Function (CAF) design task for BO (Yao et al., 2024c).
+The definitions of these tasks are in Appendix B. We im-
+plement MCTS-AHD to design key functions of a wide
+range of general frameworks (detailed in Appendix C) for
+these tasks, including step-by-step construction, Ant Colony
+Optimization (ACO), Guided Local Search (GLS), and BO.
+Settings. For experiments in this section, we set the number
+of initial tree nodes NI = 4 , λ0 = 0 .1, α = 0 .5. The
+running time of each heuristic on the evaluation dataset D
+is limited to 60 seconds. The composition of evaluation
+datasets D for each task is detailed in Appendix D as well
+as the settings of general frameworks. Valuable LLM-based
+AHD methods should be flexible for various pre-trained
+LLMs, so we include both GPT-3.5-turbo and GPT-4o-mini.
+Baselines. To verify the ability of heuristics designed by
+MCTS-AHD, we introduce four types of heuristics as base-
+lines: (a) Manually designed heuristics, e.g., Nearest-greedy
+5
+=== PAGE 6 ===
+Monte Carlo Tree Search for Comprehensive Exploration in LLM-Based Automatic Heuristic Design
+Table 1. Designing heuristics with the step-by-step construction framework for TSP and KP. We evaluate methods on 6 test sets with
+1,000 instances each. Test sets with in-domain scales (i.i.d. to the evaluation dataset D) are underlined. Since AHD methods have no
+guarantees for generalization ability, the effect on in-domain datasets is more important. Optimal for TSP is obtained by LKH (Lin &
+Kernighan, 1973), and Optimal for KP is the result of OR-Tools. Each LLM-based AHD method is run three times and we report the
+average performances. The best-performing method with each LLM is shaded, and each test set’s overall best result is in bold.
+Task TSP KP
+N= N=50 N=100 N=200 N=50,W=12.5 N=100,W=25 N=200,W=25
+Methods Obj.↓ Gap Obj.↓ Gap Obj.↓ Gap Obj.↑ Gap Obj.↑ Gap Obj.↑ Gap
+Optimal 5.675 - 7.768 - 10.659 - 20.037 - 40.271 - 57.448 -
+Greedy Construct6.959 22.62% 9.706 24.94% 13.461 26.29% 19.985 0.26% 40.225 0.12% 57.395 0.09%
+POMO 5.697 0.39% 8.001 3.01% 12.897 20.45% 19.612 2.12% 39.676 1.48% 57.271 0.09%
+LLM-based AHD:GPT-3.5-turbo
+Funsearch 6.683 17.75% 9.240 18.95% 12.808 19.61% 19.985 0.26% 40.225 0.12% 57.395 0.09%
+EoH 6.390 12.59% 8.930 14.96% 12.538 17.63% 19.994 0.21% 40.231 0.10% 57.400 0.08%
+MCTS-AHD(Ours)6.346 11.82% 8.861 14.08% 12.418 16.51% 19.997 0.20% 40.233 0.09% 57.393 0.10%
+LLM-based AHD:GPT-4o-mini
+Funsearch 6.357 12.00% 8.850 13.93% 12.372 15.54% 19.988 0.24% 40.227 0.11% 57.398 0.09%
+EoH 6.394 12.67% 8.894 14.49% 12.437 16.68% 19.993 0.22% 40.231 0.10% 57.399 0.09%
+MCTS-AHD(Ours)6.225 9.69% 8.684 11.79% 12.120 13.71% 20.015 0.11% 40.252 0.05% 57.423 0.04%
+(Rosenkrantz et al., 1977), ACO (Dorigo et al., 2006), EI
+(Mockus, 1974). (b) Traditional AHD method: GHPP
+(Duflo et al., 2019) (c) Neural Combinatorial Optimiza-
+tion (NCO) methods under the same general frameworks,
+e.g. POMO (Kwon et al., 2020) and DeepACO (Ye et al.,
+2024b). (d) Existing LMM-based AHD methods: Funsearch
+(Romera-Paredes et al., 2024), EoH (Liu et al., 2024b),
+ReEvo (Ye et al., 2024a), and the most recent work HSEvo
+(Dat et al., 2024). Funsearch, ReEvo, and HSEvo design
+heuristics from a handcrafted low-quality seed function, and
+we provide the same seed function for each design scenario
+without providing external knowledge. Instead, running
+EoH and MCTS-AHD does not require manually setting
+a seed function to initiate the heuristic evolution, so both
+methods demonstrate better applicability.
+We design heuristics with the proposed MCTS-AHD and
+LLM-based AHD baselines on a single Intel(R) i7-12700
+CPU. Following similar settings of Liu et al. (2024b), for
+almost all tasks, we set the evaluation budget of LLM-based
+AHD methods on the evaluation dataset D as T = 1 , 000.
+In designing heuristics for each application scenario, we
+conduct three independent runs for each LLM-based AHD
+method to reduce statistical biases. To verify the significant
+advantages of MCTS-AHD, we perform more runs on some
+tasks in Appendix F.3 to obtain the p-value. In designing
+heuristics with the step-by-step construction framework for
+the 0-1 Knapsack Problem (KP), executing MCTS-AHD
+with T =1,000 takes approximately three hours, 1M input
+tokens, 0.2M output tokens, about 0.3$ with GPT-4o-mini.
+Compared to LLM-based AHD baselines, there is no signif-
+icant efficiency degradation or cost improvement.
+4.1. MCTS-AHD for NP-hard CO Problems
+As commonly recognized complex tasks (Korte et al., 2011),
+this subsection evaluates MCTS-AHD on NP-hard CO prob-
+lems, including TSP, KP, Capacitated Vehicle Routing Prob-
+lem (CVRP), Multiple Knapsack Problem (MKP), Bin-
+Packing Problem (BPP) with both online and offline settings
+(online BPP & offline BPP), and Admissible Set Problem
+(ASP). For these NP-hard CO problems, we apply MCTS-
+AHD to automatically design heuristics with several general
+frameworks, including step-by-step construction, ACO, and
+GLS (GLS results are shown in Appendix F.2).
+Step-by-Step Construction Framework. The step-by-step
+construction framework (also known as the constructive
+heuristic framework) is simple but flexible for task solving,
+which constructs nodes in feasible CO solutions one by one
+(Asani et al., 2023). Besides being a general framework
+for LLM-based AHD methods, it is also the most common
+framework adopted in NCO methods (Vinyals et al., 2015;
+Bello et al., 2016). We use MCTS-AHD to design heuristics
+with the step-by-step construction framework for TSP, KP,
+online BPP, and ASP (with ASP results in Appendix F.1).
+TSP & KP. We first evaluate MCTS-AHD by designing TSP
+and KP heuristics within step-by-step construction frame-
+works. The key heuristic function to be designed should se-
+lect the next TSP node or the next KP item to join taking the
+temporary solving state (e.g., selected and remaining TSP
+nodes or KP items) as inputs. This function will be executed
+recursively until a complete feasible solution is constructed.
+For all LLM-based AHD methods, the evaluation dataset
+D contains 64 50-node (N=50) TSP instances for TSP and
+64 100-item (N=100) KP instances with capacity W = 25
+for KP. Table 1 shows the performance of baseline heuris-
+tics and LLM-based AHD methods. The Greedy Construct
+baseline is the Nearest-greedy heuristic algorithm for TSP
+and it constructs KP solutions by the item with the largest
+value-weight-ratio. MCTS-AHD exhibits significant advan-
+tages on almost all test sets, surpassing manually designed
+heuristics and LLM-based AHD methods EoH and Fun-
+6
+=== PAGE 7 ===
+Monte Carlo Tree Search for Comprehensive Exploration in LLM-Based Automatic Heuristic Design
+Table 2. Designing heuristics with the ACO general framework for solving TSP, CVRP, MKP, and offline BPP. Each test set contains 64
+instances and LLM-based AHD methods’ performances are averaged over three runs.
+TSP CVRP MKP Offline BPP
+Test sets N=50 N=100 N=50,C=50 N=100,C=50 N=100,m=5 N=200,m=5 N=500,C=150N=1,000,C=150
+Methods Obj.↓ Gap Obj.↓ Gap Obj.↓ Gap Obj. ↓ Gap Obj.↑ Gap Obj.↑ Gap Obj.↓ Gap Obj. ↓ Gap
+ACO 5.992 3.28% 8.948 9.40%11.355 27.77% 18.778 25.76%22.738 2.28% 40.672 4.30%208.828 2.81% 417.938 3.15%
+DeepACO 5.842 0.71% 8.282 1.26%8.888 0.00% 14.932 0.00%23.093 0.75% 41.988 1.20%203.125 0.00% 405.172 0.00%
+LLM-based AHD:GPT-4o-mini
+EoH 5.828 0.45% 8.263 1.03%9.359 5.31%15.6815.02%23.139 0.56% 41.994 1.19%204.646 0.75% 408.599 0.85%
+ReEvo 5.856 0.94% 8.340 1.98%9.327 4.94% 16.092 7.77%23.245 0.10% 42.416 0.19%206.693 1.76% 413.510 2.06%
+MCTS-AHD(Ours)5.8010.00%8.1790.00%9.286 4.48% 15.782 5.70%23.2690.00%42.4980.00%204.0940.48%407.3230.53%
+search. Moreover, compared to an advanced NCO method
+POMO which requires task-specific training, MCTS-AHD
+can design better heuristics in 200-node TSP and KP test
+sets, exhibiting its power to solve NP-hard CO problems.
+Online BPP. As another widely considered NP-hard CO
+problem, online BPP is the online variant of BPP. It allows
+only immediate bin packing decisions once a new item is
+received. It is generally adopted as a common evaluation sce-
+nario for LLM-based AHD methods. We follow (Liu et al.,
+2024b) to generate WeiBull BPP instances (Casti˜neiras et al.,
+2012) and use four WeiBull instances with diverse scales as
+the evaluation dataset D. As shown in Table 3, online BPP
+heuristics designed by MCTS-AHD demonstrate a superior
+average performance of six test sets.
+Table 3. Design step-by-step construction heuristics for solving
+online BPP. The table exhibits the performance gaps of heuristics
+to the lower bound. Each LLM-based AHD method is run three
+times for the average gaps. Each test set contains five WeiBull BPP
+instances and we underline the four (in-domain) scales contained
+in D. The scale notations of test sets are abbreviated, e.g., 1k 100
+represents 1,000 items and capacity W = 100.
+Online BPP
+Test sets 1k1001k5005k1005k50010k100 10k500 Avg.
+Best Fit 4.77% 0.25% 4.31% 0.55% 4.05% 0.47% 2.40%
+First Fit 5.02% 0.25% 4.65% 0.55% 4.36% 0.50% 2.56%
+LLM-based AHD:GPT-4o-mini
+Funsearch 2.45% 0.66% 1.30% 0.25% 1.05% 0.21% 0.99%
+EoH 2.69% 0.25% 1.63% 0.53% 1.47% 0.45% 1.17%
+ReEvo 3.94% 0.50% 2.72% 0.40% 2.39% 0.31% 1.71%
+HSEvo 2.64% 1.07% 1.43% 0.32% 1.13% 0.21% 1.13%
+MCTS-AHD2.45% 0.50% 1.06% 0.32% 0.74% 0.26%0.89%
+Ant Colony Optimization Framework. The ACO is an
+optimization algorithm inspired by the foraging behavior of
+ants, which contains a heuristic matrix and implements a
+path selection mechanism to solve combinatorial optimiza-
+tion problems by simulating the transfer of pheromones
+between ants (Dorigo et al., 2006; Kim et al., 2024). LLM-
+based AHD can design a generation function of the heuristic
+matrix, thereby transforming ACO into a framework and
+applying it to a variety of tasks. Following Ye et al. (2024a),
+MCTS-AHD designs heuristics within the ACO framework
+for four NP-hard CO problems: TSP, CVRP, MKP, and of-
+fline BPP. The design results usingGPT-4o-mini as LLMs
+are shown in Table 2, where MCTS-AHD exhibits signif-
+icant leads to EoH and ReEvo in all in-domain test sets
+across four CO problems and three out-of-domain test sets.
+Moreover, the proposed MCTS-AHD can consistently out-
+perform manually designed ACO heuristics in all eight test
+sets and surpass an outstanding NCO method DeepACO
+(Ye et al., 2024b) in TSP and MKP test sets.
+4.2. MCTS-AHD for Other Complex Tasks
+To assess whether MCTS-AHD can still perform well in
+optimization tasks beyond CO problems, we follow Yao
+et al. (2024c) to evaluate MCTS-AHD by designing heuris-
+tic CAFs for BO. The CAF is a crucial component for
+Cost-aware BO, helping to reach the global optimum in
+a cost-efficient manner. There are several advanced hand-
+crafted heuristic CAFs, including EI (Mockus, 1974), EIpu
+(Snoek et al., 2012), and EI-cools (Lee et al., 2020a). We
+employ two synthetic instances with different landscapes
+and input dimensions (Ackley and Rastrigin in Table 4) as
+the evaluation dataset D for LLM-based AHD and also test
+the manually and automatically designed heuristics on ten
+other synthetic instances. During heuristic evolutions, we
+set the sampling budget to 12 and run 5 independent trials
+for average performances. As shown in Table 4, heuristic
+CAFs designed by the proposed MCTS-AHD demonstrate
+superior BO results that outperform both manually designed
+heuristics and EoH in six out of twelve synthetic instances.
+It verifies that MCTS-AHD not only performs well in NP-
+hard CO problems but can also show great power in other
+complex optimization tasks.
+5. Discussion
+Experiments have demonstrated the effectiveness of the
+proposed MCTS-AHD in designing high-quality heuristics
+for a wide range of application scenarios. This section
+first conducts essential ablation studies. Then, we will also
+analyze the advantages of utilizing MCTS in LLM-based
+AHD compared to the original population-based EC.
+7
+=== PAGE 8 ===
+Monte Carlo Tree Search for Comprehensive Exploration in LLM-Based Automatic Heuristic Design
+Table 4. Designing CAFs for BO. The table shows the gaps to optimal when running BO on instances with manually designed CAFs
+and CAFs designed by LLM-based AHD methods. LLM-based AHD methods are run three times for the average gaps. In testing, the
+evaluation budgets for BO are 30 and we run 10 trials for average gaps. The results of EI, EIpu, and EI-cool are from Yao et al. (2024c).
+Instances AckleyRastriginGriewank Rosenbrock Levy ThreeHumpCamel StyblinskiTang Hartmann Powell Shekel Hartmann Cosine8
+EI 2.66% 4.74% 0.49% 1.26% 0.01% 0.05% 0.03% 0.00% 18.89% 7.91% 0.03% 0.47%
+EIpu 2.33% 5.62% 0.34% 2.36% 0.01% 0.12% 0.02% 0.00% 19.83% 7.92% 0.03% 0.47%
+EI-cool 2.74% 5.78% 0.34% 2.29% 0.01% 0.07% 0.03% 0.00% 14.95% 8.21% 0.03% 0.54%
+LLM-based AHD:GPT-4o-mini
+EoH 2.45% 0.90% 0.54% 56.78% 0.20% 0.26% 0.79% 0.04% 70.89% 4.56% 0.33% 0.36%
+MCTS-AHD2.40% 0.77% 0.36% 1.68% 0.01% 0.02% 0.20% 0.01% 1.27%3.94% 0.38% 0.34%
+5.1. Ablation on Parameters and Components
+To validate the necessity of its components, as shown in
+Table 5, we first remove three proposed components of
+MCTS-AHD (Progressive Widening, Thought-alignment,
+and Exploration-decay) and use these variants to design step-
+by-step heuristics for TSP and KP. Line 3 to Line 5 in Table
+5 reports their average optimality gaps over three runs, and
+all these variants exhibit a clear performance degradation in
+at least one task compared to the original MCTS-AHD.
+The actions for node expansion in MCTS-AHD are also
+essential. Actions e1 and e2 are associated with the pro-
+gressive widening, so they cannot be ablated individually.
+According to Table 5, MCTS-AHD variants without actions
+s1, m1, and m2 could only design worse heuristics in at
+least one task, proving the significance of these LLM-based
+actions. The importance of action s1 also demonstrates that
+MCTS-AHD benefits from its organized tree structure.
+Meanwhile, we measure the sensitivity of the main param-
+eter λ0. Results in the last two lines of Table 5 show that
+although the TSP and KP tasks may have respective prefer-
+ences in the λ0 setting, the default setting (i.e., λ0 = 0 .1)
+exhibits generally good quality.
+Table 5. Ablations on the components, actions, and parameter set-
+tings of MCTS-AHD. We use MCTS-AHD variants to design
+heuristics with the step-by-step construction framework for their
+optimality gaps on 1,000-instance test sets averaged overfive runs.
+Methods TSP50 KP100
+MCTS-AHD (Original, 10 runs)10.661% 0.059%
+w/oProgressive Widening 12.132% 0.064%
+w/oThought-alignment 11.640% 0.061%
+w/oExploration-decay 11.606% 0.064%
+w/oAction s1 11.919% 0.062%
+w/oAction m1 10.921% 0.083%
+w/oAction m2 11.679% 0.061%
+MCTS-AHD variantλ0 = 0.05 11.080% 0.056%
+MCTS-AHD variantλ0 = 0.2 12.124% 0.034%
+5.2. MCTS versus Population-based EC
+Ability of MCTS-AHD in Escaping from Local Optima.
+As the main contribution of this paper, instead of population-
+based EC, MCTS-AHD can manage inferior but potential
+heuristic functions, achieving a more comprehensive explo-
+ration of the heuristic space H thus avoiding falling into lo-
+cal optima. To verify this, we plot the performance curves of
+MCTS-AHD and LLM-based AHD baselines in designing
+step-by-step construction heuristics for TSP and designing
+CAFs for BOs. Each curve is averaged over at least five
+runs. As illustrated in Figure 4, all baseline methods with
+populations exhibit early convergences on performances,
+but MCTS-AHD can converge to significantly better perfor-
+mance via quick and continuous performance updates.
+/uni00000015/uni00000013/uni00000013/uni00000017/uni00000013/uni00000013/uni00000019/uni00000013/uni00000013/uni0000001b/uni00000013/uni00000013/uni00000014/uni00000013/uni00000013/uni00000013
+/uni00000031/uni00000058/uni00000050/uni00000045/uni00000048/uni00000055/uni00000003/uni00000052/uni00000049/uni00000003/uni00000028/uni00000059/uni00000044/uni0000004f/uni00000058/uni00000044/uni00000057/uni0000004c/uni00000052/uni00000051/uni00000056/uni00000003/uni00000052/uni00000051/uni00000003/uni00000027
+/uni0000001a/uni00000011/uni00000015
+/uni0000001a/uni00000011/uni00000013
+/uni00000019/uni00000011/uni0000001b
+/uni00000019/uni00000011/uni00000019
+/uni00000019/uni00000011/uni00000017
+/uni00000033/uni00000048/uni00000055/uni00000049/uni00000052/uni00000055/uni00000050/uni00000044/uni00000051/uni00000046/uni00000048/uni00000003/uni00000052/uni00000049/uni00000003/uni0000002b/uni00000048/uni00000058/uni00000055/uni0000004c/uni00000056/uni00000057/uni0000004c/uni00000046/uni00000056/uni00000003/uni00000052/uni00000051/uni00000003/uni00000027
+/uni00000028/uni00000059/uni00000052/uni0000004f/uni00000058/uni00000057/uni0000004c/uni00000052/uni00000051/uni00000003/uni00000026/uni00000058/uni00000055/uni00000059/uni00000048/uni00000056/uni00000003/uni00000052/uni00000049/uni00000003/uni0000002f/uni0000002f/uni00000030/uni00000010/uni00000045/uni00000044/uni00000056/uni00000048/uni00000047/uni00000003/uni00000024/uni0000002b/uni00000027/uni00000003/uni00000030/uni00000048/uni00000057/uni0000004b/uni00000052/uni00000047/uni00000056
+/uni00000029/uni00000058/uni00000051/uni00000056/uni00000048/uni00000044/uni00000055/uni00000046/uni0000004b
+/uni00000028/uni00000052/uni0000002b
+/uni00000035/uni00000048/uni00000028/uni00000059/uni00000052
+/uni0000002b/uni00000036/uni00000028/uni00000059/uni00000052
+/uni00000030/uni00000026/uni00000037/uni00000036/uni00000010/uni00000024/uni0000002b/uni00000027/uni00000003/uni0000000b/uni00000032/uni00000058/uni00000055/uni00000056/uni0000000c
+(a) Design Step-by-step Con-
+struction heuristics for TSP
+/uni00000015/uni00000013/uni00000013/uni00000017/uni00000013/uni00000013/uni00000019/uni00000013/uni00000013/uni0000001b/uni00000013/uni00000013/uni00000014/uni00000013/uni00000013/uni00000013
+/uni00000031/uni00000058/uni00000050/uni00000045/uni00000048/uni00000055/uni00000003/uni00000052/uni00000049/uni00000003/uni00000028/uni00000059/uni00000044/uni0000004f/uni00000058/uni00000044/uni00000057/uni0000004c/uni00000052/uni00000051/uni00000056/uni00000003/uni00000052/uni00000051/uni00000003/uni00000024/uni00000046/uni0000004e/uni0000004f/uni00000048/uni0000005c/uni00000003/uni00000044/uni00000051/uni00000047/uni00000003/uni00000035/uni00000044/uni00000056/uni00000057/uni00000055/uni0000004c/uni0000004a/uni0000004c/uni00000051
+/uni0000001a
+/uni00000019
+/uni00000018
+/uni00000017
+/uni00000016
+/uni00000015
+/uni00000033/uni00000048/uni00000055/uni00000049/uni00000052/uni00000055/uni00000050/uni00000044/uni00000051/uni00000046/uni00000048/uni00000003/uni00000052/uni00000051/uni00000003/uni00000024/uni00000046/uni0000004e/uni0000004f/uni00000048/uni0000005c/uni00000003/uni00000044/uni00000051/uni00000047/uni00000003/uni00000035/uni00000044/uni00000056/uni00000057/uni00000055/uni0000004c/uni0000004a/uni0000004c/uni00000051
+/uni00000028/uni00000059/uni00000052/uni0000004f/uni00000058/uni00000057/uni0000004c/uni00000052/uni00000051/uni00000003/uni00000026/uni00000058/uni00000055/uni00000059/uni00000048/uni00000056/uni00000003/uni00000052/uni00000049/uni00000003/uni0000002f/uni0000002f/uni00000030/uni00000010/uni00000045/uni00000044/uni00000056/uni00000048/uni00000047/uni00000003/uni00000024/uni0000002b/uni00000027/uni00000003/uni00000030/uni00000048/uni00000057/uni0000004b/uni00000052/uni00000047/uni00000056
+/uni00000028/uni00000052/uni0000002b
+/uni00000030/uni00000026/uni00000037/uni00000036/uni00000010/uni00000024/uni0000002b/uni00000027/uni00000003/uni0000000b/uni00000032/uni00000058/uni00000055/uni00000056/uni0000000c
+(b) Design CAFs for BO
+Figure 4. Evolution curves on two diverse application scenarios.
+Advantage scopes of MCTS-AHD . Compared to
+population-based baselines, we claim that MCTS-AHD
+demonstrates greater advantages in application scenarios
+with more complex heuristic spaces H and application sce-
+narios with more descriptions as knowledge. We analyze
+these two claims with experiments in Appendix F.8.
+6. Conclusion
+In conclusion, this paper first applies MCTS to LLM-based
+AHD. The proposed MCTS-AHD achieves a comprehen-
+sive exploration of the heuristic space and can finally design
+higher-quality heuristics for NP-hard complex tasks. For
+LLM-based AHD, MCTS can be a more promising evolu-
+tion method compared to population-based EC.
+Limitation and Future Work: As a limitation of MCTS-
+AHD, the convergence speed of MCTS-AHD can still be
+improved. In the future, we will consider designing MCTS-
+population hybrid methods for better evolution efficiency.
+8
+=== PAGE 9 ===
+Monte Carlo Tree Search for Comprehensive Exploration in LLM-Based Automatic Heuristic Design
+Impact Statement
+This paper presents work whose goal is to advance the field
+of Machine Learning. There are many potential societal
+consequences of our work, none which we feel must be
+specifically highlighted here.

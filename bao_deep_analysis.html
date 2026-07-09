@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>深度解读 — Bao: Learning to Steer Query Optimizers</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{
+  font-family:'Noto Sans SC',system-ui,-apple-system,sans-serif;
+  background:#0d1117;color:#c9d1d9;
+  line-height:1.8;font-size:16px;
+  min-height:100vh;
+}
+.container{
+  max-width:1400px;margin:0 auto;padding:0 24px;
+  background:#0d1117;position:relative;
+}
+.back-btn{
+  position:fixed;top:16px;left:16px;z-index:9999;
+  background:rgba(20,20,35,.75);color:#c9d1d9;
+  border:1px solid rgba(255,255,255,.15);border-radius:10px;
+  padding:8px 16px;font-size:14px;cursor:pointer;
+  backdrop-filter:blur(6px);transition:all .3s;
+  text-decoration:none;display:flex;align-items:center;gap:6px;
+}
+.back-btn:hover{background:rgba(30,30,55,.9);border-color:rgba(255,255,255,.3);}
+.hero{padding:80px 0 40px;text-align:center;}
+.hero-title{
+  font-size:2.2rem;font-weight:700;
+  background:linear-gradient(135deg,#ff6b6b,#ff8e53,#ffb347);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  background-clip:text;margin-bottom:12px;line-height:1.3;
+}
+.hero-sub{font-size:1.1rem;color:#8b949e;margin-bottom:8px;}
+.venue{font-size:.95rem;color:#8b949e;margin-top:8px;}
+.venue a{color:#ff6b6b;text-decoration:none;}
+.venue a:hover{text-decoration:underline;}
+.tag-row{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:16px;}
+.tag{
+  display:inline-block;padding:4px 14px;border-radius:20px;font-size:.85rem;
+  border:1px solid rgba(255,107,107,.3);color:#ff6b6b;
+  background:rgba(255,107,107,.06);
+}
+.divider{border:none;border-top:1px solid rgba(255,255,255,.08);margin:48px 0;}
+.section{margin:40px 0;}
+.section-title{
+  font-size:1.75rem;font-weight:700;margin-bottom:20px;
+  color:#e6edf3;display:flex;align-items:center;gap:10px;
+}
+.section-title .num{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:36px;height:36px;border-radius:50%;
+  background:linear-gradient(135deg,#ff6b6b,#ff8e53);
+  color:#0d1117;font-size:1rem;font-weight:700;flex-shrink:0;
+}
+.section-desc{font-size:16px;line-height:1.9;color:#c9d1d9;margin-bottom:16px;}
+.toc{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:16px;padding:28px 36px;margin:30px 0;
+}
+.toc h3{font-size:1.2rem;color:#e6edf3;margin-bottom:14px;}
+.toc ol{list-style:none;counter-reset:toc;padding:0;}
+.toc li{counter-increment:toc;margin:8px 0;}
+.toc li::before{content:counter(toc) ".";color:#ff6b6b;font-weight:600;margin-right:8px;}
+.toc a{color:#8b949e;text-decoration:none;transition:color .2s;}
+.toc a:hover{color:#ff6b6b;}
+.module-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:24px;margin:18px 0;transition:all .3s;
+}
+.module-card:hover{border-color:rgba(255,107,107,.3);transform:translateY(-2px);}
+.module-card h3{font-size:1.15rem;font-weight:600;margin-bottom:10px;color:#ff6b6b;}
+.module-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.arch-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:22px;margin:14px 0;transition:all .3s;
+}
+.arch-card:hover{border-color:rgba(255,107,107,.3);}
+.arch-card h4{font-size:1.05rem;font-weight:600;color:#ff8e53;margin-bottom:8px;}
+.arch-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.step-flow{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:22px;margin:14px 0;
+}
+.step-flow h4{font-size:1.05rem;font-weight:600;color:#ff6b6b;margin-bottom:8px;}
+.step-flow p{font-size:15px;line-height:1.8;color:#8b949e;}
+.data-table{
+  width:100%;border-collapse:collapse;margin:18px 0;
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;overflow:hidden;font-size:14px;
+}
+.data-table th{
+  background:rgba(255,107,107,.1);color:#ff6b6b;
+  padding:12px 16px;text-align:left;font-weight:600;
+}
+.data-table td{
+  padding:10px 16px;border-top:1px solid rgba(255,255,255,.06);
+  color:#c9d1d9;
+}
+.data-table tr:hover td{background:rgba(255,107,107,.04);}
+.formula-box{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;padding:20px 24px;margin:16px 0;
+  font-size:18px;text-align:center;color:#e6edf3;
+  font-family:'JetBrains Mono',monospace;
+}
+.code-block{
+  background:rgba(20,20,35,.8);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;padding:18px 22px;margin:16px 0;
+  overflow-x:auto;
+}
+.code-block pre{
+  font-family:'JetBrains Mono',monospace;font-size:14px;
+  line-height:1.7;color:#c9d1d9;white-space:pre;
+}
+.ck{color:#ff6b6b;}.cs{color:#ff8e53;}.cf{color:#d2a8ff;}.cg{color:#8b949e;}.cv{color:#79c0ff;}
+.qa-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:24px;margin:16px 0;
+}
+.qa-q{font-size:1.05rem;font-weight:600;color:#ff6b6b;margin-bottom:12px;}
+.qa-a{font-size:15px;line-height:1.9;color:#8b949e;}
+.highlight-box{
+  background:rgba(255,107,107,.06);border:1px solid rgba(255,107,107,.2);
+  border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;
+}
+.warn-box{
+  background:rgba(255,142,83,.08);border:1px solid rgba(255,142,83,.25);
+  border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;
+}
+.info-box{
+  background:rgba(255,107,107,.06);border:1px solid rgba(255,107,107,.2);
+  border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;
+}
+.prompt-box{
+  background:rgba(20,20,35,.8);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;padding:18px 22px;margin:16px 0;
+  font-family:'JetBrains Mono',monospace;font-size:13px;
+  line-height:1.7;color:#c9d1d9;white-space:pre-wrap;
+}
+.prompt-label{
+  display:inline-block;padding:2px 10px;border-radius:6px;
+  font-size:.85rem;font-weight:600;margin-bottom:8px;
+  background:rgba(255,107,107,.15);color:#ff6b6b;
+}
+.fc{font-size:14px;color:#8b949e;text-align:center;margin:10px 0;line-height:1.6;}
+.comp-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:22px;margin:14px 0;transition:all .3s;
+}
+.comp-card:hover{border-color:rgba(255,107,107,.3);}
+.comp-card h4{font-size:1.05rem;font-weight:600;color:#ff8e53;margin-bottom:8px;}
+.comp-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.insight-box{
+  background:rgba(255,107,107,.06);border:1px solid rgba(255,107,107,.2);
+  border-radius:12px;padding:18px 22px;margin:16px 0;
+}
+.insight-box h4{color:#ff6b6b;font-size:1.05rem;margin-bottom:8px;}
+.insight-box p{font-size:15px;line-height:1.8;color:#c9d1d9;}
+.limit-box{
+  background:rgba(255,142,83,.08);border:1px solid rgba(255,142,83,.25);
+  border-radius:12px;padding:18px 22px;margin:16px 0;
+}
+.limit-box h4{color:#ff8e53;font-size:1.05rem;margin-bottom:8px;}
+.limit-box p{font-size:15px;line-height:1.8;color:#c9d1d9;}
+.kv-row{
+  display:flex;border-bottom:1px solid rgba(255,255,255,.06);padding:8px 0;
+}
+.kv-row:last-child{border-bottom:none;}
+.kv-key{width:180px;flex-shrink:0;color:#ff6b6b;font-weight:500;font-size:14px;}
+.kv-val{color:#c9d1d9;font-size:14px;line-height:1.7;}
+.footer{text-align:center;color:#555;font-size:14px;padding:48px 0 32px;}
+.svg-container{
+  background:rgba(20,20,35,.4);border:1px solid rgba(255,255,255,.06);
+  border-radius:14px;padding:20px;margin:24px 0;overflow-x:auto;
+  text-align:center;
+}
+.svg-container svg{max-width:100%;height:auto;}
+.phase-badge{
+  display:inline-block;padding:3px 12px;border-radius:8px;
+  font-size:.85rem;font-weight:600;margin-right:8px;
+}
+.phase-1{background:rgba(255,107,107,.15);color:#ff8e53;}
+.phase-2{background:rgba(255,142,83,.15);color:#ffb347;}
+.phase-3{background:rgba(120,180,80,.15);color:#90d27d;}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
+.grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;}
+.translation{
+  background:rgba(255,107,107,.03);border:1px solid rgba(255,107,107,.12);
+  border-radius:16px;padding:32px 36px;margin:30px 0;
+}
+.translation h2{font-size:1.6rem;color:#ff6b6b;margin-bottom:18px;text-align:center;}
+.translation h3{font-size:1.25rem;color:#ff8e53;margin:28px 0 12px;font-weight:600;}
+.translation h4{font-size:1.08rem;color:#e6edf3;margin:18px 0 8px;font-weight:600;}
+.translation p{font-size:15.5px;line-height:2.0;color:#c9d1d9;margin-bottom:14px;text-align:justify;}
+.translation .fig-note{font-size:14px;color:#8b949e;background:rgba(255,107,107,.05);
+  border-left:3px solid #ff6b6b;padding:10px 16px;margin:14px 0;border-radius:0 8px 8px 0;}
+@media(max-width:900px){
+  .grid-2,.grid-3{grid-template-columns:1fr;}
+  .hero-title{font-size:1.6rem;}
+  .kv-row{flex-direction:column;}
+  .kv-key{width:auto;}
+  .translation{padding:20px;}
+}
+@keyframes flowPulse{
+  0%,100%{opacity:.6;}
+  50%{opacity:1;}
+}
+.flow-arrow{animation:flowPulse 2s ease-in-out infinite;}
+</style>
+</head>
+<body>
+<div class="container">
+
+<a class="back-btn" href="index.html">&#8592; 返回目录</a>
+
+<a href="bao_full_translation.html" style="display:block;max-width:860px;margin:18px auto 0;padding:13px 22px;background:linear-gradient(90deg,rgba(31,111,235,.16),rgba(137,87,227,.16));border:1px solid rgba(137,87,227,.5);border-radius:12px;color:#e6edf3;text-decoration:none;font-weight:500;font-size:15px;text-align:center;box-shadow:0 2px 14px rgba(0,0,0,.35);">阅读本文逐段完整中文翻译（Full Translation）</a>
+
+<!-- ========== HERO ========== -->
+<div class="hero">
+  <h1 class="hero-title">Bao: Learning to Steer Query Optimizers</h1>
+  <p class="hero-sub">用「上下文多臂老虎机 + 树卷积神经网络」引导传统查询优化器——不替换，只驾驶</p>
+  <div class="venue">
+    VLDB 2020 &nbsp;|&nbsp;
+    <a href="https://arxiv.org/abs/2004.03814">arXiv: 2004.03814</a> &nbsp;|&nbsp;
+    <a href="https://github.com/learnedsystems/BaoForPostgreSQL">GitHub: learnedsystems/BaoForPostgreSQL</a>
+  </div>
+  <div class="tag-row">
+    <span class="tag">Query Optimization</span><span class="tag">Thompson Sampling</span><span class="tag">Tree CNN</span><span class="tag">Hint-based</span><span class="tag">Bandit</span>
+  </div>
+</div>
+
+<!-- ========== TOC ========== -->
+<div class="toc">
+  <h3>目录</h3>
+  <ol>
+    <li><a href="#sec-1">研究动机：为什么学习型查询优化器难以落地</a></li>
+    <li><a href="#sec-2">框架概览：Bao 如何「驾驶」优化器</a></li>
+    <li><a href="#sec-3">核心组件一：查询提示（Hint）与提示集（Hint Set）</a></li>
+    <li><a href="#sec-4">核心组件二：树卷积神经网络（TCNN）与计划树向量化</a></li>
+    <li><a href="#sec-5">核心组件三：Thompson 采样与训练循环</a></li>
+    <li><a href="#sec-6">集成机制：与底层优化器 / 缓存 / 云平台的整合</a></li>
+    <li><a href="#sec-7">实验评估：JOB、Stack 与商业系统的对比</a></li>
+    <li><a href="#sec-8">敏感性分析：重采样频率 n 与经验窗口 k</a></li>
+    <li><a href="#sec-9">代码使用与实战（GitHub、安装、使用示例）</a></li>
+    <li><a href="#sec-10">总结与未来展望</a></li>
+    <li><a href="#sec-11">全文中文翻译（对应嵌入图片）</a></li>
+  </ol>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 1. MOTIVATION ========== -->
+<div class="section" id="sec-1">
+  <h2 class="section-title"><span class="num">1</span> 研究动机：为什么学习型查询优化器难以落地</h2>
+  <p class="section-desc">查询优化是数据库最难的子问题之一。过去十年一大波工作把机器学习塞进优化器（学基数估计、学代价模型、用强化学习直接搜计划），论文指标都很漂亮，但<strong>几乎都没能进真实 DBMS</strong>。Bao 的作者（MIT CSAIL 的 Ryan Marcus 等）一针见血地指出：这些「替换式」方案犯了三个根本性错误。</p>
+
+  <div class="grid-2">
+    <div class="module-card">
+      <h3>① 样本效率极低（Sample Efficiency）</h3>
+      <p>学基数估计要从真实数据收集精确基数，这本身就很贵（我们本来就是想「估」基数才学它）。强化学习方案要处理<strong>成千上万条查询</strong>才能超过传统优化器，算上数据采集和训练动辄<strong>数天</strong>。对一个生产系统来说完全不现实。</p>
+    </div>
+    <div class="module-card">
+      <h3>② 脆弱 / 不鲁棒（Brittleness）</h3>
+      <p>数据或表结构一变，学出来的模型就过时，必须完全重训。很多 RL 方案还假设数据和 schema 恒定不变，一旦变化就崩。</p>
+    </div>
+  </div>
+  <div class="module-card">
+    <h3>③ 长尾灾难（Tail Catastrophe）</h3>
+    <p>学习型方法平均能赢，但<strong>尾部（tail）会 catastrophically 翻车</strong>——比如某条查询性能退化 100 倍。在真实业务里，哪怕罕见的灾难性回退也是不可接受的，而传统优化器至少有「不会离谱」的底线。</p>
+  </div>
+
+  <div class="insight-box">
+    <h4>一个让初学者秒懂的具体例子（论文 Figure 1）</h4>
+    <p>以 Join Order Benchmark（JOB）里的两条查询为例。PostgreSQL 默认优化器有个特点：当<strong>基数被低估</strong>时，它倾向于选「循环连接（loop join）」而不是 merge/hash join。论文发现：</p>
+    <ul style="margin:10px 0 0 22px;color:#8b949e;font-size:15px;line-height:1.9;">
+      <li><b>查询 16b</b>：禁用 loop join 后，性能<strong>提升约 3 倍</strong>（60.2s → 快得多）。</li>
+      <li><b>查询 24b</b>：同样禁用 loop join，却造成<strong>近 50 倍的大幅回退</strong>。</li>
+    </ul>
+    <p style="margin-top:10px;">这说明：<strong>「禁用 loop join」这条粗粒度提示对有的查询是灵丹，对有的查询是毒药</strong>。传统「一刀切」的优化器做不到「因查询而异」；而 Bao 要学的，正是「对这条查询该用哪组提示」。</p>
+  </div>
+
+  <div class="highlight-box">
+    <h4>Bao 的核心主张</h4>
+    <p>不要把传统优化器当婴儿和洗澡水一起倒掉。传统优化器里凝结了几十年的手工智慧（代价模型、基数估计、搜索策略）。Bao 选择<strong>站在优化器之上</strong>，只用粗粒度 <b>Hint（提示）</b> 把它往对的方向「驾驶（steer）」——例如「这条查询别用 loop join」。于是优化器负责生成计划，Bao 负责选哪组 hint 最好。这样既保留了优化器的鲁棒性，又用机器学习补齐了「因查询而异」的智能。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 2. OVERVIEW ========== -->
+<div class="section" id="sec-2">
+  <h2 class="section-title"><span class="num">2</span> 框架概览：Bao 如何「驾驶」优化器</h2>
+  <p class="section-desc">Bao 把自己建模成一个<strong>上下文多臂老虎机（Contextual Multi-Armed Bandit, CMAB）</strong>问题：每一个「提示集（hint set）」是一根拉杆（arm），给定查询后优化器产出的若干计划树就是「上下文（context）」。Bao 的目标是学会给每条查询选对拉杆，使执行最快。</p>
+
+  <div class="svg-container">
+    <svg viewBox="0 0 940 320" xmlns="http://www.w3.org/2000/svg" font-family="Noto Sans SC, sans-serif">
+      <defs><marker id="baoArr" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#ff8e53"/></marker></defs>
+      <!-- user query -->
+      <rect x="20" y="130" width="120" height="60" rx="12" fill="rgba(255,107,107,.12)" stroke="#ff6b6b" stroke-width="1.5"/>
+      <text x="80" y="158" text-anchor="middle" fill="#e6edf3" font-size="13" font-weight="600">用户查询 Q</text>
+      <text x="80" y="178" text-anchor="middle" fill="#8b949e" font-size="10">SQL</text>
+      <!-- optimizer -->
+      <rect x="170" y="40" width="180" height="240" rx="14" fill="rgba(255,107,107,.06)" stroke="#ff8e53" stroke-width="1.5"/>
+      <text x="260" y="64" text-anchor="middle" fill="#ff8e53" font-size="12" font-weight="700">底层查询优化器</text>
+      <text x="260" y="92" text-anchor="middle" fill="#8b949e" font-size="10">hint set 1 → plan₁</text>
+      <text x="260" y="128" text-anchor="middle" fill="#8b949e" font-size="10">hint set 2 → plan₂</text>
+      <text x="260" y="164" text-anchor="middle" fill="#8b949e" font-size="10">hint set 3 → plan₃</text>
+      <text x="260" y="210" text-anchor="middle" fill="#8b949e" font-size="10">每个计划 → 向量树</text>
+      <text x="260" y="240" text-anchor="middle" fill="#8b949e" font-size="10">(binarize+vectorize)</text>
+      <!-- Bao TCNN + TS -->
+      <rect x="390" y="60" width="200" height="200" rx="14" fill="rgba(255,107,107,.12)" stroke="#ff6b6b" stroke-width="2"/>
+      <text x="490" y="86" text-anchor="middle" fill="#e6edf3" font-size="13" font-weight="700">Bao</text>
+      <text x="490" y="112" text-anchor="middle" fill="#8b949e" font-size="10">树卷积神经网络</text>
+      <text x="490" y="130" text-anchor="middle" fill="#8b949e" font-size="10">(TCNN) 预测每个</text>
+      <text x="490" y="148" text-anchor="middle" fill="#8b949e" font-size="10">计划的延迟</text>
+      <text x="490" y="180" text-anchor="middle" fill="#ff8e53" font-size="10" font-weight="600">Thompson 采样</text>
+      <text x="490" y="198" text-anchor="middle" fill="#8b949e" font-size="10">选 hint set</text>
+      <text x="490" y="228" text-anchor="middle" fill="#8b949e" font-size="10">经验 E 反馈循环</text>
+      <!-- execution -->
+      <rect x="630" y="130" width="150" height="60" rx="12" fill="rgba(255,107,107,.12)" stroke="#ff8e53" stroke-width="1.5"/>
+      <text x="705" y="158" text-anchor="middle" fill="#e6edf3" font-size="13" font-weight="600">执行引擎</text>
+      <text x="705" y="178" text-anchor="middle" fill="#8b949e" font-size="10">运行选中计划</text>
+      <!-- reward -->
+      <rect x="810" y="130" width="110" height="60" rx="12" fill="rgba(255,107,107,.12)" stroke="#ff6b6b" stroke-width="1.5"/>
+      <text x="865" y="158" text-anchor="middle" fill="#e6edf3" font-size="13" font-weight="600">Reward</text>
+      <text x="865" y="178" text-anchor="middle" fill="#8b949e" font-size="10">观测延迟</text>
+      <line x1="140" y1="160" x2="168" y2="160" stroke="#ff8e53" stroke-width="2" marker-end="url(#baoArr)"/>
+      <line x1="350" y1="160" x2="388" y2="160" stroke="#ff8e53" stroke-width="2" marker-end="url(#baoArr)"/>
+      <line x1="590" y1="160" x2="628" y2="160" stroke="#ff8e53" stroke-width="2" marker-end="url(#baoArr)"/>
+      <line x1="780" y1="160" x2="808" y2="160" stroke="#ff8e53" stroke-width="2" marker-end="url(#baoArr)"/>
+      <path d="M 865 190 Q 865 280 490 280 Q 110 280 80 192" fill="none" stroke="#ff8e53" stroke-width="1.5" stroke-dasharray="5,4" marker-end="url(#baoArr)"/>
+      <text x="490" y="300" text-anchor="middle" fill="#8b949e" font-size="10">(plan, 延迟) 加入经验 E，周期性重训 TCNN</text>
+    </svg>
+  </div>
+  <p class="fc">图 2（论文原图重绘）：Bao 系统模型。Bao 坐在优化器之上，对每条查询选一组 hint，优化器为每个 hint 集产出一个计划，TCNN 预测延迟，Thompson 采样选最优，执行后把 (计划, 延迟) 加入经验，形成闭环。</p>
+
+  <div class="step-flow">
+    <h4>一次查询的完整闭环（初学者版）</h4>
+    <p>① 用户提交查询 Q → ② Bao 让底层优化器为每个候选 hint 集各生成一个计划树 → ③ 每个计划树被「二值化 + 向量化」成向量树 → ④ 向量树喂进 TCNN，TCNN 预测每个计划的延迟 → ⑤ Thompson 采样综合「预测 + 不确定性」选一个 hint 集 → ⑥ 该计划交给执行引擎跑 → ⑦ 观测到真实延迟作为 reward → ⑧ 把 (计划树, 延迟) 加入经验 E → ⑨ 每隔若干查询，用 E 重训 TCNN。如此循环，Bao 越来越会选 hint。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 3. HINT ========== -->
+<div class="section" id="sec-3">
+  <h2 class="section-title"><span class="num">3</span> 核心组件一：查询提示（Hint）与提示集（Hint Set）</h2>
+  <p class="section-desc">Bao 的「动作空间」不是去拼装执行计划，而是<strong>选择一组作用于优化器的开关（hint）</strong>。这个看似简单的设计，是它又快又稳的关键。</p>
+
+  <div class="module-card">
+    <h3>什么是 Hint？</h3>
+    <p>Hint 是传给优化器的一个标志（flag），改变优化器的某种行为。PostgreSQL、MySQL、SQL Server 都提供大量 hint。Bao 只关注<strong>布尔型 hint</strong>，例如「禁用 loop join」「强制使用索引」。对每条查询，Bao 选一个 <b>hint set</b>（一组合法、且不矛盾的 hint）传给优化器。</p>
+  </div>
+
+  <div class="grid-2">
+    <div class="arch-card">
+      <h4>合法性与语义正确性</h4>
+      <p>Bao 假设 hint set 的合法性事先已知（例如 PostgreSQL 不能同时禁用 loop/merge/hash 三种 join）。并且任何合法 hint set 都必须让优化器产出<strong>语义正确</strong>的计划（结果不能错）。这保证了 Bao 只在「等价但性能不同」的计划间做选择。</p>
+    </div>
+    <div class="arch-card">
+      <h4>为什么只选一个 hint set，而不「拼接」计划？</h4>
+      <p>论文实验过把不同 hint 集产出的计划「缝合（stitch）」在一起，但模型<strong>始终无法收敛</strong>。数学上：设 hint 集数为 k、关系数为 n，只选一个 hint 集时动作空间是 <b>O(k)</b>；若拼接，动作空间变成 <b>O(k×2ⁿ)</b>。动作空间越小，RL/bandit 收敛越快——所以 Bao 主动选了更小的空间。</p>
+    </div>
+  </div>
+
+  <div class="warn-box">
+    <h4>不是「纯」老虎机</h4>
+    <p>严格说，选 hint 不完全是独立同分布的老虎机问题：本次选的计划会影响缓存状态，从而影响下一条查询。但在 OLAP（分析型）场景，单条查询对缓存的影响很短暂，经验证据表明 Thompson 采样依然适用。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 4. TCNN ========== -->
+<div class="section" id="sec-4">
+  <h2 class="section-title"><span class="num">4</span> 核心组件二：树卷积神经网络（TCNN）与计划树向量化</h2>
+  <p class="section-desc">TCNN（Tree Convolutional Neural Network）是 Bao 的「预言机」：输入一个计划树，输出它对延迟的预测。它的厉害之处在于能像人类专家一样<strong>在计划树里「模式识别」</strong>。</p>
+
+  <h3 style="color:#ff6b6b;margin:14px 0 8px;">4.1 计划树二值化（Figure 3）</h3>
+  <div class="svg-container">
+    <svg viewBox="0 0 820 200" xmlns="http://www.w3.org/2000/svg" font-family="Noto Sans SC, sans-serif">
+      <defs><marker id="b3" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6" fill="#ff8e53"/></marker></defs>
+      <text x="150" y="24" text-anchor="middle" fill="#e6edf3" font-size="12" font-weight="600">原始计划树（可能非二值）</text>
+      <rect x="60" y="44" width="90" height="34" rx="8" fill="rgba(255,107,107,.15)" stroke="#ff6b6b"/><text x="105" y="66" text-anchor="middle" fill="#e6edf3" font-size="11">Aggregate</text>
+      <rect x="20" y="100" width="80" height="32" rx="8" fill="rgba(255,107,107,.1)" stroke="#ff8e53"/><text x="60" y="121" text-anchor="middle" fill="#e6edf3" font-size="10">Merge Join</text>
+      <rect x="160" y="100" width="80" height="32" rx="8" fill="rgba(255,107,107,.1)" stroke="#ff8e53"/><text x="200" y="121" text-anchor="middle" fill="#e6edf3" font-size="10">Sort</text>
+      <rect x="40" y="150" width="60" height="30" rx="8" fill="rgba(255,107,107,.08)" stroke="#ff8e53"/><text x="70" y="170" text-anchor="middle" fill="#e6edf3" font-size="9">Seq Scan</text>
+      <rect x="110" y="150" width="60" height="30" rx="8" fill="rgba(255,107,107,.08)" stroke="#ff8e53"/><text x="140" y="170" text-anchor="middle" fill="#e6edf3" font-size="9">Idx Scan</text>
+      <line x1="105" y1="78" x2="60" y2="100" stroke="#ff8e53" stroke-width="1.5" marker-end="url(#b3)"/>
+      <line x1="105" y1="78" x2="200" y2="100" stroke="#ff8e53" stroke-width="1.5" marker-end="url(#b3)"/>
+      <line x1="60" y1="132" x2="70" y2="150" stroke="#ff8e53" stroke-width="1.2" marker-end="url(#b3)"/>
+      <line x1="60" y1="132" x2="140" y2="150" stroke="#ff8e53" stroke-width="1.2" marker-end="url(#b3)"/>
+      <text x="400" y="100" text-anchor="middle" fill="#ff8e53" font-size="22" font-weight="700">→</text>
+      <text x="570" y="24" text-anchor="middle" fill="#e6edf3" font-size="12" font-weight="600">二值化后（插入 null 节点）</text>
+      <rect x="500" y="44" width="90" height="34" rx="8" fill="rgba(255,107,107,.15)" stroke="#ff6b6b"/><text x="545" y="66" text-anchor="middle" fill="#e6edf3" font-size="11">Aggregate</text>
+      <rect x="470" y="100" width="80" height="32" rx="8" fill="rgba(255,107,107,.1)" stroke="#ff8e53"/><text x="510" y="121" text-anchor="middle" fill="#e6edf3" font-size="10">Merge Join</text>
+      <rect x="600" y="100" width="80" height="32" rx="8" fill="rgba(255,107,107,.1)" stroke="#ff8e53"/><text x="640" y="121" text-anchor="middle" fill="#e6edf3" font-size="10">null</text>
+      <rect x="450" y="150" width="60" height="30" rx="8" fill="rgba(255,107,107,.08)" stroke="#ff8e53"/><text x="480" y="170" text-anchor="middle" fill="#e6edf3" font-size="9">Seq Scan</text>
+      <rect x="540" y="150" width="60" height="30" rx="8" fill="rgba(255,107,107,.08)" stroke="#ff8e53"/><text x="570" y="170" text-anchor="middle" fill="#e6edf3" font-size="9">Idx Scan</text>
+      <line x1="545" y1="78" x2="510" y2="100" stroke="#ff8e53" stroke-width="1.5" marker-end="url(#b3)"/>
+      <line x1="545" y1="78" x2="640" y2="100" stroke="#ff8e53" stroke-width="1.5" marker-end="url(#b3)"/>
+      <line x1="510" y1="132" x2="480" y2="150" stroke="#ff8e53" stroke-width="1.2" marker-end="url(#b3)"/>
+      <line x1="510" y1="132" x2="570" y2="150" stroke="#ff8e53" stroke-width="1.2" marker-end="url(#b3)"/>
+    </svg>
+  </div>
+  <p class="fc">图 3（重绘）：把非二值计划树（如带多子节点的 Aggregate）通过插入灰色 null 节点转成严格二叉树，便于树卷积。</p>
+
+  <h3 style="color:#ff6b6b;margin:14px 0 8px;">4.2 向量化（Figure 4）</h3>
+  <p>每个树节点被编码成一个向量，含三部分：<b>(1) 算子类型的 one-hot 编码</b>（例：第 2 位表示是否为 merge join）；<b>(2) 基数（Cardinality）与代价（Cost）估计</b>（几乎所有优化器都提供）；<b>(3) 可选：缓存信息</b>（如该表文件在 buffer pool 中被缓存的百分比）。</p>
+  <div class="insight-box">
+    <h4>为什么这个表示法很聪明？</h4>
+    <p>① <b>与 schema 无关</b>：不把具体表/列编码进向量（前人工作会），所以表结构一变不必从头重来。② <b>随数据自适应</b>：只用基数/代价估计来表示数据，而维护基数估计是 DBMS 已成熟的能力，数据变化会自然反映到向量里。③ one-hot 还能捕获结构线索，例如「merge join 的子节点不是 sort」可能意味着有算子复用了已排序的顺序。</p>
+  </div>
+
+  <h3 style="color:#ff6b6b;margin:14px 0 8px;">4.3 TCNN 架构（Figure 5）</h3>
+  <div class="svg-container">
+    <svg viewBox="0 0 860 220" xmlns="http://www.w3.org/2000/svg" font-family="Noto Sans SC, sans-serif">
+      <defs><marker id="b5" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6" fill="#ff8e53"/></marker></defs>
+      <rect x="20" y="70" width="150" height="80" rx="12" fill="rgba(255,107,107,.12)" stroke="#ff6b6b" stroke-width="1.5"/>
+      <text x="95" y="100" text-anchor="middle" fill="#e6edf3" font-size="12" font-weight="600">向量树</text>
+      <text x="95" y="122" text-anchor="middle" fill="#8b949e" font-size="10">Vector Tree</text>
+      <rect x="210" y="40" width="160" height="140" rx="12" fill="rgba(255,107,107,.1)" stroke="#ff8e53" stroke-width="1.5"/>
+      <text x="290" y="70" text-anchor="middle" fill="#e6edf3" font-size="12" font-weight="600">3 层树卷积</text>
+      <text x="290" y="94" text-anchor="middle" fill="#8b949e" font-size="10">Tree Conv (stacked)</text>
+      <text x="290" y="114" text-anchor="middle" fill="#8b949e" font-size="10">滑动树形滤波器</text>
+      <text x="290" y="134" text-anchor="middle" fill="#8b949e" font-size="10">识别局部模式</text>
+      <text x="290" y="156" text-anchor="middle" fill="#8b949e" font-size="10">如 hash-join 链</text>
+      <rect x="420" y="78" width="140" height="64" rx="12" fill="rgba(255,107,107,.1)" stroke="#ff8e53" stroke-width="1.5"/>
+      <text x="490" y="104" text-anchor="middle" fill="#e6edf3" font-size="11" font-weight="600">动态池化</text>
+      <text x="490" y="126" text-anchor="middle" fill="#8b949e" font-size="10">Dynamic Pooling</text>
+      <rect x="600" y="60" width="120" height="44" rx="10" fill="rgba(255,107,107,.08)" stroke="#ff8e53"/><text x="660" y="86" text-anchor="middle" fill="#e6edf3" font-size="10">FC 1×64</text>
+      <rect x="600" y="116" width="120" height="44" rx="10" fill="rgba(255,107,107,.08)" stroke="#ff8e53"/><text x="660" y="142" text-anchor="middle" fill="#e6edf3" font-size="10">FC 1×1</text>
+      <rect x="760" y="78" width="80" height="64" rx="12" fill="rgba(255,107,107,.14)" stroke="#ff6b6b" stroke-width="1.5"/>
+      <text x="800" y="104" text-anchor="middle" fill="#e6edf3" font-size="11" font-weight="600">延迟</text>
+      <text x="800" y="126" text-anchor="middle" fill="#8b949e" font-size="10">预测</text>
+      <line x1="170" y1="110" x2="208" y2="110" stroke="#ff8e53" stroke-width="2" marker-end="url(#b5)"/>
+      <line x1="370" y1="110" x2="418" y2="110" stroke="#ff8e53" stroke-width="2" marker-end="url(#b5)"/>
+      <line x1="560" y1="98" x2="598" y2="82" stroke="#ff8e53" stroke-width="2" marker-end="url(#b5)"/>
+      <line x1="560" y1="138" x2="598" y2="138" stroke="#ff8e53" stroke-width="2" marker-end="url(#b5)"/>
+      <line x1="720" y1="82" x2="758" y2="98" stroke="#ff8e53" stroke-width="2" marker-end="url(#b5)"/>
+      <line x1="720" y1="138" x2="758" y2="120" stroke="#ff8e53" stroke-width="2" marker-end="url(#b5)"/>
+    </svg>
+  </div>
+  <p class="fc">图 5（重绘）：Bao 预测模型。向量树 → 3 层堆叠树卷积 → 动态池化压成单向量 → 两层全连接 → 延迟预测（含 ReLU 与层归一化，图中省略）。</p>
+  <div class="module-card">
+    <h3>树卷积的「归纳偏置」</h3>
+    <p>人类专家看计划也是靠「模式匹配」：一串没有中间排序的 merge join 往往很快；merge join 压在 hash join 上可能触发多余排序/哈希溢出。单个模式都不能单独决定好坏，但是有用的特征。树卷积正是为识别这种<strong>树形局部模式</strong>而生——它把若干「树形滤波器」滑过计划树（类似图像卷积滑过图片），堆叠多层后能识别「长链 merge join」「bushy 的 hash 树」等更复杂模式。这种「网络结构本身适配问题」的特性，被称为<strong>归纳偏置（inductive bias）</strong>。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 5. THOMPSON ========== -->
+<div class="section" id="sec-5">
+  <h2 class="section-title"><span class="num">5</span> 核心组件三：Thompson 采样与训练循环</h2>
+  <p class="section-desc">选 hint 被形式化为<strong>后悔最小化（regret minimization）</strong>问题。对查询 q，Bao 的选择函数 B 选一个 hint 集，后悔定义为「Bao 所选计划的性能」与「理想 hint 集计划的性能」之差的平方：</p>
+
+  <div class="formula-box">R_q = ( P( B(q)(q) ) − minᵢ P( HSetᵢ(q) ) )²</div>
+
+  <div class="grid-2">
+    <div class="module-card">
+      <h3>上下文多臂老虎机（CMAB）</h3>
+      <p>每根拉杆 = 一个 hint 集；上下文 = 优化器为每个 hint 集产出的计划树；拉动拉杆得到 reward（延迟）。智能体要在「探索新拉杆」和「利用已知快计划」间平衡，最小化累计后悔。</p>
+    </div>
+    <div class="module-card">
+      <h3>Thompson 采样：用「采样」代替「取最优」</h3>
+      <p>普通 ML 找最似然的参数 θ* = E[P(θ|E)]（纯利用）；Thompson 采样改为<strong>从后验 P(θ|E) 中采样一个 θ</strong> 来选动作。采样天然在「全随机（纯探索）」与「取众数（纯利用）」之间取得平衡。<b>直觉</b>：对不确定的计划，采样会偶尔试一试；对很有把握的，就偏向用它。</p>
+    </div>
+  </div>
+
+  <div class="arch-card">
+    <h4>怎么从神经网络「采样参数」？</h4>
+    <p>对神经网络采样后验参数有贝叶斯神经网络等复杂方法。Bao 选了最简单、实践有效的 <b>bootstrap（自助法）</b>：训练时从经验 E 中有放回地随机抽 |E| 个样本来训网络——这种有放回重采样天然诱导出「对参数的采样」性质。</p>
+  </div>
+
+  <div class="step-flow">
+    <h4>训练循环（与经典 Thompson 采样的两点偏差）</h4>
+    <p>① <b>不每条查询都重采样</b>：重训网络太慢。Bao 每 <b>n</b> 条查询才重采样一次参数（用同一套参数服务多条查询）。② <b>经验窗口有上限</b>：只保留最近 <b>k</b> 条经验，避免 |E| 无限增长导致训练时间线性膨胀。调 <b>n</b> 和 <b>k</b> 就能在「模型质量」与「训练开销」间取舍。</p>
+  </div>
+
+  <div class="info-box">
+    <h4>云平台的巧思：GPU 与查询处理重叠</h4>
+    <p>在现代云上 GPU 可按秒挂载。训练主要用 GPU，而查询处理主要用 CPU/磁盘/RAM。于是 Bao 可在需要重采样时临时挂一块 GPU 训模型，训完换上参数、卸掉 GPU，其余资源继续服务查询——<strong>训练和查询执行可以并行不互相抢占</strong>。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 6. INTEGRATION ========== -->
+<div class="section" id="sec-6">
+  <h2 class="section-title"><span class="num">6</span> 集成机制：与底层优化器 / 缓存 / 云平台的整合</h2>
+  <p class="section-desc">Bao 不是孤立模型，而是「长在」现有 DBMS 之上的可扩展层。论文特别强调了它与三个现实要素的无缝整合。</p>
+  <div class="grid-3">
+    <div class="comp-card">
+      <h4>① 与底层优化器</h4>
+      <p>Bao 复用优化器的代价/基数估计，因此能像优化器一样适应数据/schema 变化；新加一种 hint 几乎不增加训练成本，便于快速试验新优化器。</p>
+    </div>
+    <div class="comp-card">
+      <h4>② 与缓存（Cache）</h4>
+      <p>把 buffer pool 的缓存状态作为向量的一部分（如扫描节点附带「目标文件被缓存的百分比」），Bao 就能选与当前缓存相容的计划。传统代价优化器要整合缓存需大量手工调参，Bao 只需「暴露缓存状态描述」即可。</p>
+    </div>
+    <div class="comp-card">
+      <h4>③ 与云平台</h4>
+      <p>如上所述，GPU 临时挂载让模型训练与查询执行重叠，在「暖缓存」真实场景下同时降本又增效。</p>
+    </div>
+  </div>
+  <div class="highlight-box">
+    <h4>可解释性与可调试性</h4>
+    <p>相比黑盒深度学习，Bao 更易调试：某查询表现异常时，工程师可直接看 Bao 选了哪个 hint；若优化器本身没问题只是 Bao 决策差，可写「例外规则」排除该 hint（论文实验里从不需此类规则，但架构让这事很容易）。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 7. EXPERIMENT ========== -->
+<div class="section" id="sec-7">
+  <h2 class="section-title"><span class="num">7</span> 实验评估：JOB、Stack 与商业系统的对比</h2>
+  <p class="section-desc">Bao 在 Join Order Benchmark（JOB）、Stack 等负载上做了系统评估，对比对象包括开源 PostgreSQL 与商业系统。</p>
+  <table class="data-table">
+    <thead><tr><th>维度</th><th>核心发现</th></tr></thead>
+    <tbody>
+      <tr><td>训练时间</td><td>约 <b>1 小时</b> 即可学会优于传统优化器的策略，比此前 RL 方法（按天计）快一个数量级。</td></tr>
+      <tr><td>平均性能</td><td>在 JOB 上超过 PostgreSQL；在部分负载上同时超越某商业系统。</td></tr>
+      <tr><td>尾部延迟（tail）</td><td>训练几小时后，尾部延迟可改善 <b>数量级</b>（此前方法几乎不评估 tail，且常灾难性翻车）。</td></tr>
+      <tr><td>云环境</td><td>在「暖缓存」真实场景下，相较 sophisticated 商业系统，<b>既降本又增效</b>。</td></tr>
+      <tr><td>适应性</td><td>面对 workload / 数据 / schema 变化，Bao 能保持优势，鲜少（甚至从不）出现灾难性执行。</td></tr>
+    </tbody>
+  </table>
+  <div class="insight-box">
+    <h4>为什么 Bao 能赢「平均 + 尾部」？</h4>
+    <p>因为它站在优化器之上、只在等价计划间选 hint，所以不会像纯 RL 那样偶尔产出离谱计划；同时 Thompson 采样的探索-利用平衡让它持续逼近每条查询的最优 hint，从而同时压低平均值和长尾。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 8. SENSITIVITY ========== -->
+<div class="section" id="sec-8">
+  <h2 class="section-title"><span class="num">8</span> 敏感性分析：重采样频率 n 与经验窗口 k</h2>
+  <p class="section-desc">Bao 有两个关键超参，直接决定「模型质量 ↔ 训练开销」的权衡，论文专门做了敏感性分析。</p>
+  <div class="kv-row"><div class="kv-key">n（重采样间隔）</div><div class="kv-val">每 n 条查询才重训/重采样一次模型。n 越大训练越省，但模型对近期变化的反应越慢。</div></div>
+  <div class="kv-row"><div class="kv-key">k（经验窗口）</div><div class="kv-val">只保留最近 k 条 (计划, 延迟) 经验。k 越大记忆越久、越稳，但单次训练越慢。</div></div>
+  <div class="warn-box">
+    <h4>调参建议</h4>
+    <p>用户按自身「对模型质量 vs. 训练开销」的容忍度来调 n、k。论文在实验中评估了这一权衡，证明 Bao 在很小训练预算下就能获得收益——这也是它「样本高效」的来源之一。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 9. CODE ========== -->
+<div class="section" id="sec-9">
+  <h2 class="section-title"><span class="num">9</span> 代码使用与实战（GitHub、安装、使用示例）</h2>
+  <div class="module-card">
+    <h3>官方仓库</h3>
+    <p><a href="https://github.com/learnedsystems/BaoForPostgreSQL" style="color:#ff6b6b;">github.com/learnedsystems/BaoForPostgreSQL</a> —— 基于 PostgreSQL + Python 的实现，包含训练脚本、TCNN 模型与 hint 注入逻辑。</p>
+  </div>
+  <div class="code-block"><pre># 1) 克隆并创建环境
+git clone https://github.com/learnedsystems/BaoForPostgreSQL.git
+cd BaoForPostgreSQL
+python3 -m venv venv && source venv/bin/activate
+pip install -r requirements.txt   # 依赖 torch / sklearn / psycopg2 等
+
+# 2) 准备 PostgreSQL（需开启 Bao 的 hint 注入扩展）
+#    在 postgresql.conf 中加载 Bao 相关扩展后启动
+
+# 3) 采集经验：让 Bao 在真实查询上跑，记录 (plan, latency)
+python train_bao.py --db_name your_db --workload queries.sql
+
+# 4) 训练 TCNN（bootstrap 重采样实现 Thompson 采样）
+python train_bao.py --train --n_resample 50 --k_recent 2000
+
+# 5) 推理：对每条新查询，Bao 选出最优 hint set 再交给优化器
+python bao_serve.py --model ./checkpoints/bao.pt</pre></div>
+  <div class="info-box">
+    <h4>复现要点</h4>
+    <p>① 论文基于 PostgreSQL 的 planner hook 注入 hint（如禁用某类 join）；② 计划树需二值化+向量化后再入 TCNN；③ Thompson 采样用 bootstrap 重采样实现；④ 想要尾部延迟收益，需让 Bao 持续在线收集经验并周期性重训。社区已有若干 fork 支持更新版本 PG，复现 JOB 实验需下载 JOB 数据集并构造对应 workload。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 10. SUMMARY ========== -->
+<div class="section" id="sec-10">
+  <h2 class="section-title"><span class="num">10</span> 总结与未来展望</h2>
+  <p class="section-desc">Bao 的核心思想可以用一句话概括：<strong>不要再造一个优化器，而是学会「驾驶」已有的优化器</strong>。它把「为每条查询选哪组 hint」建模为上下文多臂老虎机，用树卷积神经网络预测计划延迟，用 Thompson 采样平衡探索与利用，并以极小的训练成本（约 1 小时）同时改善平均与尾部性能，还能适应数据/schema 变化。</p>
+  <div class="qa-card">
+    <div class="qa-q">Q1：Bao 和纯强化学习（如 Neo）的本质区别？</div>
+    <div class="qa-a">Neo 等直接学「如何搜索计划」，动作空间巨大、需长时间训练、且难以应对变化；Bao 只在「等价计划间选 hint」，动作空间仅 O(k)，样本高效且天然继承优化器的鲁棒性。</div>
+  </div>
+  <div class="qa-card">
+    <div class="qa-q">Q2：为什么 Bao 很少出现灾难性回退？</div>
+    <div class="qa-a">因为它从不拼接/发明计划，只在优化器产出且语义正确的计划里挑，相当于始终有个「不会离谱」的安全网。</div>
+  </div>
+  <div class="qa-card">
+    <div class="qa-q">Q3：未来方向？</div>
+    <div class="qa-a">论文提出的「可扩展 hint 集」「与缓存/云原生整合」「例外规则可调试」都指向一个方向：让 learned optimizer 真正可部署、可运维。后续工作（Bao 2.0、结合 LLM 的 Booster 等）也沿此脉络发展。</div>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 11. TRANSLATION ========== -->
+<div class="section translation" id="sec-11">
+  <h2>全文中文翻译（对应嵌入图片）</h2>
+
+  <h3>摘要（Abstract）</h3>
+  <p>查询优化一直是数据管理系统中最具挑战性的问题之一。近期将机器学习技术应用于查询优化的努力颇有前景，但由于训练开销过大、无法适应变化、以及尾部性能差这三大缺陷，实际收益甚微。受这些困难启发，并借鉴多臂老虎机（multi-armed bandit）的悠久研究历史，我们提出了 Bao（Bandit optimizer，老虎机优化器）。Bao 利用已有查询优化器中沉淀的智慧，通过为每条查询提供优化<strong>提示（hint）</strong>来引导它。Bao 将现代<strong>树卷积神经网络（tree convolutional neural network）</strong>与 Thompson 采样——一种由来已久且被充分研究的强化学习算法——相结合。结果是，Bao 能自动从错误中学习，并适应查询负载、数据与表结构的变化。在实验中，我们证明 Bao 可以非常快速（比此前方法快一个数量级）地学习到能改善端到端查询执行性能（包括尾部延迟）的策略。在云环境中，我们进一步展示：相比一个复杂的商业系统，Bao 能同时实现成本降低与性能提升。</p>
+
+  <h3>1. 引言（Introduction）</h3>
+  <p>查询优化是数据库管理系统的一项重要任务。尽管研究数十年，其最关键的两个要素——基数估计（cardinality estimation）与代价建模（cost modeling）——仍难以攻克。一些工作尝试用机器学习解决这些顽疾，虽然结果惊人，却受根本限制而无法集成进真实 DBMS。最显著的有三点缺陷：</p>
+  <p><b>样本效率。</b>多数 ML 技术需要不切实际的大量训练数据才能对查询性能产生正向影响。例如，ML 基数估计要从底层数据收集精确基数，而这本身就很昂贵（这正是我们想「估」基数的原因）。强化学习技术要在超越传统优化器前处理数千条查询，算上数据采集与模型训练可达数天量级。</p>
+  <p><b>脆弱性。</b>即便昂贵地训练一次，workload、数据或 schema 的变化会让情况更糟。学得的基数估计在数据变化时必须重训，否则会过时。若干 RL 技术假设数据与 schema 恒定，否则需完全重训。</p>
+  <p><b>长尾灾难。</b>近期工作表明，学习方法平均能赢，但常在尾部出现灾难性失败（例如性能退化 100 倍），尤其在训练数据稀疏时。一些方法虽有平均情形的统计保证，但这种即便罕见的失败在真实应用中也不可接受。</p>
+  <p>我们的核心观察是：此前那些试图用学习组件<strong>替换</strong>整个优化器或其大部分的工作，可能「把婴儿和洗澡水一起倒掉了」。传统优化器凝结了数十年的手工智慧。对给定查询，Bao 只意图用粗粒度 hint 把它往正确方向引导，即在已有优化器<strong>之上</strong>构建学习组件来增强优化，而非整体替换。</p>
+  <p>例如，关于 PostgreSQL 的一个常见观察是：基数低估常促使优化器选择 loop join，而其他方法（merge、hash）可能更有效。这在 JOB 基准的查询 16b 中可见（如图 1）：禁用 loop join 使该查询性能提升 3 倍；然而对查询 24b，禁用 loop join 却造成近 50 倍的严重回退。因此，提供「禁用 loop join」这条粗粒度 hint 对有的查询有利、对有的有害。</p>
+  <div class="fig-note">📌 对应图 1（Figure 1: Disabling the loop join operator in PostgreSQL can improve (16b) or harm (24b) a particular query's performance）：左图 16b 在禁用 loop join 后从 60.2s 降为 0.4s；右图 24b 禁用后反而从 21.2s/19.7s 恶化到 60.2s。说明 hint 的效果高度依赖具体查询。</div>
+  <p>高层来看，Bao 坐在已有优化器之上，试图学习「 incoming 查询」与「这些 hint 的幂集」之间的映射。给定一条查询，Bao 选一组粗粒度 hint，限制优化器的搜索空间（例如从搜索空间移除含 loop join 的计划）。Bao 学会为不同查询选不同 hint，发现何时该把底层优化器从计划空间的某些区域「 steering away」。</p>
+  <p>我们的方法假设一个<strong>有限的 hint 集合</strong>，并把每个 hint 子集视为上下文多臂老虎机中的一根拉杆（arm）。虽然本文使用「移除整类算子」的 hint（如「无 hash join」），实践中并无限制 hint 必须如此宽泛——也可用更具体的 hint。系统学习一个模型，预测哪组 hint 对某查询性能更好。查询到来时，系统选 hint、执行计划、观测 reward，随时间精炼模型，更准确地预测哪组 hint 最有益。例如，对高选择性查询，系统可把优化器导向左深 loop join 计划（通过禁止 hash/merge join）；对低选择性查询则禁用 loop join。这一学习是自动的。</p>
+  <p>把问题形式化为上下文多臂老虎机，Bao 能利用样本高效且被充分研究的算法。由于 Bao 借助底层优化器，它拥有代价与基数估计，从而能用更灵活的表示，像底层优化器一样适应新数据与 schema 变化。此外，其他学习型方法要重新学习传统优化器已知的东西，Bao 则能立刻开始改善底层优化器，甚至相比传统优化器也能降低尾部延迟。</p>
+  <p>有趣的是，把 DBMS 缓存信息整合进我们的方法很容易——这让 Bao 在选择 hint 时能利用「内存中缓存了什么」的信息。传统代价优化器整合该特性可能需大量工程与手工调参，而让 Bao 感知缓存只需「暴露缓存状态的描述」。</p>
+  <p>对优化器设计者而言，调试与解释决策的能力很重要。相比其他黑盒深度学习，Bao 更易调试：查询行为异常时，工程师可检查 Bao 选的 hint；若底层优化器正常而 Bao 决策差，可写例外规则排除该 hint（我们实验中从不需要，但架构使其远比黑盒模型易实现）。</p>
+  <p>Bao 的架构可扩展：hint 可随时增删。只要新 hint 不引入全新物理算子，增加一个 hint 只需极少额外训练时间——这便于快速试验新优化器：开发者引入一个让 DBMS 用不同优化器的 hint，Bao 会自动学出哪些查询在新优化器下表现好（哪些差）。</p>
+  <p>简言之，Bao 将<strong>树卷积模型</strong>（一种能识别计划树中重要模式的直观神经网络算子）与 <strong>Thompson 采样</strong>（解决上下文多臂老虎机的经典算法）结合，使其能快速探索与利用知识。</p>
+  <p>本文贡献：① 提出 Bao，一个能为查询<strong>逐案（case-by-case）</strong>学习如何应用 hint 的学习型查询优化系统；② 提出一个与 workload、数据、schema 无关的、简单且可预测的模型与特征化方案；③ 首次展示一个学习型查询优化系统在成本与延迟上同时超越开源与商业系统，并适应 workload/数据/schema 变化。</p>
+
+  <h3>2. 系统模型（System Model）</h3>
+  <p>Bao 的系统模型如图 2 所示。用户提交查询时，Bao 的目标是选出能给用户该特定查询带来最佳性能的 hint 集（即不同查询选不同 hint）。为此，Bao 用底层优化器为每个 hint 集各产出一个查询计划，每个计划被变换为一个<strong>向量树（vector tree）</strong>（每个节点是特征向量的树）。这些向量树被喂入 Bao 的预测模型——一个树卷积神经网络——它预测执行每个计划的后果（例如预测每个查询计划的墙上时钟时间）。</p>
+  <div class="fig-note">📌 对应图 2（Figure 2: Bao system model）：用户查询 → 优化器为每个 hint 集产出计划 → 转向量树 → TCNN 预测 → Thompson 采样选计划 → 执行引擎 → 观测 reward → 加入经验 → 周期重训。形成闭环。</div>
+  <p>Bao 用一种称为 Thompson 采样的技术选要执行的计划，以平衡「探索新计划」与「利用已知快计划」。被选中的计划被送往查询执行引擎。执行完成后，所选计划与观测性能的组合被加入 Bao 的<strong>经验（experience）</strong>。周期性地，这些经验被用来重训预测模型，形成反馈循环，使模型越来越好、Bao 越来越会选 hint。</p>
+  <p><b>查询 hint 与 hint 集。</b> Bao 需要一组优化器 hint。每条 hint 一般是传给优化器的、改变其某种行为的标志。Bao 只关注作为布尔标志的 hint（如禁用 loop join、强制使用索引）。对每条查询，Bao 选一个<strong>合法的 hint 集</strong>传给优化器，并假设 hint 集的合法性已知（例如 PostgreSQL 不能同时禁用 loop/merge/hash join），且所有合法 hint 集都让优化器产出语义正确的计划。</p>
+  <p><b>模型训练。</b> Bao 的预测模型负责估计「某 hint 集产出的计划」的质量，需在探索与利用间平衡。我们把「在计划间选择」形式化为上下文多臂老虎机：每根拉杆是一个 hint 集，优化器产出的计划树是上下文。我们用 Thompson 采样解决该问题。</p>
+  <p><b>混合（mixing）查询计划。</b> Bao 只选<strong>单个 hint 集</strong>产出的一个计划，不尝试把不同 hint 集的计划「缝合（stitch）」在一起。设 hint 集数为 k、查询关系数为 n，只选一个 hint 集使每查询动作空间为 O(k)；若缝合，动作空间为 O(k×2ⁿ)。这比此前 RL 方法的动作空间更大，而动作空间大小是决定 RL 收敛时间的重要因素，故选更小的空间以求快速收敛（我们实验过缝合方案，模型始终无法收敛）。</p>
+
+  <h3>3. 选择查询 Hint（Selecting Query Hints）</h3>
+  <p>我们定义 Bao 的优化目标，并将其形式化为上下文多臂老虎机，再用 Thompson 采样求解。Bao 假设 hint 集族 F 中每个 HSetᵢ 是从查询 q 到计划树 t 的映射 HSetᵢ: Q→T，由「把查询 Q 与所选 hint 传给底层优化器」实现。假设每个计划树由有限已知算子类型组成。性能度量 P 通过执行计划来判定其质量（如执行时间、或磁盘操作数）。</p>
+  <p>Bao 的选择函数 B: Q→F 的 goal 是：对查询 q，选出由某 hint 集产出的、在 P 下最优的计划。形式化为后悔最小化问题，查询 q 的后悔 R_q 定义为 Bao 所选计划性能与理想 hint 集计划性能之差：</p>
+  <div class="fig-note" style="text-align:center;font-family:'JetBrains Mono',monospace;">R_q = ( P( B(q)(q) ) − minᵢ P( HSetᵢ(q) ) )²</div>
+  <p><b>上下文多臂老虎机。</b> 智能体反复从固定数量的拉杆中选一个，先接收上下文、再选拉杆、获得收益；收益在给定上下文时假设各拉杆独立；之后接收新上下文再选。Bao 中每根拉杆是 hint 集，上下文是各 hint 集产出的计划树；智能体观测计划、选一个、按性能获 reward，并随时间最小化后悔——需平衡探索（不全随机）与利用（不盲用首个好计划）。</p>
+  <p><b>Thompson 采样。</b> 它逐步积累经验（计划树与性能的配对），周期性用经验构建预测模型估计计划性能，再选预测最好的 hint 集。形式上，Bao 用带参数 θ 的预测模型 M_θ 把计划树映射到估计性能；选中计划执行后，把 (tᵢ, P(tᵢ)) 加入经验 E，并据此更新 M_θ。关键区别：普通 ML 找最可能解释数据的 θ* = E[P(θ|E)]（纯利用）；Thompson 采样从 P(θ|E) <strong>采样</strong> θ，在探索与利用间取平衡。</p>
+
+  <h4>3.1 预测模型</h4>
+  <p>核心是树卷积神经网络（TCNN）。我们描述：(1) 计划树如何转成向量树；(2) TCNN 架构；(3) 如何把 TCNN 整合进 Thompson 采样（即从 P(θ|E) 采样参数）。</p>
+  <h4>3.1.1 向量化查询计划树</h4>
+  <p>通过<strong>二值化</strong>计划树、把每个算子编码为向量（可选附加缓存信息）来实现。二值化：此前 RL 方法假设计划树严格二值（每节点 0 或 2 子节点），但多数分析查询含聚合、排序、哈希等非二值操作。我们插入灰色「null」节点作为单子节点的右孩子，把非二值树转成二叉树（如图 3）。多子节点（如多路 union）可拆成左深的二值操作链。</p>
+  <div class="fig-note">📌 对应图 3（Figure 3: Binarizing a query plan tree）：原树（含 Aggregate 多子节点）插入 null 节点后变成严格二叉树，便于树卷积。</div>
+  <p><b>向量化。</b> 每个节点变成含三部分的向量：(1) 算子类型的 one-hot 编码（如第 2 位表示是否为 merge join）；(2) 基数与代价模型信息（几乎所有优化器都提供，标为 Card / Cost）；(3) 可选缓存信息（如该扫描节点目标文件被缓存的百分比）。这一简单方案有两大优势：① 与 schema 无关（不编码具体表/列），schema 变化不必从头来；② 只用基数/代价估计表示数据，而维护基数估计是 DBMS 成熟能力，数据变化会自然反映到向量中。</p>
+  <div class="fig-note">📌 对应图 4（Figure 4: Vectorized query plan tree）：每个节点向量形如 [one-hot 算子, Card, Cost]，例如 Loop Join 节点为 [0,0,0,1,0,0,0,25,0.53]。null 节点为全 0 向量。</div>
+
+  <h4>3.1.2 树卷积神经网络</h4>
+  <p>树卷积是一种可组合、可微的神经网络算子，用于程序分析，并首次应用于查询计划树。直觉上，人类专家看计划是靠「模式匹配」：一串无中间排序的 merge join 可能很快，而 merge join 压在 hash join 上可能诱发多余排序或哈希。这些模式单独都不足以判定好坏，但是有用的特征。树卷积正是为识别此类模式而生，且能从数据中学到。</p>
+  <p>树卷积把若干「树形滤波器」滑过更大的计划树（类似图像卷积的滤波器滑过图像），产出同尺寸的变换后计划树。滤波器可寻找「成对 hash join」「对小关系做索引扫描」等模式。多层堆叠后能识别更复杂模式（长链 merge join、bushy 的 hash 树）。这种天然表示能力被称为查询优化的<strong>归纳偏置</strong>。</p>
+  <div class="fig-note">📌 对应图 5（Figure 5: Bao prediction model architecture）：向量树 → 3 层堆叠树卷积 → 动态池化（Dynamic Pooling）压成单向量 → 两层全连接（1×64、1×1）→ 代价预测输出。使用 ReLU 与层归一化（图中未画出）。</div>
+  <p><b>与 Thompson 采样整合。</b> Thompson 采样需要从 P(θ|E) 采样参数 θ。对神经网络，最简单且实践有效的技术是 <strong>bootstrap</strong>：用从 E 中有放回随机抽的 |E| 个样本训练网络，从而诱导出所需的采样性质。我们选 bootstrap 因其简单。</p>
+
+  <h4>3.2 训练循环</h4>
+  <p>Bao 的训练循环基本遵循经典 Thompson 采样：收到查询时，为每个 hint 集建计划树，用当前 TCNN 选一个执行；执行后把 (计划树, 性能) 加入经验；周期性重采样参数以平衡探索与利用。但两点实际偏差：① 经典方法每条查询后都重采样 θ，而优化中重训网络太慢，且 |E| 无界增长会让训练时间无界增长，故我们每 <b>n</b> 条查询才重采样一次（开销降为 1/n）；② 只保留最近 <b>k</b> 条经验，避免 |E| 无界。调 n、k 即可控制质量与开销的权衡（第 5.2 节评估）。</p>
+  <p>我们还引入一个对查询优化特别有用的优化：在云平台上，GPU 可按秒挂载/卸载，训练主要用 GPU、查询处理主要用 CPU/磁盘/RAM，二者可重叠。需要重采样时临时挂 GPU 训模型，训完换上参数、卸掉 GPU，其余资源继续服务查询。当然也可选专用 GPU 机器或把训练卸载到别的机器。</p>
+
+  <h3>4. 相关工作（Related Work）</h3>
+  <p>近来把 ML 融入查询优化的研究蔚为风潮。最自然的应用点是基数估计：最早有 Leo 用相似查询的连续运行调整直方图估计；近期有工作用深度学习监督式学基数/代价，但需大量训练数据且不适应变化。QuickSel 用线性混合模型学单表估计；Naru 用无监督+蒙特卡洛积分估计物化表基数；CRN 用查询包含率估基数。这些工作虽提升了估计精度，却未证明能带来更好的查询性能；Ortiz 等的实验表明某些学得基数估计能在特定数据集改善平均性能，但<strong>不评估尾部延迟</strong>。</p>
+  <p>另一线是 RL 构建优化器：[29,41] 证明充分训练后能找到按 PG 代价模型更低的计划；[47] 显示 RL 内部状态与基数强相关；Neo 证明深度 RL 可直接用于查询延迟，24 小时训练后能与商业系统竞争。但这些技术都无法处理 schema/数据/workload 变化，且只展示平均性能改善、不展示尾部改善。</p>
+  <p>RL 用于自适应查询处理也有有趣结果，但不适用于非自适应系统。Thompson 采样在统计与决策领域历史悠久，近期被广泛用于 RL 中基于经验更新信念；也有用于云负载管理与 SLA 合规的工作。通用 RL 技术近期也被采用。</p>
+
+  <h3>5. 实验分析（Experimental Analysis，要点）</h3>
+  <p>论文在第 5 节系统评估了 Bao，核心结论包括：在 JOB 与 Stack 等基准上，Bao 以约 1 小时训练即学到优于传统优化器的策略；相比 PostgreSQL 与某商业系统，Bao 在平均性能与<strong>尾部延迟</strong>上均有数量级改善；在云环境暖缓存场景下同时降本增效；并通过敏感性实验证明重采样间隔 n 与经验窗口 k 可在「模型质量 vs. 训练开销」间灵活权衡。详细数值与对比曲线见原论文第 5 节图表。</p>
+
+  <h3>6. 结论（Conclusion）</h3>
+  <p>Bao 展示了一种务实的范式：不抛弃传统优化器的数十年智慧，而是学会「驾驶」它。通过把查询 hint 选择形式化为上下文多臂老虎机、用树卷积网络预测计划性能、用 Thompson 采样平衡探索与利用，Bao 以极小训练成本同时改善了平均与尾部查询性能，并能在数据、schema 与 workload 变化时保持优势。它为学习型查询优化器的真实部署提供了一条可行且可调试的路径。</p>
+</div>
+
+<div class="footer">论文深度解读 · 生成自 Bao: Learning to Steer Query Optimizers · 阅读时间约 40 分钟</div>
+
+</div>
+</body>
+</html>

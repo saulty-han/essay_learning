@@ -1,0 +1,1446 @@
+=== PAGE 1 ===
+arXiv:2506.15848v1  [cs.DB]  18 Jun 2025
+Delta: A Learned Mixed Cost-based Query
+Optimization Framework
+Jiazhen Peng ∗1∆, Zheng Qu ∗2∆, Xiaoye Miao ∗§3#, Rong Zhu ‡4
+∗Center for Data Science, Zhejiang University, Hangzhou, China
+§The State Key Lab of Brain-Machine Intelligence, Zhejiang University, Hangzhou, China
+‡Alibaba Group, Hangzhou, China
+{1pengjiazhen, 2qz, 3miaoxy }@zju.edu.cn, 4red.zr@alibaba-inc.com
+Abstract—Query optimizer is a crucial module for database
+management systems. Existing optimizers exhibit two flawed
+paradigms: (1) cost-based optimizers use dynamic programming
+with cost models but face search space explosion and heuristic
+pruning constraints; (2) value-based ones train value networks to
+enable efficient beam search, but incur higher training costs and
+lower accuracy. They also lack mechanisms to detect queries
+where they may perform poorly. To determine more efficient
+plans, we propose Delta, a mixed cost-based query optimization
+framework that consists of a compatible query detector and a
+two-stage planner. Delta first employs a Mahalanobis distance-
+based detector to preemptively filter out incompatible queries
+where the planner might perform poorly. For compatible queries,
+Delta activates its two-stage mixed cost-based planner. Stage
+I serves as a coarse-grained filter to generate high-quality
+candidate plans based on the value network via beam search,
+relaxing precision requirements and narrowing the search space.
+Stage II employs a fine-grained ranker to determine the best
+plan from the candidate plans based on a learned cost model.
+Moreover, to reduce training costs, we reuse and augment
+the training data from stage I to train the model in stage
+II . Experimental results on three workloads demonstrate that
+Delta identifies higher-quality plans, achieving an average 2.34 ×
+speedup over PostgreSQL and outperforming the state-of-the-art
+learned methods by 2.21 ×.
+Index Terms—query optimization, deep learning, DBMS
+I. I NTRODUCTION
+The query optimizer is a crucial component of database
+management systems (DBMSs) and significantly influences
+query execution performance [1]–[5]. Given an SQL query,
+the query optimizer aims to determine the optimal execution
+plan that minimizes the cost of executing it. To measure the
+execution cost, query execution time, i.e., latency, is often used
+as a proxy metric [5]. However, due to the vast search space,
+where there are O(n!) possible plans for a query joining n
+tables, finding the optimal plan is a well-established NP-hard
+problem [6].
+Existing solutions address this challenge by incrementally
+building complete query plans from optimized subplans. The
+fundamental challenge resides in establishing effective selec-
+tion criteria that ensure local subplan choices collectively max-
+imize global plan optimality. Based on the subplan selection
+criteria, we can categorize existing query optimizers into two
+∆ Equal Contribution. # Corresponding authors.
+classes: cost-based optimizers (CBOs) [2]–[4], [7]–[10] and
+value-based optimizers (VBOs) [11]–[14].
+Cost-based optimizers (CBOs) can be categorized into
+traditional methods [2]–[4] and learning-based variants [7]–
+[10]. Both share the same paradigm and constraint. They
+estimate the cost of the subplan, and consequently rely on
+dynamic programming (DP) for plan searching. However, the
+explosion of the search space and the limitations of heuristic
+pruning make it hard to balance plan quality and search effi-
+ciency. Specifically, on the one hand, to satisfy the optimality
+principle of DP [2], CBOs need to retain all potentially optimal
+subplans which have physical properties [3] like interesting
+order [2], thus increasing the search space. On the other hand,
+to improve search efficiency, heuristic space pruning may be
+relied upon, which leads to sub-optimal or even bad plans.
+For example, some CBOs reduce the dense tree search space
+(O(n!)) to a left-deep tree search space ( O(2n)) [1]. This
+may cause optimal plans in other parts of the search space
+to be overlooked. Moreover, due to storage space limitations,
+when the number of table joins becomes excessive, CBOs may
+resort to random search strategies, further compromising the
+quality of the chosen plan [15]. In these cases, even if the
+cost model is accurate, CBOs are hard to obtain the optimal
+plans, due to the prohibitive enumeration cost. As a result, the
+cost model excels at comparing complete plans, rather than
+guiding effective exploration through the vast search space.
+Value-based optimizers (VBOs) enable efficient explo-
+ration of vast search spaces via learned value networks, but
+their reliance on reinforcement learning (RL) results in higher
+training costs and lower accuracy compared to the learned cost
+models. VBOs estimate the overall cost (i.e., value 1) of each
+subplan by the value network . The overall cost refers to the
+minimal one from the costs of all complete plans that include
+the given subplan. It is the promise of a subplan to develop
+into the optimal plan, the real objective we care about in plan
+generation. Thus, simple best-first search methods [16], such
+as beam search [17], can be used to explore plans. If the
+value network is accurate, plans found by beam search would
+be optimal. Therefore, the value network is more suitable
+1Overall cost and value (also referred to as cumulative reward ) come
+from different perspectives: query optimization and reinforcement learning
+respectively, yet convey the same meaning: the potential of the subplan
+developing into the optimal plan.
+
+=== PAGE 2 ===
+for searching for promising plans from a vast search space,
+rather than evaluating complete plans. However, the special
+prediction task of the value network makes it have higher
+training costs and lower accuracy than the learned cost model.
+Mixed cost-based optimizer . By analyzing the pros and
+cons of the cost and value, we aim to design a new mixed
+cost-based query optimization framework, named Delta to
+determine more efficient execution plans by leveraging both
+strengths and complementing each other.
+To this end, we design a two-stage planner based on the
+mixed cost. In stage I, we design a value-based plan generator
+to generate top- k plans as a candidate plan set from the vast
+plan space. The plans are ranked by the values estimated
+by the value network . Due to the estimation errors of the
+value network , the goal of this stage is to act as a coarse-
+grained filter to find a set of candidate plans and ensure that
+at least one plan in this set achieves high quality. Compared
+to VBOs, which aim to find the best one by precisely ranking
+all plans, stage I saves the search strength of the overall cost
+and significantly relaxes the precision demand for the value
+network, thereby reducing its training difficulty. In stage II ,
+we design a cost-based plan selector to perform a fine-grained
+evaluation for candidate plans to determine the best plan based
+on a learned cost model that predicts the latency of each plan.
+Compared to CBOs, stage II leverages the evaluation strength
+of the cost model for a complete plan, and the plan space
+is narrowed down from O(n!) to k, which makes the direct
+evaluation and comparison feasible.
+However, two aspects remain improvable. First, there are
+two learned models in the mixed cost-based optimizer, causing
+a high training cost. To train the value network or the cost
+model, hundreds or thousands of plans need to be executed
+to construct the training data. Each plan can take seconds to
+minutes to execute [7], [12], [13]. Moreover, the plan should
+be executed without other resource-intensive activities running
+on the machine so that the runtime of the plan can accurately
+reflect the execution cost [5]. It greatly consumes the system
+resources. The high demand on both quality and quantity of
+training data is slowing down the wider adoption of learned
+optimizers. To address this challenge, on the one hand, as
+mentioned above, our two-stage planner reduces the accuracy
+demand for the value network, thus lowering its training cost.
+On the other hand, we fully utilize the executed plans collected
+for training the value network in stage I. We reuse and
+augment them for training the cost model in stage II .
+Second, all the optimizers, including the mixed cost-based
+optimizer cannot work well for the arbitrary query. We for-
+mally classify queries where the planner performs poorly as
+planner-incompatible queries (incompatible queries for short),
+distinguishing them from compatible queries where the plan-
+ner maintains stable effectiveness. Specifically, our two-stage
+planner is trained for a specific workload, which makes it
+prone to significant performance drops when handling queries
+with different distributions. To this end, we design a Maha-
+lanobis distance-based detector. The detector first measures
+the deviation between the incoming queries and the training
+workload distribution and then identifies the queries with high
+deviation as incompatible. The compatible queries would be
+optimized by the mixed cost-based planner. For the incompat-
+ible queries, Delta would select a conservative strategy, such
+as a traditional native query optimizer to generate plans.
+In summary, we propose our query optimization framework,
+Delta. It consists of a two-stage planner based on the mixed
+cost and a compatible query detector, where the planner
+consists of a value-based plan generator and a cost-based plan
+selector. The source code referenced in this paper is available
+on GitHub [18]. Our main contributions are described below.
+• We are the first to design a mixed cost-based planner with a
+compatible query detector to determine more efficient plans.
+• The mixed cost-based planner combines a value-based gen-
+erator for high-quality candidates and a learned cost-based
+selector for final plan selection. To reduce the training cost,
+we reuse and augment the training data.
+• The compatible query detector filters out incompatible
+queries where the mixed cost-based planner might perform
+poorly before planning based on Mahalanobis distance.
+• Extensive experiments on three well-known workloads
+demonstrate the remarkably superior effectiveness of Delta.
+Compared to the traditional optimizer, PostgreSQL, Delta
+achieves a 2.34 × speedup in workload execution.
+Organization. Section II reviews related works in query
+optimization. Section III establishes notation and states the
+problem we study. Section IV presents Delta’s framework,
+detailing its architecture design and workflow. Section V
+describes the two-stage mixed cost-based planner construction,
+explaining how it integrates multiple models to search plans
+and how the models train. Section VI reveals the compatible
+query detection mechanism. We report detailed evaluation
+results in Section VII and conclude in Section VIII.
+II. R ELATED WORK
+Existing end-to-end query optimizers can be classified into
+the two following categories based on their own subplan
+selection criteria.
+A. Cost-based Optimizers
+Cost-based optimizers (CBOs) [2]–[4], [7]–[10] estimate the
+cost of individual subplans and employ dynamic programming
+(DP) to construct plans from the vast plan search space.
+Existing CBOs can be further divided into one-stage ones and
+two-stage ones.
+One-stage CBOs [2]–[4], [10] only take the top-1 plan
+based on the cost model as the optimal plan, which makes
+a high demand for the accuracy of the cost model.
+Traditional optimizers [2]–[4] estimate the cost using a
+statistics-based cost model to determine the best plan. This
+model relies heavily on over-idealized independence and uni-
+formity assumptions, leading to large errors [8]. Moreover, the
+errors propagate exponentially through joins [19].
+A learning-based optimizer, Leon [10] replaces the tradi-
+tional cost model with a learning-to-rank model for more accu-
+
+=== PAGE 3 ===
+rate ranking of alternative access plans. However, it overlooks
+the excessively large training cost, making it impractical [20].
+Two-stage CBOs [7]–[9] first adopt different strategies that
+partly guide the plan search process on top of a traditional
+optimizer like PostgreSQL, to generate diverse plans as can-
+didate plans. They then learn a cost model to estimate the
+latency or rank of different plans to select the best plan from
+the candidate plans.
+Bao [7] considers that the traditional cost model estimation
+errors affect the choices of join or scan operators, compro-
+mising the generated plan quality. To correct this, Bao advises
+which operations not to use in the whole plan by disabling
+different subsets of join and scan operations to generate
+different plans. Lero [8] thinks thecardinality estimation errors
+in the cost model ultimately affect the rank of alternative
+subplans. It scales the cardinality estimates by different factors
+at various join levels to affect the rank of alternative subplans
+to generate diverse plans. HybridQO [9] specifies different join
+order leading (i.e. prefix) to guide the plan generation process
+to generate various plans. All above plan generators only
+specify part processes (i.e. plan-level operations, cardinality
+scaling or join order leading, referred to as hints) on the
+traditional CBOs, which is a coarse-grained tuning and thus
+cannot control the quality of the candidate plan set.
+In addition, all CBOs rely on DP to search plans from the
+vast plan search space based on the cost model. The explosion
+of the search space and the limitations of heuristic pruning
+make it hard to balance plan quality and search efficiency.
+Even if the cost model is accurate, CBOs are hard to obtain
+the optimal plans, due to the prohibitive enumeration cost.
+B. Value-based Optimizers
+Value-based optimizers (VBOs) [11]–[14] estimate the over-
+all cost of subplans using the value network and explore the
+entire plan space through beam search to generate the complete
+execution plan. The overall cost indicates the promise of a
+subplan to develop into the optimal plan, the real objective we
+care about in plan generation. If the value network is accurate,
+the plans searched by the beam search would be optimal.
+However, it is more challenging to build the value network
+than the cost model. Because obtaining the ground truth of
+the overall cost of the subplan is harder than the cost. All
+the previous works build the value network by reinforcement
+learning. They take the top-1 plan estimated by the value
+network as the execution plan, which makes a high demand
+for the precision of the value network.
+C. Differences from Prior Works
+Delta searches plans by mixed cost models and two-stage
+search strategy to determine more efficient plans. Compared to
+the two-stage CBOs that depend on traditional optimizers and
+coarse-grained hints, Delta adopts a value-based plan gener-
+ator to generate higher-quality candidate plans. Compared to
+the VBOs, Delta modifies the exploration goal from selecting
+one optimal plan to selecting the top-k plans, relaxing the
+TABLE I: Notation description
+Notation Description
+Q, P, s the query, the plan and the subplan
+C(P ), L(P ) the execution cost and the latency of the plan P
+C(Q, s) the overall cost of the subplan s in query Q
+L(Q, s) the overall latency of the subplan s in query Q
+M, V the cost model and the value network
+N , P0 PostgreSQL’s native optimizer and its plan for Q
+R(P ) the latency of plan P relative to the plan P0
+G a candidate plan generator
+Sk
+G(Q) a set of k candidate plans generated by G
+P ∗, P △ the best and worst plan from Sk
+G(Q)
+R(P ∗) the best-case improvement of Sk
+G
+R(P △) the worst-case risk of Sk
+G
+η(Sk
+G) the ratio of plans outperform P0 in Sk
+G
+precision requirements for the value network. Moreover, ex-
+isting optimizers assume they can handle all situations equally
+well. This often results in very poor plans that work badly for
+specific cases. Delta employs a Mahalanobis distance-based
+detector to preemptively filter out incompatible queries where
+the mixed cost-based planner might perform poorly.
+III. P RELIMINARIES
+We first state the notation. Then, we show the design goals
+of the core components. Table I summarizes the frequently
+used notation throughout the paper.
+A. Notation
+When a user submits a query Q, the query optimizer seeks
+an optimal execution plan to minimize the execution latency,
+a proxy for the execution cost. We denote the latency of a
+query Q or a plan P as L(·). The challenge stems from the
+combinatorial explosion of possible plans. For n-table joins,
+the search space is more than (2(n−1))!
+(n−1)! . These plans yield the
+same result but differ in the join order and physical operations,
+leading to a varied execution cost.
+For example, a query joining four tables (A, B, C, D)
+may have multiple valid subplans for pairwise joins, e.g.
+(A ▷ ◁ B ) ▷ ◁(C ▷ ◁ D ) vs. A ▷ ◁ (B ▷ ◁ (C ▷ ◁ D )). Each
+subplan contributes differently to the efficiency of the complete
+plan. Suboptimal subplan choices can cascade into globally
+inefficient plans, making subplan selection criteria critical.
+To guide subplan selection, there exist two types of models.
+One is the cost model M(·), which estimates the execution
+cost C(s) or latency of a subplan s:
+M : s → C(s) or L(s)
+Another one is the value network V(·), which predicts the
+overall cost of the subplan s. The overall cost C(Q, s) (resp.
+overall latency L(Q, s)) refers to the minimal achievable cost
+(resp. latency) among all complete plans of the query Q that
+include the given subplan s. To this end, the value network
+takes in the query Q and the subplan s and outputs the overall
+cost (or latency) estimate:
+V : (Q, s) → C(Q, s) or L(Q, s)
+Specifically, if s is complete, its overall cost equals its cost.
+
+=== PAGE 4 ===
+TABLE II: Example of overall cost for subplan s = A ▷ ◁ B
+in query Q = A ▷ ◁ B ▷ ◁ C ▷ ◁ D
+Complete Plan P Plan Cost C(P ) Includes s = A ▷ ◁ B ?
+(A ▷ ◁ B) ▷ ◁(C ▷ ◁ D) 100 Yes
+((A ▷ ◁ B) ▷ ◁ C) ▷ ◁ D 120 Yes
+. . . . . . . . .
+(A ▷ ◁ B) ▷ ◁(D ▷ ◁ C) 90 Yes
+B ▷ ◁(A ▷ ◁(C ▷ ◁ D)) 80 No
+To clarify the overall cost, we break it down with an
+example and contrast it with subplan cost. Consider a query
+Q joining tables A, B, C, D, and suppose s = A ▷ ◁ B is a
+subplan (joining A and B first) with cost 20. Table II shows all
+the complete plans for query Q, their costs and whether they
+include subplan s. To compute the overall cost C(Q, s), we
+notice the plans that include s, with costs 100, 120, . . ., and 90.
+Suppose the minimal one is 90, the overall cost C(Q, s) is 90.
+We know the cost of the subplan s is 20 and the best possible
+plan including s has a cost of 90. If we select subplans, the
+overall cost is more useful than the cost of the subplan. But
+the overall cost is harder to estimate than the cost.
+Traditional one-stage optimizers, like PostgreSQL’s native
+optimizer N , iteratively build a plan by dynamic programming
+based on the cost estimate, producing a baseline plan P0.
+One-stage value-based optimizers often train the value net-
+work by reinforcement learning and build the plan by beam
+search based on the overall cost estimate.
+Determining the final plan from the vast plan space is
+difficult. Some planners divide the plan search process into
+two stages. In stage I, a candidate plan generator G produces
+k diverse candidate plans Sk
+G(Q) = {P1, . . . , Pk} from the
+plan search space. Plan quality is measured by the relative
+latency, R(Pi) = L(Pi)
+L(P0). R(Pi) < 1 indicates Pi outperforms
+P0. In stage II , a selector B aims to identify the optimal plan
+P ∗ = arg minP ∈S L(P ). If B is accurate, the selected plan ˆP
+matches P ∗. We can view the one-stage optimizer as a special
+case of the two-stage optimizer with k = 1.
+B. Problem Statement
+In the two-stage planner, the generated candidate plan set
+Sk
+G(Q) quality and the ranker B accuracy jointly determine
+the final plan quality. The quality of the candidate plan set is
+crucial, but it lacks its evaluation. In this paper, we evaluate
+the quality of the candidate plan set from three key metrics.
+• The best-case improvement R(P ∗) is defined as the relative
+latency of the best plan P ∗ from Sk
+G(Q), indicating the best
+achievable performance. The smaller the value, the stronger
+the optimization potential.
+• The worst-case risk R(P △) is the relative latency of the
+worst plan P △ from Sk
+G(Q), representing the maximum
+latency degradation caused by the worst candidate plan. If
+the value is more than 1, the larger it is, the higher the risk.
+• The ratio η(Sk
+G) of the high-quality plans that outperform
+P0 in Sk
+G(Q), quantifying the robustness of the candidate
+set. The greater the ratio, the higher the probability that the
+final plan will be better than P0.
+A candidate plan set can be considered higher-quality if it
+yields a smaller R(P ∗), a smaller R(P △), and a larger η(Sk
+G).
+If R(P ∗) is over 1.5, the latency of the best plan in the
+candidate set L(P ∗) will be significantly greater than that
+of the plan generated by the traditional optimizer like Post-
+greSQL. We call such queries the generator G-incompatible
+queries, short for incompatible queries. Conversely, queries
+satisfying R(P ∗) < 1.5 are termed generator G-compatible
+queries, short for compatible queries.
+Our goal. Given a DBMS, a dataset, and a training work-
+load, our goal is to design a new two-stage query optimiza-
+tion framework to determine a more efficient plan for the
+user query. It involves a set of potential problems to solve,
+including, (1) designing a plan generator to generate a high-
+quality candidate plan set; (2) learning a high-precision model
+for plan selection with minimal training cost; (3) designing a
+compatible query detector for the plan generator.
+IV. F RAMEWORK OVERVIEW
+In this section, to achieve the goals above, we analyze how
+the proposed framework Delta is designed and introduce its
+architecture and workflow.
+Design. As analyzed in Section II, the overall cost (i.e.,
+value) is more suitable than the cost to be the evaluation metric
+of subplans when generating plans from a vast plan search
+space. To this end, to generate a high-quality candidate plan
+set, we expand the value-based optimizers (VBOs), such as
+LOGER [13] or Balsa [12] to the value-based plan generator
+(VPG) to select the top- k plans ranked by the value network,
+rather than the top-1 plan.
+Compared to the VBOs, we find there is a more efficient
+plan in the top-k plans than the top-1 plan at a high probability
+due to the minor error of the value network. We will prove it
+in Section V-A through formulas that the quality of the top-k
+candidate plan set is not less than that of the top-1 candidate
+plan set. Additionally, through experimental observations on
+LOGER and Balsa, we find that the quality of the top-10 can-
+didate plan set is greater than that of the top-1 candidate plan
+set in 39.4% and 91.2% of the cases, respectively. Compared
+to the cost-based plan generators, which apply coarse-grained
+hints on traditional CBOs and cannot control the hint quality
+and the heuristic pruning during plan generation, the value-
+based plan generator can identify the top- k plans according
+to the estimates of the value network, providing a basis for
+assessing the quality of the plans.
+Due to the simpler prediction task, the cost model is easier
+to train than the value network. Therefore, to select the best
+plan from the candidate plan set, we employ a cost-based plan
+selector (CPS). The selector learns an execution cost model to
+predict the latency of each candidate plan and selects the one
+with minimal estimated latency, rather than using the value
+network.
+To reduce the training cost of the two learned models, we
+utilize the two-stage planner to relax the amount demand for
+training data of the value network via allocating the accuracy
+demand. Meanwhile, we reuse and augment the training data
+
+=== PAGE 5 ===
+User Query Q
+Result
+AcceptReject
+Compatible 
+Query Detector
+Value - based
+Plan Generator
+Candidate Plan Set
+Cost-based
+Plan Selector
+Mixed Cost-based Planner
+DBMSExecution EngineNative Query Optimizer
+Fig. 1: The architecture and workflow of Delta
+of the value network in stage I to train the cost model in stage
+II . Our data augmentation can yield several times diverse yet
+natural samples by extracting executed plans to supplement
+training data. For example, we increase the unique training
+samples by 8-9 × on the Join Order Benchmark [21] and 2.5-
+4× on TPC-DS [22] and Stack [7].
+The plan quality generated by VPG and selected by CPS is
+determined by the accuracy of the learned value network and
+the cost model. Therefore, to guarantee the plan quality and
+identify compatible queries, we analyze the error sources of
+the learned models. We can divide the error causes of learned
+models into two situations. 1) In distribution (i.e., the testing
+workloads have similar distributions with training workloads):
+errors come from insufficient training data, noisy training data,
+loss of features, and so on [23]. 2) Out of distribution (i.e.,
+the testing workloads are out of distribution with the training
+workloads): the current learned model without updating lacks
+the knowledge of the out-of-distribution data, which does not
+apply to such testing workloads.
+For queries in distribution, we employ a two-stage plan
+search strategy to reduce the accuracy requirements for the
+value network. Furthermore, in the second stage, we minimize
+cost model errors through two approaches: data augmentation
+to supplement training data and heteroscedastic regression loss
+to mitigate the impact of label noise. For the queries out of
+distribution, the predictions of the value network and cost
+model are quite unreliable. Therefore, such queries should be
+regarded as incompatible queries and we design the compatible
+query detector (CQD) based on the Mahalanobis distance
+between the user query and training data, which is a model-
+free method that does not produce an additional training cost.
+Architecture and workflow. As depicted in Figure 1, Delta
+consists of a mixed cost-based planner and a compatible query
+detector (CQD). The mixed cost-based planner consists of
+a value-based plan generator (VPG) and a cost-based plan
+selector (CPS) to determine more effective plans with the user
+queries. CQD aims to accept the queries compatible for the
+mixed cost-based planner and reject the incompatible queries.
+Delta takes the user query as input and outputs the selected
+plan for the query as the execution plan to the execution engine
+of DBMS. Specifically, CQD rejects the incompatible queries
+whose performance would severely degrade if optimized by
+the mixed cost-based planner. Rejected queries are then opti-
+mized by a conservative strategy, e.g., the naive optimizer of
+DBMS. The backend can utilize idle resources to update (i.e.,
+retrain) the models in the mixed cost-based planner to support
+more queries. The accepted queries would be optimized by the
+mixed cost-based planner. The planner splits the optimal plan
+search process into two stages. In the first stage, VPG serves
+as a coarse-grained filter to generate the top- k plans based
+on a value network as a candidate plan set from a vast plan
+search space. In the second stage, CPS determines the optimal
+plan from the candidates based on a learned cost model, which
+predicts the latency of each candidate plan.
+Next, we will elaborate on how the mixed cost-based
+planner generates efficient plans for compatible queries in
+detail in Section V and how CQD detects whether the user
+queries are compatible or not.
+V. M IXED COST-BASED PLANNER
+For an incoming compatible query, the mixed cost-based
+planner divides the query optimization process into two stages,
+which fully takes advantage of the value network and cost
+model to determine a more effective plan.
+A. Value-based Plan Generator
+In the first stage, we aim to design a plan generator to
+generate a high-quality candidate plan set from the vast plan
+search space for the input query.
+As described in Section II, we find the value network
+is more suitable than the cost model for guiding the plan
+generator to focus on promising regions in the vast plan search
+space, but not suitable for determining the final optimal plan.
+Furthermore, we find there is a more efficient plan in the top-
+k plans generated by VBOs than the top-1 plan at a high
+probability due to the estimation error of the value network.
+For example, Figure 2(a) shows the performance (i.e., the
+query plan execution time) of the state-of-the-art (SOTA)
+VBOs including LOGER [13] and Balsa [12], compared to
+the traditional optimizer PostgreSQL (PG for short). The query
+17f is from the JOB workload [21]. Li (resp. Bi) represents the
+i-th plan generated by LOGER (resp. Balsa), i = 1, 2, . . . ,10.
+Particularly, L1 (and B1) is the plan selected by LOGER (and
+Balsa). One can observe that there exists a better plan (i.e.,
+L8 and B6 respectively) of query 17f in the top-10 plans than
+the plan selected by VBOs (i.e., L1 and B1 respectively).
+To this end, we expand the existing VBOs to the VPG to
+generate top- k plans estimated by the value network as the
+candidate plans set, rather than the top-1 plan. The best-case
+improvement of the top- k plans is no lower than that of the
+top-1 plan, as claimed in the following lemma with proof.
+
+=== PAGE 6 ===
+/uni00000033/uni0000002a/uni0000002f/uni00000014/uni0000002f/uni00000015/uni0000002f/uni00000016/uni0000002f/uni00000017/uni0000002f/uni00000018/uni0000002f/uni00000019/uni0000002f/uni0000001a/uni0000002f/uni0000001b/uni0000002f/uni0000001c/uni0000002f/uni00000014/uni00000013/uni00000025/uni00000014/uni00000025/uni00000015/uni00000025/uni00000016/uni00000025/uni00000017/uni00000025/uni00000018/uni00000025/uni00000019/uni00000025/uni0000001a/uni00000025/uni0000001b/uni00000025/uni0000001c/uni00000025/uni00000014/uni00000013
+/uni00000027/uni0000004c/uni00000049/uni00000049/uni00000048/uni00000055/uni00000048/uni00000051/uni00000057/uni00000003/uni0000004a/uni00000048/uni00000051/uni00000048/uni00000055/uni00000044/uni00000057/uni00000048/uni00000047/uni00000003/uni00000053/uni0000004f/uni00000044/uni00000051
+/uni00000013
+/uni00000015/uni00000013
+/uni00000017/uni00000013
+/uni00000019/uni00000013/uni0000002f/uni00000044/uni00000057/uni00000048/uni00000051/uni00000046/uni0000005c/uni00000003/uni0000000b/uni00000056/uni0000000c
+/uni00000014/uni0000001b/uni00000011/uni00000018/uni00000013
+/uni00000017/uni0000001a/uni00000011/uni0000001a/uni0000001a
+/uni00000014/uni00000015/uni00000011/uni00000017/uni00000016/uni00000014/uni00000016/uni00000011/uni0000001b/uni00000014
+/uni00000018/uni00000011/uni00000015/uni00000018
+(a) Plan performance of query 17f in JOB from PG, LOGER, and Balsa
+/uni00000014/uni00000015/uni00000016/uni00000017/uni00000018/uni00000019/uni0000001a/uni0000001b/uni0000001c/uni00000014/uni00000013
+/uni00000037/uni0000004b/uni00000048/uni00000003/uni00000053/uni00000052/uni00000056/uni0000004c/uni00000057/uni0000004c/uni00000052/uni00000051/uni00000003/uni00000052/uni00000049/uni00000003/uni00000045/uni00000048/uni00000056/uni00000057/uni00000003/uni00000053/uni0000004f/uni00000044/uni00000051/uni00000003/uni0000000b/uni0000002f/uni00000032/uni0000002a/uni00000028/uni00000035/uni0000000c
+/uni00000013
+/uni00000014/uni00000018
+/uni00000016/uni00000013/uni00000037/uni0000004b/uni00000048/uni00000003/uni00000049/uni00000055/uni00000048/uni00000054/uni00000058/uni00000048/uni00000051/uni00000046/uni0000005c
+/uni0000002d/uni00000032/uni00000025
+/uni00000036/uni00000037/uni00000024/uni00000026/uni0000002e
+/uni00000037/uni00000033/uni00000026/uni00000010/uni00000027/uni00000036
+/uni00000014/uni00000015/uni00000016/uni00000017/uni00000018/uni00000019/uni0000001a/uni0000001b/uni0000001c/uni00000014/uni00000013
+/uni00000037/uni0000004b/uni00000048/uni00000003/uni00000053/uni00000052/uni00000056/uni0000004c/uni00000057/uni0000004c/uni00000052/uni00000051/uni00000003/uni00000052/uni00000049/uni00000003/uni00000045/uni00000048/uni00000056/uni00000057/uni00000003/uni00000053/uni0000004f/uni00000044/uni00000051/uni00000003/uni0000000b/uni00000025/uni00000044/uni0000004f/uni00000056/uni00000044/uni0000000c
+/uni00000013
+/uni00000017
+/uni0000001b/uni00000037/uni0000004b/uni00000048/uni00000003/uni00000049/uni00000055/uni00000048/uni00000054/uni00000058/uni00000048/uni00000051/uni00000046/uni0000005c
+/uni0000002d/uni00000032/uni00000025/uni00000037/uni00000033/uni00000026/uni00000010/uni00000027/uni00000036 (b) Frequency of best plan positions within the top-10 plans generated by VBOs.
+Fig. 2: The example and statistics of top-1 VS top- k plans generated by VBOs
+Lemma 1. Let Sk
+V = {P1, P2, . . . , Pk} be the set of top-
+k plans generated by the value-based plan generator, and
+S1
+V = {P1} be the top-1 plan. For any k ≥ 1, the best-case
+improvement satisfies:
+R(P ∗) ≤ R(P1),
+where P ∗ = arg minP ∈Sk
+V
+R(P ), and P1 is the best plan in
+S1
+V.
+Proof. By definition, the best-case improvement of Sk
+V, de-
+noted as R(P ∗), can be represented as:
+R(P ∗) = min
+P ∈Sk
+V
+R(P ) = min
+
+R(P1), R(P2), . . . ,R(Pk)
+	
+.
+Since P1 is contained in Sk
+V, it directly follows that:
+min
+
+R(P1), R(P2), . . . ,R(Pk)
+	
+≤ R(P1).
+Thus, R(P ∗) ≤ R(P1).
+Furthermore, we report the statistical performance of plan
+quality (across three query workloads with 64 queries) gener-
+ated by LOGER and Balsa in Figure 2(b). It counts the plan
+position (from top-1 to top-10) on which it is the most efficient.
+It shows the position (from top-1 to top-10) where the most
+efficient plan appears. The ratio of the top-1 plans generated
+by LOGER being the best ones in the top-10 plans is 40.6%,
+and that of Balsa is only 8.8%.
+To this end, we utilize the value-based plan generator to
+generate the top- k plans as the candidate plans set. Compared
+to the cost-based plan generators, which apply coarse-grained
+hints on traditional CBOs and cannot control the hint quality
+and the heuristic pruning during plan generation, the value-
+based plan generator can identify the top- k plans according
+to the estimates of the value network, providing a basis for
+assessing the quality of the plans. To this end, the quality of
+plans generated by VPG is higher than CBOs, and we will
+demonstrate it in Section VII-C.
+Top-k plans generation . Given the query Q, the plan
+generator can generate the complete plan in a bottom-up way
+by following steps. First, the generator needs to start from an
+initial subplan s0, which means an empty plan with no operator
+is specified. Then, it chooses a new operation implemented on
+the current subplan si. The operation can be a scan operator
+implemented on a table or a join operator that joins two
+joinable subplans. Once the operator is determined, the current
+Algorithm 1: Top-k Plans Generation by Beam Search
+Input: a user query Q, a trained value network V , a beam
+width b, and the number of generated plans k
+Output: the generated top- k plans set S = {P1, P2, . . . , Pk}
+1: S ← ∅, s0 ← ∅, B ← {⟨ s0, 0⟩} /* initialization
+*/
+2: while |S| < k and |B| ̸ = 0 do
+3: ⟨si, li⟩ ← remove the top element from B
+4: if si is a complete plan then
+5: add si to S
+6: else
+7: Sj ← explore all the next states of si
+8: for each sj ∈ Sj do
+9: lj ← V (Q, sj) /* compute overall
+latency */
+10: insert ⟨sj, lj⟩ to B in ascending order of overall
+latency
+11: if |B| > b then
+12: leave the top b elements and remove others from
+B
+13: return S
+subplan si is transformed into the next subplan sj and then
+the generator will choose the next operator. Finally, the plan
+is completed when the all tables in Q are joined.
+Given the trained value network V , VPG generates the top-
+k plans in a bottom-up way through beam search. Beam search
+algorithm explores the promising regions of the plan search
+space in a limited set, according to the rank of promising
+values of subplans, which is estimated by the value network.
+Algorithm 1 describes how beam search uses the trained
+value network V to search the top-k optimal plans for the user
+query Q in the vast plan search space. The algorithm maintains
+a set with the max size b (i.e., beam width in beam search). It
+stores the promising subplans sorted by the subplan’s overall
+latency (estimated by the value network V ) in ascending order.
+It gets subplans sequentially from the set and explores them
+in a bottom-up way, until generating k complete plans.
+We first empty a set S to store the top- k complete plans to
+be returned, an initial subplan s0 with its overall latency 0,
+and a set B to store the promising subplans with the overall
+latency values at the beginning (line 1). We then explore the
+subplans sequentially, until generating k complete plans (lines
+2-12). We get and remove the best subplan si with minimal
+overall latency li from the top of B (line 3). If the subplan si is
+complete, we add it to the plans set S (lines 4-5). Otherwise,
+
+=== PAGE 7 ===
+we continue exploring from the subplan si and updating the
+set B (lines 6-12). We explore all the next new subplans of
+si by adding an operation on si and the new subplans form
+a set Sj. Then, we compute the overall latency of each new
+subplan based on the value network and add them into the set
+B in the ascending order of overall latency (lines 7-10). B is
+sorted by the overall latency, which determines the exploring
+order. If the size of B is more than b, the excessive subplans
+with high overall latency values will be removed (lines 11-12).
+The process repeats until k complete query plans are obtained.
+Finally, it returns the generated top- k plans.
+The training of the value network . Delta builds on the
+value-based optimizer (VBO), LOGER [13] or Balsa [12].
+Next, we present an overview of the universal training process
+of the value network in the VBO.
+Obtaining the ground truth of the overall latency of the given
+subplan in the value network is more challenging than the
+latency of that in the cost model. The reason is obtaining the
+overall latency requires traversing the plan search space to
+get the actual execution costs of plans that include the given
+subplan, which is impractical. To alleviate the problem, the
+overall latency can be approximated as the best latency seen so
+far of a plan that includes the given subplan by reinforcement
+learning (RL), instead of the global optimal one.
+The training process is iteratively observing the execution
+of diverse plans for each query to obtain feedback and then
+utilizing it to update the value network. As the loop iterates,
+the generated plans are more efficient, the approximation of
+the overall latency gets better, and the value network improves.
+Specifically, for each iteration, for each query of the training
+queries Qtrain, we explore different plans and execute them
+to obtain their latency values. The executed plans are stored in
+a plan pool. The training of the value network would generate
+and execute different plans for each query. Each executed plan
+P is recorded in the plan pool in the format (Q, P, L), where
+Q and L correspond to the query and latency, respectively.
+The executed plan dataset will be reused in the training of the
+learned cost model in the second stage. For each (Q, P, L),
+we generate subplans of the plan P . For each subplan s, we
+can get its overall latency L and store ((Q, s), L) in a hash
+lookup table. If (Q, s) exists in the hash table, and the L is
+lower than the L′ pre-existing in the table, we can update the
+overall latency with the better value L. The value network can
+be updated with the new data.
+B. Cost-based Plan Selector
+In the first stage, VPG narrows down the range of optimal
+plan selection from the vast plan search space to k candidate
+plans based on the value network and beam search. To this end,
+in the second stage, we design a cost-based plan selector CPS
+to train a high-precision cost model M with minimal extra
+training cost to guide the planner in determining the optimal
+plan from the candidates.
+CPS adopts the classical cost model M, which predicts the
+latency of a plan to determine the plan with minimal estimated
+value as the optimal plan. Figure 3 shows the training of the
+Data Augmentation
+Plan Pool
+1.08
+1.26
+0.42 Cost Model M
+Back 
+Propagation /uni2112σ 2 
+Heteroscedastic 
+Regression Loss Function
+Trained Cost Model M*
+y y 
+x
+Fig. 3: The training of the cost model M
+cost model M. Since the system resource consumption of
+collecting training data is non-trivial, we reuse the executed
+plans in the plan pool generated by the training of the value
+network in stage I to train a high-precision cost model M.
+Data reusing ensures that the cost model M does not require
+additional training data and thus greatly saves the training
+cost. Based on the naive prediction task, we can utilize data
+augmentation to yield several times diverse yet natural samples
+by extracting executed plans to supplement training data. Then,
+to reduce the influence caused by label noise, we adopt a
+heteroscedastic regression loss function [24] to train the model,
+which models the noise of each sample and thus improves the
+robustness of estimates.
+It is worth noting that there are two alternative prediction
+tasks for optimal plan selection. The first uses a value network
+to predict the overall cost of a given query and plan [11]–
+[13]. As discussed before, the value network is not suitable
+for determining the optimal plan due to lower accuracy. The
+second adopts pair-wise learning-to-rank models [8], [10],
+which predicts the ranking of two plans sorted by their
+latency. The learning-to-rank model predicts the real object
+the stage cares about and the pair-wise ranking is essentially
+the classification task, which is easier to fit than the regression
+task. However, their training remains inefficient, as it cannot
+fully leverage the executed plans to enhance accuracy.
+Data augmentation . The high training cost of a learned
+model in query optimization comes from data collection and
+model training. Data collection requires hundreds or thousands
+of plans to execute, which greatly consumes system resources.
+Many previous studies [7]–[9] suggest that the cost model
+can learn from the executed plans of historical user queries.
+Therefore, there’s no need to consider the overhead of training
+data collection. However, it is impractical. The core issue lies
+in the inherent instability of system environments during query
+execution. Fluctuations in system states cause the execution
+latency of a plan to reflect its true execution cost poorly. This
+inconsistency introduces large noise into the training data,
+ultimately undermining the model’s accuracy and reliability.
+For instance, a simple query might exhibit abnormally long
+runtime under a heavy system load, leading the model to mis-
+interpret its intrinsic efficiency. Such discrepancies between
+observed latency and actual execution cost make historical
+execution data unreliable for training robust cost models.
+The runtime of distinct plans could be used as a measure of
+their execution cost only when these plans are executed under
+
+=== PAGE 8 ===
+a hypothesized stable state of the system environment, such as
+the consistent initial disk cache state and no other resource-
+intensive activities running in the system [5]. It makes training
+data collection expensive.
+To this end, we make full use of the executed plans to
+train the model by augmenting training data. DBMS not only
+records the latency of each executed plan but also records
+the execution time of each subplan. For a sample (Q, P, L)
+in the executed plan pool collected in the first stage, we
+can extract subplans and their direct latency values from the
+executed plan P . Each subplan s with its execution time
+L(s) can constitute a unique training sample (s, L(s)). This
+generates many natural and diverse samples, greatly enriching
+the quantity and diversity of the training data, and improving
+the accuracy of the model at a negligible cost. As a result,
+we utilize such a data augmentation strategy to increase the
+unique training samples by 8-9× on the Join Order Benchmark
+(JOB) [21] and 2.5-4 × on TPC-DS [22] and Stack [7].
+Loss function . The latency of the plan, as the label of the
+cost model, inevitably has aleatoric noise due to the minor
+disturbance, even though we maintain the consistent initial
+disk cache state, and no other processes interference. To reduce
+the noise, one naive method is to run the same plan multiple
+times and take the average value as the label. However, this
+method consumes too many system resources. Thus, we adopt
+the heteroscedastic regression loss function [24] to reduce the
+influence caused by the aleatoric noise.
+Different from classical regression, which assumes all of the
+modeling errors have the same variance, i.e., the variance is
+considered to be a constant and will be ignored, heteroscedas-
+tic regression assumes that the variance values of errors are
+different and related to the data points. The aleatoric noise of
+training data can be considered to be heteroscedasticity [25].
+Therefore, our cost model M predicts the latency L(P ) of
+the given plan P and the noise ϵ(P ). It can be formulated as
+M : P → (L(P ), ϵ(P ))
+We denote the number of training samples as N, the latency
+of i-th sample as yi, and the corresponding estimated latency,
+the estimated noise of the model as ˆyi, σ2
+i , respectively. The
+heteroscedastic regression loss function L is calculated as
+L = 1
+N
+NX
+i=1
+(
+(yi − ˆyi)2
+2σ2
+i
++ ln σ2
+i
+2
+)
+The object of the cost model M training is to minimize
+the heteroscedastic regression loss function L . It makes the
+prediction more robust. Intuitively, the first term of L , σ2
+i
+represents the data sample noise. That is, the sample with
+larger noise indicates lower quality, thus we reduce the weight
+coefficient of such samples by 1/σ2
+i . This makes the model M
+pay more attention to fitting samples with smaller noise and
+reduce the impact of samples with larger noise. The second
+term is a penalty term that prevents the model from constantly
+increasing σ2
+i to reduce the loss.
+Model details . We combine the ways adopted by Bao [7]
+and Lero [8] to featurize plan trees to vector trees by encoding
+each node in the plan trees. Each node in a plan tree is
+featurized into a vector containing: (i) a one-hot encoding of
+the operator, (ii) the min-max normalized cardinality and cost
+estimates, and (iii) the one-hot encoding sum of the relations
+involved in the subplan rooted at the node. The featurized
+query plan tree is passed through three blocks consisting of
+tree convolution [11], [26], the layer normalization [27], and
+ReLU activation layer [28]. Dynamic pooling [26] replaces the
+activation layer of the last block to flatten the tree structure into
+a single vector. The single vector is passed through two blocks
+of two fully connected layers with the same structure but
+different weights to predict the latency and noise, respectively.
+VI. C OMPATIBLE QUERY DETECTOR
+To ensure robust optimization, Delta employs a Compatible
+Query Detector (CQD) to identify queries where the mixed
+cost-based planner might underperform.
+Recall the definition of compatible queries in Section III-B
+and the error sources analysis of the mixed cost-based plan-
+ner in Section IV. A query is deemed compatible with the
+mixed cost-based planner by CQD if its feature distribution
+aligns with the training data distribution. This ensures the
+planner’s value network and cost model can reliably predict
+execution plan quality. Conversely, out-of-distribution (OOD)
+queries, those deviating from the training data, cause degraded
+model predictions, leading to suboptimal plans. CQD rejects
+such incompatible cases to safeguard optimization robustness.
+It intercepts OOD queries by computing the Mahalanobis
+distance [29], [30] between query features and the training
+distribution. Unlike Euclidean distance, the Mahalanobis dis-
+tance is unitless, scale-invariant, and accounts for variable
+correlations, making it widely adopted for OOD [31] and
+outlier detection [32].
+The detection process begins with generating a representa-
+tive baseline plan. For an input query Q, the native optimizer
+produces an execution plan P0, balancing efficiency and rep-
+resentativeness. This design aligns with the value network’s
+initial training on plans generated by the native optimizer.
+Next, the query-plan pair (Q, P0) is encoded into a high-
+dimensional feature vector ⃗ xusing the same method as the
+value network. Each training sample (Q′, P ′) from the training
+workload is similarly encoded and all of them are combined
+into a matrix X. The Mahalanobis distance between a test
+sample ⃗ xand the training distribution X is calculated as:
+DM(⃗ x,X) =
+q
+(⃗ x− ⃗ µ)TΣ−1(⃗ x− ⃗ µ),
+where ⃗ µis the mean vector and Σ the covariance matrix of X.
+A larger distance indicates lower similarity. A threshold-based
+indicator function I determines acceptance or rejection:
+I →
+(
+1 (Accept) if DM(⃗ x,X) ⩽ γ,
+0 (Reject) if DM(⃗ x,X) > γ.
+Queries exceeding γ are routed to the native optimizer.
+The threshold γ controls the trade-off between reliability and
+optimization coverage. A smaller γ enforces a conservative
+
+=== PAGE 9 ===
+strategy, rejecting more queries and routing them to the native
+optimizer. This ensures robustness but limits potential perfor-
+mance gains from the mixed cost-based optimizer. A larger
+γ relaxes acceptance criteria, allowing the learned optimizer
+to handle a broader range of queries. This increases the risk
+of including out-of-distribution queries, which may compro-
+mise reliability. This trade-off enables the system to balance
+optimization and stability according to practical requirements.
+By filtering incompatible queries, CQD ensures the planner
+operates only on in-distribution data where learned models are
+reliable, balancing plan quality and robustness.
+VII. E XPERIMENTAL EVALUATION
+In this section, we conduct experiments to answer the
+following questions. The experimental setup is described in
+Section VII-A.
+• How much can Delta enhance final plan quality and training
+efficiency of query optimizers? (Section VII-B)
+• Does the value-based planner generate higher-quality can-
+didate plan set than cost-based ones? (Section VII-C)
+• Does the cost model outperform the value network in select-
+ing the optimal plan from candidate plans? (Section VII-C)
+• Can CQD correctly identify the most compatible queries
+without negative effects? (Section VII-D)
+• What are the benefits of Delta’s different design choices?
+(Section VII-E)
+• How do the parameters (e.g., k, γ) impact the overall
+performance. (Section VII-E)
+A. Experiment Setup
+Workloads. We conduct experiments on three workloads
+from three widely used benchmarks.
+• Join Order Benchmark (JOB): This is a query workload
+designed by Leis [21], consisting of 113 queries generated
+from 33 query templates. The dataset is based on the real-
+world Internet Movie Database (IMDB), sized at 3.6GB and
+containing 21 tables. For the query split, we follow Balsa [12],
+randomly selecting 19 queries for testing and using the remain-
+ing 94 for training. This dataset is used to evaluate optimizer
+performance on real-world data.
+• TPC-DS: This benchmark includes both a database and
+a query generator [22]. We set the scale factor to 10 to
+generate approximately 10GB of data, including 26 tables. For
+the training-test split of the queries, we follow LOGER [13],
+selecting 5 templates as the test set and the other 15 templates
+as the training set. Three queries are generated for each tem-
+plate to form the test and training workloads. This workload
+evaluates optimizer performance on generated datasets.
+• Stack: This large and real dataset is designed by Bao [7].
+It contains over 100GB of data from StackExchange websites
+(e.g., StackOverflow.com) and includes 11 tables. Some tables
+have composite primary keys. Similar to LOGER [13], we
+use 6 query templates with 5 queries each for testing, and 8
+templates with 10 queries each for training. This workload is
+used to evaluate query optimizers on large-scale datasets.
+Baselines. We choose the open-source DBMS Post-
+greSQL [15] as the baseline for the traditional CBO. Addition-
+ally, we use three state-of-the-art (SOTA) two-stage learned
+CBOs: Bao [7], HybridQO [9], and Lero [8]. For VBOs,
+we choose LOGER [13] and Balsa [12]. All optimizers are
+implemented following the provided source codes. For each
+VBO, we deploy the Delta architecture on top, referred to
+as LOGER-∆ and Balsa-∆, to assess the adaptability of the
+Delta architecture to different underlying VBO structures.
+Metrics. We utilize three primary metrics to evaluate the
+performance from various perspectives.
+• Workload relative latency (WRL) evaluates the perfor-
+mance of a learned query optimizer against PostgreSQL at
+the workload level. Let W = {Q1, Q2, . . . , Qn} denote a
+workload of n queries. For each query Qi, let Pi be the plan
+selected by the learned optimizer and P0i be the plan gen-
+erated by PostgreSQL’s native optimizer N . WRL computes
+the workload total latency ratio of the learned optimizer to
+PostgreSQL:
+W RL =
+Pn
+i=1 L(Pi)Pn
+i=1 L(P0i)
+Moreover, 1/WRL represents the Speedup, quantifying how
+much faster the learned optimizer executes the workload.
+• Geometric mean relevant latency (GMRL) [10], [13],
+[33], [34] reflects the average query-level execution perfor-
+mance relative to PostgreSQL. It is defined as the geometric
+mean of the relative latency values across the workload:
+GM RL =
+ nY
+i=1
+R(Pi)
+! 1
+n
+=
+ nY
+i=1
+L(Pi)
+L(P0i)
+! 1
+n
+• Training time Tt measures the time required for each
+learned optimizer to reach a stable state, reflecting its training
+cost. It includes both the model training time and the time
+for collecting training data. The latter usually dominates, as it
+involves executing thousands of plans sequentially in a rela-
+tively stable system environment (e.g., quasi-consistent initial
+cache state, no other running resource-intensive processes).
+Parameters and environments . For baselines, we use the
+default setting in their original papers. For Delta, we set the
+number of candidate plans k to 10, beam width b to 20, and
+threshold γ to 500. Experiments are conducted on an Intel
+Core 2.80GHz server with 376GB RAM and three NVIDIA
+RTX 2080 Ti GPUs for model training and inference, running
+Ubuntu 18.04. PostgreSQL 12.5 is used, configured with 96GB
+shared buffers, 192GB cache, and GEQO disabled. We apply
+the pg hint plan [35] plugin to specify the plan generated by
+Delta. To ensure a relatively consistent initial disk cache state
+for a fair comparison, we preload data using pgfincore [36]
+and pg prewarm [37] for the Linux and PostgreSQL caches
+respectively before training and testing. Each experiment is
+repeated three times, and the average result is reported to
+mitigate randomness.
+
+=== PAGE 10 ===
+TABLE III: Performance comparison on three test workloads
+Optimizer JOB TPC-DS Stack
+WRL GMRL Tt WRL GMRL Tt WRL GMRL Tt
+PostgreSQL 1.00 1.00 — 1.00 1.00 — 1.00 1.00 —
+Bao 0.75 1.23 0.43 1.05 1.04 0.22 0.86 0.97 0.39
+Lero 1.08 1.17 1.34 0.62 0.64 1.07 0.48 0.93 15.34
+HybridQO 0.99 0.99 0.48 0.99 0.99 0.11 0.97 0.98 0.46
+LOGER 0.32 0.60 4.72 0.59 0.48 3.09 0.68 1.02 8.83
+Balsa 0.62 1.34 11.37 3.16 1.25 10.00 TLE TLE —
+LOGER-∆ 0.28 0.56 1.88 0.45 0.40 1.06 0.45 0.74 6.10
+Balsa-∆ 0.40 0.74 10.61 0.75 0.63 9.33 TLE TLE —
+B. Overall Performance
+To assess Delta’s overall performance, we test each opti-
+mizer extensively on the three workloads. All learned opti-
+mizers are trained on the training set until convergence or a
+48-hour limit, then evaluated on an unseen test set to measure
+their actual performance.
+Workload latency analysis. Table III reports WRL, GMRL,
+and Tt of Delta and other optimizers on three test workloads.
+Optimal results are in bold. TLE means that the optimizer
+cannot finish training within 48 hours. Balsa fails to handle
+composite key joins in Stack, leading to poor plans and
+excessive training time.
+As shown in this table, with adequate training, Delta
+outperforms all baselines in latency across all workloads.
+Compared to PostgreSQL, LOGER -∆ achieves speedups of
+3.57×, 2.22 ×, and 2.22 × on JOB, TPC-DS, and Stack,
+while Balsa -∆ yields 2.50 × and 1.33 × on JOB and TPC-
+DS. Against two-stage learned CBOs (Bao, Lero, HybridQO),
+Delta also improves plan latency. Specifically, on the JOB,
+TPC-DS, and Stack, LOGER -∆ delivers average speedups of
+3.36×, 1.97 ×, and 1.71 ×, while Balsa -∆ reaches 2.35 × and
+1.18× on JOB and TPC-DS. When compared to VBOs, Delta
+also demonstrates significant performance gains. LOGER -∆,
+relative to LOGER, achieves speedups of 1.14 ×, 1.31 ×, and
+1.51× on JOB, TPC-DS, and Stack, and Balsa -∆ outperforms
+Balsa by 1.55 × and 4.21× on JOB and TPC-DS.
+These improvements stem from Delta’s innovative mixed
+cost-based planner. It combines a value network for exploring
+high-quality candidate plans and a cost model for accurately
+selecting the optimal one. This synergy enhances the quality of
+the final plan and leads to a significant improvement in query
+execution speed. Furthermore, CQD helps filter out incompat-
+ible queries, preventing significant performance regressions.
+Training cost analysis. Table III shows that applying the
+Delta framework significantly reduces training costs for all
+VBOs across the three benchmarks. Compared to LOGER,
+LOGER-∆ converges using only 39.8%, 34.3%, and 69.0%
+of the training time on JOB, TPC-DS, and Stack bench-
+marks, respectively. Similarly, Balsa -∆ requires only 93.3%
+and 96.6% of Balsa’s training time on the JOB and TPC-DS
+benchmarks. In comparison to learned CBOs, although Delta
+may require more training time, the quality of the generated
+plans is substantially superior on both WRL and GMRL.
+This improvement is primarily due to Delta’s two-stage
+framework. In stage I, Delta transfers a part of the accuracy
+requirements from the value network to the cost model in stage
+II , which is easier to train. Furthermore, Delta reuses and
+enhances the training data in stage I for training the model in
+stage II , which significantly reduces the training cost.
+Training curve analysis. To better analyze the performance
+of Delta, Figure 4 shows the training curves of LOGER,
+LOGER-∆, Balsa, and Balsa -∆ in three workloads, along
+with the training data required for convergence. Shaded areas
+indicate the range between minimum and maximum values
+over three runs and the solid lines show the median. The curve
+tracks log-scale WRL over training epochs, with the gray line
+marking PostgreSQL’s performance.
+One can observe that Delta consistently achieves faster
+convergence and better WRL across all workloads and two
+underlying VBOs. Notably, in early training, LOGER and
+Balsa perform poorly, while Delta already achieves a level
+of performance comparable to PostgreSQL. LOGER -∆ takes
+only 40%, 34%, and 69% of the convergence time of LOGER
+on JOB, TPC-DS, and Stack, respectively. Balsa-∆ converges
+with 93% and 97% time of Balsa on JOB, and TPC-DS. This
+performance improvement is particularly pronounced in the
+large-scale dataset Stack. After sufficient training, LOGER -∆
+reaches a WRL 0.2 lower than LOGER.
+Additionally, Delta exhibits more stable and reliable train-
+ing performance, showing lower variability compared to
+LOGER and Balsa, particularly on TPC-DS and Stack. This
+is mainly due to the mixed cost-based planner and CQD
+effectively enhancing the robustness of VBOs.
+Figure 4(f) shows the number of executed plans during train-
+ing until convergence. The transparent portions of LOGER -∆
+and Balsa-∆ indicate additional plans generated via data aug-
+mentation. As shown, Delta reduces the number of executed
+plans required by LOGER and Balsa, greatly improving train-
+ing efficiency. Moreover, through data augmentation, Delta
+expands samples, providing sufficient training data for the
+model in stage II and significantly minimizing cost model
+training expenses.
+C. Value or Cost : Horses for Courses
+To validate the value network and cost model for plan
+search and optimal plan selection in Delta’s two-stage design,
+two corresponding experiments are conducted.
+Which one can generate better sets of candidate plans?
+To evaluate the effectiveness of different plan generators in
+exploring diverse search spaces and producing high-quality
+candidate plan sets, we conduct an experimental study. Four
+state-of-the-art planners are compared: the cost-based ones
+Bao and Lero, and the value-based ones LOGER and Balsa.
+All planners are trained on three workload training splits,
+though Balsa was excluded from the Stack workload due to
+incompatibility. In testing, each planner generates the candi-
+date plan set for each query from the test workloads and their
+relative latency values to PostgreSQL are recorded. Figure 5
+summarizes the results through a boxplot of normalized rela-
+tive latency values of candidate plans. The yellow line in each
+box marks the median latency of all plans produced by each
+planner, reflecting its central performance tendency.
+
+=== PAGE 11 ===
+/uni00000013/uni00000018/uni00000013/uni00000014/uni00000013/uni00000013/uni00000014/uni00000018/uni00000013
+/uni00000028/uni00000053/uni00000052/uni00000046/uni0000004b
+/uni00000013/uni00000011/uni00000018
+/uni00000014
+/uni00000018
+/uni00000014/uni00000013/uni0000003a/uni00000035/uni0000002f/uni00000003/uni0000003e/uni0000004f/uni00000052/uni0000004a/uni00000040
+/uni0000002f/uni00000032/uni0000002a/uni00000028/uni00000035/uni0000002f/uni00000032/uni0000002a/uni00000028/uni00000035/uni00000010
+(a) LOGER and LOGER -∆ on JOB
+/uni00000013/uni00000018/uni00000013/uni00000014/uni00000013/uni00000013/uni00000014/uni00000018/uni00000013
+/uni00000028/uni00000053/uni00000052/uni00000046/uni0000004b
+/uni00000013/uni00000011/uni00000018
+/uni00000014
+/uni00000014/uni00000011/uni00000018/uni0000003a/uni00000035/uni0000002f/uni00000003/uni0000003e/uni0000004f/uni00000052/uni0000004a/uni00000040
+/uni0000002f/uni00000032/uni0000002a/uni00000028/uni00000035/uni0000002f/uni00000032/uni0000002a/uni00000028/uni00000035/uni00000010
+ (b) LOGER and LOGER -∆ on TPC-DS
+/uni00000013/uni00000018/uni00000013/uni00000014/uni00000013/uni00000013/uni00000014/uni00000018/uni00000013
+/uni00000028/uni00000053/uni00000052/uni00000046/uni0000004b
+/uni00000013/uni00000011/uni00000018
+/uni00000014
+/uni00000014/uni00000013
+/uni00000017/uni00000013/uni0000003a/uni00000035/uni0000002f/uni00000003/uni0000003e/uni0000004f/uni00000052/uni0000004a/uni00000040
+/uni0000002f/uni00000032/uni0000002a/uni00000028/uni00000035/uni0000002f/uni00000032/uni0000002a/uni00000028/uni00000035/uni00000010
+ (c) LOGER and LOGER -∆ on Stack
+/uni00000013/uni00000018/uni00000013/uni00000014/uni00000013/uni00000013/uni00000014/uni00000018/uni00000013
+/uni00000025/uni00000050/uni0000004f/uni00000043/uni00000048
+/uni00000013/uni00000011/uni00000018
+/uni00000014
+/uni00000018
+/uni00000014/uni00000018/uni00000037/uni00000032/uni0000002c/uni00000060/uni0000003b/uni0000004c/uni0000004f/uni00000047/uni0000003d
+/uni00000025/uni00000044/uni0000004f/uni00000056/uni00000044/uni00000025/uni00000044/uni0000004f/uni00000056/uni00000044/uni00000010
+(d) Balsa and Balsa -∆ on JOB
+/uni00000013/uni00000018/uni00000013/uni00000014/uni00000013/uni00000013/uni00000014/uni00000018/uni00000013
+/uni00000028/uni00000053/uni00000052/uni00000046/uni0000004b
+/uni00000013/uni00000011/uni00000018
+/uni00000014
+/uni00000014/uni00000013
+/uni00000018/uni00000013/uni0000003a/uni00000035/uni0000002f/uni00000003/uni0000003e/uni0000004f/uni00000052/uni0000004a/uni00000040
+/uni00000025/uni00000044/uni0000004f/uni00000056/uni00000044/uni00000025/uni00000044/uni0000004f/uni00000056/uni00000044/uni00000010
+ (e) Balsa and Balsa -∆ on TPC-DS
+/uni0000002d/uni00000032/uni00000025/uni00000037/uni00000033/uni00000026/uni00000010/uni00000027/uni00000036/uni00000036/uni00000057/uni00000044/uni00000046/uni0000004e
+/uni0000003a/uni00000052/uni00000055/uni0000004e/uni0000004f/uni00000052/uni00000044/uni00000047
+102
+104
+106
+108
+/uni00000037/uni00000055/uni00000044/uni0000004c/uni00000051/uni0000004c/uni00000051/uni0000004a/uni00000003/uni00000033/uni0000004f/uni00000044/uni00000051/uni00000056/uni0000003e/uni0000004f/uni00000052/uni0000004a/uni00000040/uni00000003/uni00000003/uni00000003/uni00000003/uni00000003/uni00000003
+/uni00000037/uni0000002f/uni00000028
+/uni0000002f/uni00000032/uni0000002a/uni00000028/uni00000035
+/uni00000025/uni00000044/uni0000004f/uni00000056/uni00000044
+/uni0000002f/uni00000032/uni0000002a/uni00000028/uni00000035/uni00000010
+/uni00000025/uni00000044/uni0000004f/uni00000056/uni00000044/uni00000010
+ (f) Training plan size on different workloads
+Fig. 4: Training curves of Delta and value-based optimizers and their training plan sizes needed when convergence
+/uni00000025/uni00000044/uni00000052/uni0000002f/uni00000048/uni00000055/uni00000052/uni0000002f/uni00000032/uni0000002a/uni00000028/uni00000035/uni00000025/uni00000044/uni0000004f/uni00000056/uni00000044
+/uni00000013/uni00000011/uni00000014
+/uni00000014
+/uni00000014/uni00000013
+/uni00000014/uni00000013/uni00000013/uni00000035/uni00000048/uni0000004f/uni00000044/uni00000057/uni0000004c/uni00000059/uni00000048/uni00000003/uni0000002f/uni00000044/uni00000057/uni00000048/uni00000051/uni00000046/uni0000005c/uni00000003/uni0000003e/uni0000004f/uni00000052/uni0000004a/uni00000040/uni00000003/uni00000003/uni00000003
+(a) JOB
+/uni00000025/uni00000044/uni00000052/uni0000002f/uni00000048/uni00000055/uni00000052/uni0000002f/uni00000032/uni0000002a/uni00000028/uni00000035/uni00000025/uni00000044/uni0000004f/uni00000056/uni00000044
+/uni00000013/uni00000011/uni00000014
+/uni00000014
+/uni00000014/uni00000013
+/uni00000014/uni00000013/uni00000013/uni00000035/uni00000048/uni0000004f/uni00000044/uni00000057/uni0000004c/uni00000059/uni00000048/uni00000003/uni0000002f/uni00000044/uni00000057/uni00000048/uni00000051/uni00000046/uni0000005c/uni00000003/uni0000003e/uni0000004f/uni00000052/uni0000004a/uni00000040/uni00000003/uni00000003/uni00000003 (b) TPC-DS
+/uni00000025/uni00000044/uni00000052/uni0000002f/uni00000048/uni00000055/uni00000052/uni0000002f/uni00000032/uni0000002a/uni00000028/uni00000035
+/uni00000013/uni00000011/uni00000014
+/uni00000014
+/uni00000014/uni00000013
+/uni00000014/uni00000013/uni00000013/uni00000035/uni00000048/uni0000004f/uni00000044/uni00000057/uni0000004c/uni00000059/uni00000048/uni00000003/uni0000002f/uni00000044/uni00000057/uni00000048/uni00000051/uni00000046/uni0000005c/uni00000003/uni0000003e/uni0000004f/uni00000052/uni0000004a/uni00000040/uni00000003/uni00000003/uni00000003 (c) Stack
+Fig. 5: The plan performance distribution of the candidate plan set generated by different planners
+/uni0000002d/uni00000032/uni00000025/uni00000037/uni00000033/uni00000026/uni00000010/uni00000027/uni00000036/uni00000036/uni00000057/uni00000044/uni00000046/uni0000004e/uni0000002d/uni00000032/uni00000025/uni00000037/uni00000033/uni00000026/uni00000010/uni00000027/uni00000036
+/uni00000013
+/uni00000014
+/uni00000015
+/uni00000016
+/uni00000017/uni0000003a/uni00000035/uni0000002f
+/uni00000039/uni00000031/uni00000031/uni00000026/uni00000030/uni0000002f/uni00000037/uni00000035/uni00000028/uni00000026/uni00000030
+/uni0000002f/uni00000032/uni0000002a/uni00000028/uni00000035/uni00000025/uni00000044/uni0000004f/uni00000056/uni00000044
+(a) WRL
+/uni0000002d/uni00000032/uni00000025/uni00000037/uni00000033/uni00000026/uni00000010/uni00000027/uni00000036/uni00000036/uni00000057/uni00000044/uni00000046/uni0000004e/uni0000002d/uni00000032/uni00000025/uni00000037/uni00000033/uni00000026/uni00000010/uni00000027/uni00000036
+/uni00000013
+/uni00000013/uni00000011/uni00000018
+/uni00000014
+/uni00000014/uni00000011/uni00000018
+/uni00000015
+/uni0000002a/uni00000030/uni00000035/uni0000002f
+/uni00000039/uni00000031/uni00000031/uni00000026/uni00000030/uni0000002f/uni00000037/uni00000035/uni00000028/uni00000026/uni00000030
+/uni0000002f/uni00000032/uni0000002a/uni00000028/uni00000035/uni00000025/uni00000044/uni0000004f/uni00000056/uni00000044 (b) GMRL
+Fig. 6: The performance of different models on optimal ones selection from the candidates generated by LOGER or Balsa
+The evaluation demonstrates that VBOs produce better
+candidate sets than CBOs, based on three metrics. (1) Best-
+case improvement: VBOs (LOGER and Balsa) consistently
+produce optimal plans with lower latency than CBOs (Bao
+and Lero) across all workloads. (2) Worst-case risk: The worst
+plans generated by VBOs exhibit reduced latency degradation
+compared to CBOs in most scenarios. (3) High-quality plan
+ratio: The ratio of the high-quality plans (R(P ) < 1) generated
+by VBOs achieves a median ratio (yellow line) (η(Sk
+G) ≥ 50%)
+across workloads, significantly outperforming CBOs, which
+frequently fall below this threshold. The results align with
+the theoretical analysis in Section V-A, confirming that value-
+guided generation in VBOs outperforms CBOs’ heuristic-
+based approaches in producing robust candidate sets.
+However, it is worth noting that in certain workloads,
+such as Balsa’s worst-case latency on TPC-DS, performance
+remains relatively poor due to the difficulty of training the
+value network. Nonetheless, Delta’s two-stage design can
+mitigate this by accurate selection of the optimal plan.
+Which one can select the optimal plan more accu-
+rately? To evaluate plan selection effectiveness of models, we
+compare the value network (VN) with three cost models: the
+naive cost model (NCM), the learning-to-rank model (LTR),
+and our enhanced cost model (ECM), by assessing their ability
+to select optimal plans from candidate sets. All models are
+trained on the same executed plan pool until convergence.
+We then feed the candidate sets generated by VBOs from
+Section VII-C into models and assess their performance on
+the quality of the selected plans.
+Figure 6 shows WRL and GMRL of the final plans selected
+by different models on test workloads. Overall, the perfor-
+mance of the three cost models is better than the value network
+in most scenarios. This is because the cost model is easier
+to train than the value network and provides more accurate
+
+=== PAGE 12 ===
+/uni00000027/uni00000048/uni0000004f/uni00000057/uni00000044/uni00000027/uni00000048/uni0000004f/uni00000057/uni00000044/uni00000010
+/uni00000051/uni00000052/uni00000026/uni00000033/uni00000036
+/uni00000027/uni00000048/uni0000004f/uni00000057/uni00000044/uni00000010
+/uni00000051/uni00000052/uni00000026/uni00000034/uni00000027
+/uni00000027/uni00000048/uni0000004f/uni00000057/uni00000044/uni00000010
+/uni00000051/uni00000052/uni00000027/uni00000024
+/uni00000027/uni00000048/uni0000004f/uni00000057/uni00000044/uni00000010
+/uni00000030/uni00000036/uni00000028
+/uni00000013
+/uni00000013/uni00000011/uni00000015/uni00000018
+/uni00000013/uni00000011/uni00000018/uni00000013
+/uni00000013/uni00000011/uni0000001a/uni00000018
+/uni00000014
+/uni00000014/uni00000011/uni00000015/uni00000018/uni00000033/uni00000048/uni00000055/uni00000049/uni00000052/uni00000055/uni00000050/uni00000044/uni00000051/uni00000046/uni00000048
+/uni0000003a/uni00000035/uni0000002f/uni0000002a/uni00000030/uni00000035/uni0000002f
+(a) The impact of Delta’s elements
+/uni00000014/uni00000013/uni00000013/uni00000016/uni00000013/uni00000013/uni00000018/uni00000013/uni00000013/uni0000001a/uni00000013/uni00000013/uni0000001c/uni00000013/uni00000013/uni00000014/uni00000014/uni00000013/uni00000013/uni00000014/uni00000016/uni00000013/uni00000013
+/uni00000013
+/uni00000013/uni00000011/uni00000018
+/uni00000014
+/uni00000014/uni00000011/uni00000018/uni00000033/uni00000048/uni00000055/uni00000049/uni00000052/uni00000055/uni00000050/uni00000044/uni00000051/uni00000046/uni00000048
+/uni00000013/uni00000011/uni0000001c/uni00000019/uni00000013/uni00000011/uni0000001c/uni00000014
+/uni00000013/uni00000011/uni00000017/uni00000013/uni00000013/uni00000011/uni00000017/uni0000001b/uni00000013/uni00000011/uni00000017/uni0000001b/uni00000013/uni00000011/uni00000017/uni0000001b/uni00000013/uni00000011/uni00000017/uni0000001b
+/uni00000014/uni00000011/uni00000013/uni00000015/uni00000013/uni00000011/uni0000001c/uni00000017
+/uni00000013/uni00000011/uni0000001a/uni00000017
+/uni00000013/uni00000011/uni0000001c/uni00000013/uni00000013/uni00000011/uni0000001c/uni00000013/uni00000013/uni00000011/uni0000001c/uni00000013/uni00000013/uni00000011/uni0000001c/uni00000013
+/uni0000003a/uni00000035/uni0000002f/uni0000002a/uni00000030/uni00000035/uni0000002f (b) The impact of γ
+/uni00000014/uni00000016/uni00000018/uni00000014/uni00000013
+k
+/uni00000013
+/uni00000015/uni00000013/uni00000013
+/uni00000017/uni00000013/uni00000013
+/uni00000019/uni00000013/uni00000013/uni00000033/uni0000004f/uni00000044/uni00000051/uni00000051/uni0000004c/uni00000051/uni0000004a/uni00000003/uni00000057/uni0000004c/uni00000050/uni00000048/uni00000003/uni0000000b/uni00000050/uni00000056/uni0000000c
+/uni00000026/uni00000034/uni00000027
+/uni00000056/uni00000057/uni00000044/uni0000004a/uni00000048/uni00000003/uni00000057/uni0000005a/uni00000052
+/uni00000056/uni00000057/uni00000044/uni0000004a/uni00000048/uni00000003/uni00000052/uni00000051/uni00000048 (c) The impact on planning time of k
+/uni00000014/uni00000016/uni00000018/uni00000014/uni00000013
+k
+/uni00000013
+/uni00000013/uni00000011/uni00000018
+/uni00000014
+/uni00000014/uni00000011/uni00000018/uni00000033/uni00000048/uni00000055/uni00000049/uni00000052/uni00000055/uni00000050/uni00000044/uni00000051/uni00000046/uni00000048
+/uni00000013/uni00000011/uni0000001b/uni00000014
+/uni00000013/uni00000011/uni00000019/uni00000014/uni00000013/uni00000011/uni00000018/uni00000018
+/uni00000013/uni00000011/uni00000017/uni00000013
+/uni00000014/uni00000011/uni00000015/uni00000017/uni00000014/uni00000011/uni00000015/uni00000016/uni00000014/uni00000011/uni00000014/uni0000001b
+/uni00000013/uni00000011/uni0000001a/uni00000017
+/uni0000003a/uni00000035/uni0000002f/uni0000002a/uni00000030/uni00000035/uni0000002f (d) The impact on performance of k
+Fig. 7: The impact of Delta’s different choices on JOB test workload on top of Balsa
+/uni00000024/uni00000046/uni00000046/uni00000048/uni00000053/uni00000057/uni00000035/uni00000048/uni0000004d/uni00000048/uni00000046/uni00000057
+/uni00000026/uni00000034/uni00000027/uni00000003/uni00000045/uni00000048/uni0000004b/uni00000044/uni00000059/uni0000004c/uni00000052/uni00000058/uni00000055
+/uni00000026/uni00000034/uni0000002c/uni00000034
+/uni00000037/uni0000004b/uni00000048/uni00000003/uni00000057/uni0000005c/uni00000053/uni00000048/uni00000003/uni00000052/uni00000049/uni00000003/uni00000054/uni00000058/uni00000048/uni00000055/uni0000005c
+/uni00000037/uni00000033
+/uni00000003/uni00000018/uni0000001a/uni00000003/uni00000003/uni0000000b/uni0000001b/uni0000001c/uni00000011/uni00000013/uni00000019/uni00000008/uni0000000c
+/uni00000029/uni00000031
+/uni00000003/uni00000013/uni00000003/uni00000003/uni0000000b/uni00000013/uni00000011/uni00000013/uni00000008/uni0000000c
+/uni00000029/uni00000033
+/uni00000003/uni00000015/uni00000003/uni00000003/uni0000000b/uni00000016/uni00000011/uni00000014/uni00000015/uni00000008/uni0000000c
+/uni00000037/uni00000031
+/uni00000003/uni00000018/uni00000003/uni00000003/uni0000000b/uni0000001a/uni00000011/uni0000001b/uni00000014/uni00000008/uni0000000c
+/uni00000013/uni00000008
+/uni00000015/uni00000018/uni00000008
+/uni00000018/uni00000013/uni00000008
+/uni0000001a/uni00000018/uni00000008
+/uni00000014/uni00000013/uni00000013/uni00000008
+(a) CQD on top of LOGER
+/uni00000024/uni00000046/uni00000046/uni00000048/uni00000053/uni00000057/uni00000035/uni00000048/uni0000004d/uni00000048/uni00000046/uni00000057
+/uni00000026/uni00000034/uni00000027/uni00000003/uni00000045/uni00000048/uni0000004b/uni00000044/uni00000059/uni0000004c/uni00000052/uni00000058/uni00000055
+/uni00000026/uni00000034/uni0000002c/uni00000034
+/uni00000037/uni0000004b/uni00000048/uni00000003/uni00000057/uni0000005c/uni00000053/uni00000048/uni00000003/uni00000052/uni00000049/uni00000003/uni00000054/uni00000058/uni00000048/uni00000055/uni0000005c
+/uni00000037/uni00000033
+/uni00000003/uni00000015/uni0000001c/uni00000003/uni00000003/uni0000000b/uni0000001b/uni00000018/uni00000011/uni00000015/uni0000001c/uni00000008/uni0000000c
+/uni00000029/uni00000031
+/uni00000003/uni00000013/uni00000003/uni00000003/uni0000000b/uni00000013/uni00000011/uni00000013/uni00000008/uni0000000c
+/uni00000029/uni00000033
+/uni00000003/uni00000014/uni00000003/uni00000003/uni0000000b/uni00000015/uni00000011/uni0000001c/uni00000017/uni00000008/uni0000000c
+/uni00000037/uni00000031
+/uni00000003/uni00000017/uni00000003/uni00000003/uni0000000b/uni00000014/uni00000014/uni00000011/uni0000001a/uni00000019/uni00000008/uni0000000c
+/uni00000013/uni00000008
+/uni00000015/uni00000018/uni00000008
+/uni00000018/uni00000013/uni00000008
+/uni0000001a/uni00000018/uni00000008
+/uni00000014/uni00000013/uni00000013/uni00000008 (b) CQD on top of Balsa
+Fig. 8: Confusion matrix of CQD
+cost estimates for complete plans, making it more suitable
+for the plan selection. Among them, our enhanced cost model
+consistently achieves the best performance across all scenarios.
+This improvement results from the data augmentation and
+the heteroscedastic regression loss function, which together
+significantly boost the accuracy of the cost model.
+D. The impact of CQD
+To evaluate the effectiveness of CQD, Figure 8(a) and
+Figure 8(b) show the confusion matrices for LOGER -∆ and
+Balsa-∆ respectively. The matrix records the sum of experi-
+mental data from all three workloads. Rows represent queries
+types, including compatible queries (CQ) and incompatible
+queries (IQ). The columns show whether the CQD accepts
+the query to be optimized by the mixed cost-based planner.
+Each cell records the number and percentage of different
+categories of queries. A desirable CQD should achieve high
+recall and specificity. Higher recall means fewer compatible
+queries are mistakenly rejected, causing less negative impact.
+Higher specificity means more incompatible queries are cor-
+rectly filtered, producing more benefits. Figure 8 shows that
+CQD achieves a 100% recall rate in both cases, meaning it has
+no adverse effects on the planner. Specificity reaches 71.4%
+on LOGER and 80.0% on Balsa, indicating CQD successfully
+prevents poor plans for incompatible queries.
+E. Ablation Study and Parameter Analysis
+To evaluate the influence of architectural components and
+parameters on Delta, we conduct systematic ablation studies
+and parameter sensitivity analyses. We use the JOB workload,
+a widely adopted real-world benchmark in query optimization,
+and choose Balsa as the underlying model. This choice is due
+to LOGER’s full compatibility with the test queries in JOB
+(i.e., zero incompatible queries), making it unable to showcase
+the CQD’s effectiveness.
+Ablation study. We investigate the impact of different
+elements in Delta on query optimization. The correspond-
+ing results are shown in Figure 7(a). Delta-noCPS, Delta-
+noCQD, and Delta-noDA are the variants of Balsa -∆ without
+the CPS, CQD, and data augmentation , respectively. Delta-
+MSE replaces the heteroscedastic regression loss with mean
+squared error (MSE) loss during training. We can observe
+that each component of Delta does contribute to the query
+execution performance. In particular, WRL increases 68%,
+20%, 43%, and 30% without CPS, CQD, data augmentation,
+and heteroscedastic regression loss function. GMRL increases
+26%, 22%, 35%, and 26%, respectively. CPS and data aug-
+mentation show the largest impact, confirming the rationality
+and effectiveness of Delta’s design. Data augmentation and
+heteroscedastic regression loss function in CPS do boost
+performance, while CQD also benefits query optimization.
+Parameter evaluation. Effect of γ. To verify the effect of
+threshold γ on CQD in Delta, we vary γ from 100 to 1300.
+Figure 7(b) shows the results of JOB test workload on the
+top of Balsa. Delta gets the best performance when γ is 500,
+which is used as the default. With smaller values (e.g., 100
+or 300), Delta behaves conservatively, yielding performance
+close to PostgreSQL. When γ exceeds 700, CQD accepts all
+queries, and performance aligns with Delta-noCQD.
+Effect of k. Figure 7(c) and Figure 7(d) study Delta’s mean
+per-query planning time and performance on JOB (with Balsa)
+using different values of k, the number of candidate plans.
+In all cases, planning time remains under 350ms. Larger k
+improves WRL and GMRL but slightly increases planning
+time, mainly due to value-based candidate plan generation.
+Fortunately, the planning time is insensitive to k. k is set to
+10 in our experiments and it can be adjusted as actual needs.
+VIII. C ONCLUSION
+We propose Delta, a mixed cost-based query optimization
+framework that addresses the limitations of CBOs and VBOs
+through a compatible query detector and a two-stage planner.
+Compared to traditional CBO, PostgreSQL, Delta achieves
+2.34× faster workload execution by mitigating search space
+explosion and heuristic pruning constraints. Against two-stage
+CBOs, Delta outperforms by 2.11 × via higher candidate
+plan quality produced by the value-based planner. Delta also
+outperforms VBOs, requiring 66.6% of training time while
+delivering 1.94× higher execution performance, due to its fine-
+grained learned cost-based ranking. The Mahalanobis distance-
+based detector further ensures robustness by preemptively
+filtering incompatible queries. These results highlight Delta’s
+ability to unify the value network and the cost model and
+detect incompatible queries to determine more efficient plans,
+offering a practical solution for modern query optimization.
+
+=== PAGE 13 ===

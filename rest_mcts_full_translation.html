@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>ReST-MCTS∗ 论文全文翻译 — LLM Self-Training via Process Reward Guided Tree Search</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="translation_style.css">
+<script>window.MathJax={tex:{inlineMath:[['$','$'],['\\(','\\)']],displayMath:[['$$','$$'],['\\[','\\]']]},svg:{fontCache:'global'}};</script>
+<script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+</head>
+<body>
+<div class="container">
+
+<a class="back-btn" href="index.html">&#8592; 返回目录</a>
+
+<!-- HERO -->
+<div class="hero">
+<h1 class="hero-title">ReST-MCTS∗：基于过程奖励引导树搜索的 LLM 自训练<br><span style="font-size:1.1rem;color:#666;font-weight:400;">LLM Self-Training via Process Reward Guided Tree Search</span></h1>
+<p class="hero-sub">用过程奖励引导的树搜索自动获取高质量推理轨迹，自训练策略模型与过程奖励模型</p>
+<div class="hero-meta">Dan Zhang, Sining Zhoubian, Ziniu Hu, Yisong Yue, Yuxiao Dong, Jie Tang · 清华大学 KEG / 加州理工学院 · NeurIPS 2024 · arXiv:2406.03816</div>
+<div class="tag-row"><span class="tag">LLM Self-Training</span><span class="tag">Process Reward Model</span><span class="tag">MCTS∗</span><span class="tag">MuZero-style</span><span class="tag">Reasoning</span></div>
+</div>
+
+<!-- TOC -->
+<div class="toc"><h3>目录</h3><ol>
+<li><a href="#sec-abstract">摘要 (Abstract)</a></li>
+<li><a href="#sec-intro">1. 引言 (Introduction)</a></li>
+<li><a href="#sec-bg">2. 推理与自训练背景 (Background)</a></li>
+<li><a href="#sec-method">3. ReST-MCTS∗ 方法 (Method)</a></li>
+<li><a href="#sec-exps">4. 实验 (Experiments)</a></li>
+<li><a href="#sec-related">5. 相关工作 (Related Work)</a></li>
+<li><a href="#sec-concl">6. 结论 (Conclusion)</a></li>
+</ol></div>
+
+<!-- ======== ABSTRACT ======== -->
+<h2 id="sec-abstract" class="sec-title">摘要 (Abstract)</h2>
+<p>现有的大语言模型（LLM）自训练方法大多依赖 LLM 生成回复，并过滤出最终答案正确的样本作为训练数据。这种方法往往产生低质量的微调训练集（例如错误的计划或中间推理步骤）。本文提出一种强化式自训练方法 <strong>ReST-MCTS∗</strong>，它将过程奖励（process reward）引导与树搜索 MCTS∗ 相结合，从而收集更高质量的推理轨迹，以及每一步的价值，用于训练策略模型与奖励模型。</p>
+<p>ReST-MCTS∗ 通过基于树搜索的强化学习，规避了训练过程奖励通常所需的逐步骤人工标注：给定标准答案（oracle 最终正确答案），ReST-MCTS∗ 能够推断正确的过程奖励——通过估计「该步骤有助于导向正确答案」的概率。这些推断出的奖励具有双重用途：它们既作为进一步精炼过程奖励模型的价值目标，又用于筛选高质量轨迹供策略模型自训练。</p>
+<p>我们首先展示，在相同的搜索预算下，ReST-MCTS∗ 中的树搜索策略比 Best-of-N、Tree-of-Thought 等先前 LLM 推理基线达到更高的准确率。接着我们展示，用该树搜索策略搜索得到的轨迹作为训练数据，我们可以对三个语言模型进行多轮持续增强，并超越 ReSTEM、Self-Rewarding LM 等其他自训练算法。我们已在 https://github.com/THUDM/ReST-MCTS 开源全部代码。</p>
+
+<!-- ======== INTRODUCTION ======== -->
+<h2 id="sec-intro" class="sec-title">1. 引言 (Introduction)</h2>
+<p>大语言模型主要在人类生成的数据上训练。但随着网络上大多数高质量人类文本已被爬取并用于 LLM 训练，研究重点已转向利用 LLM 生成的内容进行自训练。与大多数强化学习（RL）问题类似，LLM 自训练需要一个奖励信号。多数现有的强化式自我改进方法（如 STaR、RFT、ReSTEM、V-STaR）假设可以访问一个真实奖励模型（来自监督数据集的标签，或预训练的奖励模型）。这些方法用 LLM 为每个问题生成多个样本，并假设能带来高奖励（正确解）的那个就是高质量样本，随后在这些样本上训练（即自训练）。这类流程能有效提升 LLM 性能，在某些情况下可解决基础 LLM 原本无法解决的推理任务。</p>
+<p>然而，上述流程的一个关键局限是：即便一条推理轨迹最终得到正确解，也并不必然意味着整条轨迹都准确。LLM 经常生成错误或无效的中间推理步骤，却仍凭运气找到正确答案。因此，自训练数据集常包含许多「假阳性」——中间推理轨迹或计划是错误的，但最终输出却正确——这限制了 LLM 在复杂推理任务上微调的最终性能。解决该问题的一种方式是使用价值函数或奖励模型来验证推理轨迹的正确性（从而作为自训练的学习信号）。然而，训练一个可靠的奖励模型来验证推理轨迹中的每一步，通常依赖密集的人类逐步骤标注，难以扩展。我们的研究旨在弥补这一空白：开发一种新方法，在自动获取可靠推理轨迹的同时，有效利用奖励信号进行验证。</p>
+<p>本文提出 <strong>ReST-MCTS∗</strong>，一种用基于模型的强化学习训练 LLM 的框架。我们的方法使用一个改进的蒙特卡洛树搜索（MCTS）算法作为推理策略（记为 MCTS∗），由训练好的逐步骤过程奖励（价值）模型引导。方法的关键是：通过执行足够次数的 rollout，自动为训练逐步骤奖励模型生成逐步骤标签。该标注过程有效筛选出质量最高的样本子集，无需额外人工干预。表 1 总结了我们的方法与此前方法的区别。实验验证 ReST-MCTS∗ 在 SciBench 与 MATH 基准上，于相同搜索预算下，比 Self-Consistency（SC）和 Best-of-N（BoN）等更善于发现好的推理轨迹，进而带来更好的自训练。</p>
+<p>我们的贡献总结如下：</p>
+<ul style="padding-left:2em;">
+<li>提出 <strong>ReST-MCTS∗</strong>，一种由 MCTS∗ 搜索生成过程奖励的自训练方法。关键步骤是通过足够次数的 rollout，用 MCTS∗ 自动标注每个中间节点的过程奖励。我们在多个推理基准上验证，ReST-MCTS∗ 优于现有自训练方法（如 ReSTEM、Self-Rewarding，见表 2）与推理策略（如 CoT、ToT，见表 4）。</li>
+<li>ReST-MCTS∗ 中的奖励生成器相比此前的过程奖励生成技术（如 MATH-SHEPHERD）带来更高质量的过程奖励模型（见表 3）。</li>
+<li>在相同的搜索预算下，ReST-MCTS∗ 中的搜索算法（MCTS∗）比 Self-Consistency 与 Best-of-N 达到更高准确率（见图 2）。</li>
+</ul>
+
+<!-- ======== BACKGROUND ======== -->
+<h2 id="sec-bg" class="sec-title">2. 推理与自训练背景 (Background on Reasoning &amp; Self-Training)</h2>
+<p>我们遵循基于 LLM 推理的标准设定。从一个由基础 LLM 实例化的策略 $\pi$ 出发。给定输入问题 $Q$，最简单情况下，$\pi$ 通过自回归预测下一个 token，生成由推理步骤 $(s_1, s_2, \cdots, s_K) \sim \pi(\cdot|Q)$ 组成的输出序列或轨迹。为简洁，我们假设一个推理步骤由一句话（本身含多个 token）构成，并假设最后一个输出 $s_K$ 为最终步骤。LLM 也可以通过提示或条件约束，使生成偏向某些轨迹。对于提示 $c$，可写作 $\pi(\cdot|Q, c)$。这一思想在思维链（CoT）中最著名。</p>
+<p><strong>自一致性（Self-Consistency, SC）。</strong> 自一致性从 $\pi$ 中采样多条推理轨迹，选择出现最频繁的最终答案。</p>
+<p><strong>树搜索与价值函数。</strong> 另一思想是采用树状结构的推理轨迹，从中间推理步骤分叉。使用所谓树搜索推理算法的一个关键问题，是需要一个价值函数来引导原本组合爆炸式的搜索过程。两类常见价值函数为：仅依据最终答案正确性训练的<strong>结果奖励模型（ORM）</strong>，以及依据每个推理步骤正确性训练的<strong>过程奖励模型（PRM）</strong>。我们假设 $r_{s_k}$ 为 PRM 在第 $k$ 步输出的 sigmoid 分数。我们的 ReST-MCTS∗ 方法用树搜索自动学习一个好的 PRM。</p>
+<p><strong>Best-of-N。</strong> 作为自一致性的替代，也可用学习的价值函数（PRM 或 ORM）选择价值最高的推理轨迹。</p>
+<p><strong>自训练。</strong> 总体上自训练分两步：第一步是生成，用 $\pi$（此处为树状轨迹）采样多条推理轨迹；第二步是改进，在推理轨迹上构造学习信号，再用它微调 $\pi$。该过程可迭代多轮。</p>
+<p><strong>先前工作的局限。</strong> 可靠自训练的主要挑战在于构造有用的学习信号。理想情况下，我们希望对每一步中间推理的正确性都有稠密学习信号，这正是 PRM 所提供的。否则，在稀疏学习信号下，会遭遇类似强化学习中的信用分配（credit assignment）问题。历史上，学习 PRM 的主要挑战是缺乏逐步骤的监督标注——这正是 ReST-MCTS∗ 力求克服的核心难题。</p>
+
+<!-- ======== METHOD ======== -->
+<h2 id="sec-method" class="sec-title">3. ReST-MCTS∗ 方法 (The ReST-MCTS∗ Method)</h2>
+<p>我们的方法 ReST-MCTS∗ 如图 1 所示，由四个主要组件构成：(1) <strong>MCTS∗</strong>，在 PRM 引导下以充足 rollout 时间执行树搜索；(2) <strong>过程奖励模型（PRM）</strong>，评估任意部分解的质量并引导 MCTS∗；(3) <strong>策略模型</strong>，为每个问题生成多个中间推理步骤；(4) <strong>LLM 自训练</strong>，用 MCTS∗ 收集推理轨迹，在正向样本上训练策略模型，在所有生成轨迹上训练过程奖励模型。</p>
+
+<div class="figure-wrap">
+<img src="images/rest_mcts_pages/p04.png" alt="Figure 1">
+<div class="fig-caption"><strong>图 1：ReST-MCTS∗ 框架。</strong>左侧展示过程奖励的推断过程以及我们如何用过程奖励引导树搜索；右侧表示过程奖励模型与策略模型的自训练。给定标准答案，通过树搜索推断「该步骤能否导向正确解」的过程奖励，无需人工逐步骤标注。</div>
+</div>
+
+<h3 class="subsec-title">3.1 基于搜索的 LLM 推理策略 (Search-based Reasoning Policy for LLM)</h3>
+<p><strong>部分解的价值 $v_k$。</strong> 部分解 $p_k = [s_1, s_2, \cdots, s_k]$ 的价值（过程）奖励 $v_k$ 应满足以下基本性质：有界范围（取值受限）；反映正确性的概率（$v_k$ 越高表示越接近正确解）；同时反映步骤的正确性与贡献（正确的下一步带来更高 $v_k$，向最终答案作出更多正确推导的步骤带来更高 $v_k$）。</p>
+<p><strong>部分解的推理距离 $m_k$。</strong> 为估计一个解步骤的进展，我们定义 $p_k$ 的推理距离 $m_k$ 为：从 $p_k$ 出发，策略模型到达正确答案所需的最少推理步数。$m_k$ 反映了进展程度，也反映了策略基于当前步骤找出正确答案的难度，故可进一步用于评估质量。</p>
+
+<p>我们引入<strong>加权奖励（weighted reward）</strong> $w_{s_k}$ 来反映当前步骤 $s_k$ 的质量，它在常用 PRM 奖励 $r_{s_k}$ 的基础上，进一步把推理距离 $m_k$ 作为权重因子，反映 $s_k$ 作出的增量进展。</p>
+<p>为确定第 $k$ 步部分解的质量值 $v_k$，我们综合前一质量值与本步加权奖励。质量值 $v_k$ 可迭代更新为：</p>
+<div class="eq-block">$$v_k = \begin{cases}0, & k=0\\\max(v_{k-1}+w_{s_k},\,0), & \text{否则}\end{cases}\tag{1}$$</div>
+<p>当前步骤的加权奖励 $w_{s_k}$ 刻画了该步骤对整体解的质量与贡献。基于 $m_k$（其中 $m_k = K-k$，$K$ 为一解的总推理步数）、前一质量值 $v_{k-1}$ 以及 MATH-SHEPHERD 中的 $r_{s_k}$，加权奖励迭代定义为：</p>
+<div class="eq-block">$$w_{s_k} = \frac{1-v_{k-1}}{m_k+1}\,(1-2r_{s_k}),\qquad k=1,2,\cdots\tag{2}$$</div>
+<p>随 $k$ 增大，$m_k$ 减小，意味着到达正确解所需推理步数更少，从而使当前步骤的加权奖励权重更高。</p>
+<p><strong>定理 1（${w_{s_k}}$ 与 ${v_k}$ 的有界性）。</strong> 若 $r_{s_k}$ 为取值于 $[0,1]$ 的 sigmoid 分数，则上述定义的 $w_{s_k}$ 与 $v_k$ 满足有界性：$w_{s_k} \le 1 - v_{k-1}$，且 $v_k \in [0,1]$。推导详见附录 B.1。</p>
+<p>由此可得与预期相符的若干性质：</p>
+<ul style="padding-left:2em;">
+<li><strong>观察 1：</strong>若从 $p_k$ 出发到达正确答案需要更多步骤，则单步加权奖励 $w_{s_k}$ 更低。</li>
+<li><strong>观察 2：</strong>$w_{s_k}$ 随 PRM 预测 sigmoid 分数 $r_{s_k}$ 上升而下降，即 $w_{s_k}$ 与 PRM 对步骤正确性的预测正相关。</li>
+<li><strong>观察 3：</strong>$v_k \to 1 \iff r_{s_k} \to 0,\, m_k = 0$，即仅当 $s_k$ 到达正确答案时 $v_k$ 才收敛到上界 1。</li>
+</ul>
+<p>基于 $v_k$ 与 $w_{s_k}$ 的特性，一旦拥有精确的 PRM 和对 $m_k$ 的准确预测，我们就能直接预测部分解的质量值并引导搜索。我们的做法并非分别训练模型预测 $r_{s_k}$ 与 $m_k$，而是直接训练一个过程奖励模型 $V_\theta$ 来预测 $v_k$（作为常见 PRM 的变体）。由于奖励已纳入 $v_k$ 的计算，无需再单独训练奖励模型，省去大量答案选择的开销。</p>
+<p><strong>过程奖励模型引导的树搜索 MCTS∗。</strong> 树搜索方法需要价值函数与结果奖励模型 $r_\phi$ 来剪枝、评估最终解并回溯价值。但用 ORM 评估最终解并回溯意味着每条搜索轨迹都必须完整生成，代价高昂且低效。近期工作建议在 MCTS 中使用学习的 LLM 价值函数，使回溯可在中间步骤进行，无需完整生成。我们进一步提出 MCTS 的新变体 <strong>MCTS∗</strong>，它将质量值 $v_k$ 作为训练的 LLM 过程奖励模型的价值目标，并作为 MCTS 的引导信号。除质量值外，我们还引入特殊的蒙特卡洛 rollout 方法与自我批评机制来提升效率与精度（详见附录 C.1）。MCTS∗ 在每次迭代包含四个主要阶段：节点选择、思维扩展、贪心 MC rollout、价值回溯。算法在每道科学推理问题 $q$ 的搜索树 $T_q$ 上运行，每个树节点 $C$ 记录部分解 $p_C$、访问次数 $n_C$ 与相应质量值 $v_C$，记为元组 $C = (p_C, n_C, v_C)$。</p>
+
+<div class="figure-wrap">
+<img src="images/rest_mcts_pages/p05.png" alt="Figure 3">
+<div class="fig-caption"><strong>图 3：过程奖励推断示例。</strong>展示如何从正确推理路径上的节点出发，利用硬估计（hard estimation）得到 $r_{s_k}$，结合推理距离 $m_k$ 由式 (1)(2) 推导各节点质量值 $v_k$ 与加权奖励 $w_k$ 的具体过程。</div>
+</div>
+
+<h3 class="subsec-title">3.2 自训练流程 (Self-Training Pipeline)</h3>
+<p>如图 1 所示，基于提出的树搜索算法 MCTS∗，我们对推理策略与过程奖励模型进行自我改进。初始化策略 $\pi$ 与过程奖励模型 $V_\theta$ 后，迭代地运用它们，并利用过程中生成的搜索树 $T_q$ 为特定的科学或数学问题生成高质量解，执行称为 ReST-MCTS∗ 的自改进过程。我们的工作受 MuZero 框架启发，并将其应用于 LLM 训练，我们称之为「LLM 的 MuZero 式学习」。</p>
+
+<p><strong>指令生成（Instruction Generation）。</strong> 初始化从一个原始数据集 $D_0$ 开始训练过程奖励模型 $V_\theta$。</p>
+<ul style="padding-left:2em;">
+<li><strong>为过程奖励模型收集过程奖励。</strong> 我们推导被剪枝搜索树 $T'_q$ 上某条正确推理路径附近每个树节点的目标质量值：先依据节点到达正确答案所需最少步数计算 $m_k$，再用硬估计（公式 (11)）计算 $r_{s_k}$，即 $r_{s_k} = 1 - r^{HE}_{s_k}$；进而由式 (1) 得 $v_k$、式 (2) 得加权奖励 $w_k$。我们从根开始更新所有奖励与价值，收集全部 $(Q, p, v)$ 对构成第 $i$ 轮的过程奖励训练集 $DV_i$。</li>
+<li><strong>为策略模型收集推理轨迹。</strong> 如图 4，搜索过程产生搜索树 $T_q$，包含多条推理轨迹。我们先剪掉所有未到达最终答案的未完分支，再用简单字符串匹配或 LLM 判断验证其余轨迹最终答案的正确性，选出正确解。这些被验证的轨迹作为第 $i$ 轮的策略自训练数据，随后按式 (13) 执行策略自训练。</li>
+</ul>
+
+<div class="figure-wrap">
+<img src="images/rest_mcts_pages/p06.png" alt="Figure 4">
+<div class="fig-caption"><strong>图 4：搜索树与轨迹收集。</strong>搜索过程生成搜索树 $T_q$，剪枝未到达终点的分支后，通过验证最终答案筛选正确推理轨迹，作为策略模型自训练数据。</div>
+</div>
+
+<p><strong>过程奖励模型与策略模型的互自训练（Mutual Self-training）。</strong> 与仅关注策略自训练的 ReSTEM 不同，我们的工作同时改进过程奖励模型与策略模型的自训练。给定价值模型训练集 $DV_0$ 初始化与新的问题集 $DG$，我们可对 $V_\theta$ 与 $\pi$ 启动迭代自训练：用 $\pi$ 执行 MCTS∗ 为 $DG$ 生成解，第 $i$ 轮用 $DV_{i-1}$ 训练 $V_\theta$ 得到 $V_i$，用 $DGi$ 训练策略模型 $\pi S_{i-1}$ 得到新生成器 $\pi S_i$，同时 $DGi$ 驱动 $V_i$ 更新为 $V_{i+1}$。算法 1 给出了二者互补的迭代自训练。</p>
+
+<div class="algo-block">
+<span class="algo-kw">Algorithm 1:</span> ReST-MCTS∗ 价值模型与策略模型的互自训练<br>
+<span class="algo-kw">Input:</span> 基础 LLM $\pi$，策略模型原始数据集 $DS_0$，价值模型原始数据集 $D_0$，新问题集 $DG$，解数 $N$，$j$ 号解 $A_j$，正确解 $a^*$，价值模型 $V_\theta$，加权价值函数 $w$，质量值函数 $v$，迭代轮数 $T$。<br>
+1: $\pi S_0 \leftarrow$ SFT($\pi, DS_0$) <span class="algo-kw">// 微调生成器</span><br>
+2: $DV_0 \leftarrow$ generate_value_data($D_0, w, v$) <span class="algo-kw">// 初始化价值模型训练集</span><br>
+3: $V_0 \leftarrow$ train_value_model($V_\theta, DV_0$) <span class="algo-kw">// 初始化价值模型</span><br>
+4: <span class="algo-kw">for</span> $i = 1$ to $T$ <span class="algo-kw">do</span><br>
+5: &nbsp;&nbsp; $DGi \leftarrow$ generate_policy_data($\pi S_{i-1}, V_{i-1}$ 引导 MCTS∗, $DG, N$) <span class="algo-kw">// 生成策略模型合成数据</span><br>
+6: &nbsp;&nbsp; <span class="algo-kw">for</span> $j = 1$ to $N$ <span class="algo-kw">do</span><br>
+7: &nbsp;&nbsp;&nbsp;&nbsp; $DGi(A_j=a^*) \leftarrow$ label_correctness($DGi$) <span class="algo-kw">// 匹配并筛选正确解</span><br>
+8: &nbsp;&nbsp; <span class="algo-kw">end for</span><br>
+9: &nbsp;&nbsp; $\pi S_i \leftarrow$ SFT($\pi S_{i-1}, DGi(A_j=a^*)|_{j=1}^N$) <span class="algo-kw">// 自训练策略模型</span><br>
+10: &nbsp; $DV_i \leftarrow$ extract_value_data($DGi$) <span class="algo-kw">// 收集过程奖励并抽取价值数据</span><br>
+11: &nbsp; $V_i \leftarrow$ train_value_model($V_{i-1}, DV_i$) <span class="algo-kw">// 自训练价值模型</span><br>
+12: <span class="algo-kw">end for</span><br>
+<span class="algo-kw">Output:</span> $\pi_{ST}, V_T$
+</div>
+
+<!-- ======== EXPERIMENTS ======== -->
+<h2 id="sec-exps" class="sec-title">4. 实验 (Experiments)</h2>
+<p>我们从三个角度验证 ReST-MCTS∗：(1) 自训练方法——在三个 LLM 主干上，于分布内与分布外基准上多轮评估（见表 2）；(2) 过程奖励模型——与 MATH-SHEPHERD (MS) 及 SC+MS 在 GSM8K、MATH500 上比较（见表 3）；(3) 树搜索策略——在大学级科学推理基准上与 CoT、ToT 等比较（见表 4），并在 MATH、SciBench 上于相同搜索预算下与 SC、Best-of-N 比较（见图 2）。</p>
+
+<div class="table-note">
+<strong>表 1：现有自我改进方法与本方法的关键区别。</strong>「Train」指是否训练奖励模型。STaR 用 CoT+Reflexion，最终结局奖励由真实答案标注；ReSTEM/RFT/RPO 用 CoT；Verify Step-by-Step 与 MATH-SHEPHERD/pDPO 用 Best-of-N 的逐步骤过程奖励（分别由人工标注、随机 rollout 推断）；TS-LLM 用 MCTS 的逐步骤过程奖励（由 TD-λ 推断）；V-STaR 与 Self-Rewarding 用 CoT 的最终结局奖励（分别由多轮 LLM 生成、由 LLM 生成并评判）；<strong>ReST-MCTS∗（本方法）用 MCTS∗ 的逐步骤过程奖励，由树搜索推断，支持多轮迭代</strong>。
+</div>
+
+<h3 class="subsec-title">4.1 价值模型的初始化 (Initialization of Value Model)</h3>
+<p>为获得准确的环境反馈，我们通过过程奖励（价值）推断，从一组精选的科学/数学问题 $D_0$ 构建价值模型的初始训练集 $DV_0$，无需人工标注。随后我们在该数据集上分别微调 ChatGLM3-6B 与 Mistral-7B，得到作为 PRM 变体的初始价值模型，引导 LLM 在科学/数学问题上进行更高质量的树搜索。</p>
+<p><strong>科学与数学的细粒度数据集。</strong> 为收集科学价值训练数据，我们将 SciInstruct 中精简科学数据集 $D_{sci}$ 的问题并入 $D_0$。该数据集含 11,554 道题，每题配有一条正确的逐步解答。对每道题 $q^{(i)}$ 及其解 $s^{(i)}$，我们抽取所有部分解构成样本；为使价值模型能区分错误步骤，我们再用基本不擅长此类推理的 ChatGLM2 生成单步错误步骤，构造新的部分解并视为不正确。总计收集 473.4k 样本训练初始价值模型，并据此构造 $DV_0$。数学价值训练数据采用另一种方法（见附录 B.1）。</p>
+
+<div class="table-note">
+<strong>表 2：策略与价值模型多轮训练的主要结果（节选）。</strong>在 LLaMA-3-8B-Instruct、Mistral-7B:MetaMATH、SciGLM-6B 三个主干上，比较 ReSTEM、Self-Rewarding 与 ReST-MCTS∗ 的第 1、2 轮迭代（zero-shot 仅评估，few-shot 仅作对比），指标为 MATH / GPQA Diamond / CEval-Hard 的准确率及其均值。例如 LLaMA-3-8B-Instruct 第 2 轮：ReSTEM 均值 26.83，Self-Rewarding 27.73，<strong>ReST-MCTS∗ 达 29.02</strong>；SciGLM-6B 第 2 轮：ReST-MCTS∗ 均值 35.90，明显高于其余两者。表明 ReST-MCTS∗ 在每轮都优于现有方法并能持续自我提升。
+</div>
+
+<h3 class="subsec-title">4.2 评估 ReST-MCTS∗ 的自我改进 (Evaluating Self-Improvement)</h3>
+<p>为充分考察 ReST-MCTS∗ 自训练对不同主干的影响，我们执行 2 轮自训练，在三个基础模型（LLaMA-3-8B-Instruct、Mistral-7B:MetaMATH、SciGLM-6B）上与 ReSTEM、Self-Rewarding 比较。由于主要关注特定领域内的持续改进能力，我们主要在数据集中包含数学问题，并在每轮使用相同数据集 $DG$（选自 MATH、GSM8K、TheoremQA 的训练集）。策略与价值模型同时在 $DG$ 生成样本上训练，结果表明无论使用哪种主干，自训练范式都能在分布内与分布外基准上持续提升两个模型的能力。</p>
+<p><strong>策略模型的迭代性能提升。</strong> 先前自训练方法多依赖 LLM 生成回复，并假定「带正确答案的问题」即为高质量样本，而中间推理步骤在许多情况下错误或无用。ReST-MCTS∗ 通过 MCTS∗ 生成数据，依据质量值与真实答案筛选，在表 2 中三个主干上均能通过自生成数据持续自我改进，且基本在每轮显著超越 ReSTEM 与 Self-Rewarding，说明它能筛出更高质量的自生成数据。</p>
+<p><strong>奖励模型的迭代性能提升。</strong> 在 MATH 测试集上，相同 token 用量下比较迭代训练的策略与价值模型对整体搜索结果的提升（见图 2(a)）。ReST-MCTS∗（第 1 轮）大幅超越多数基线但未完全超越 Self-Consistency；经过更多轮自训练后，基于增强价值模型的验证基本在每一点都超越 Self-Consistency，最高准确率达 48.5%，显著高于 Self-Consistency 的 42.5%，表明自训练流程的有效性。</p>
+
+<div class="figure-wrap">
+<img src="images/rest_mcts_pages/p08.png" alt="Figure 2">
+<div class="fig-caption"><strong>图 2：不同搜索在 MATH 与 SciBench 上随采样预算变化的准确率。</strong>(a) 在 MATH 上自训练价值模型：ReST-MCTS∗（第 2 轮）以更少 completion token 超越 PRM+Best-of-N、ORM+Best-of-N 与 Self-Consistency；(b) 在 SciBench 上比较价值模型，ReST-MCTS∗ 即便在预算不足时也大幅领先。</div>
+</div>
+
+<div class="table-note">
+<strong>表 3：不同验证器在 GSM8K 测试集与 MATH500 上的准确率。</strong>SC：自一致性；MS：MATH-SHEPHERD；验证基于 256 个输出。Mistral-7B:MetaMATH 上，GSM8K 准确率：SC 83.9 / ORM 86.2 / SC+ORM 86.6 / MS 87.1 / SC+MS 86.3 / <strong>SC+ReST-MCTS∗(Value) 87.5</strong>；MATH500：SC 35.1 / … / MS 37.3 / <strong>SC+ReST-MCTS∗ 39.0</strong>。表明我们的价值模型优于 MATH-SHEPHERD。
+</div>
+
+<h3 class="subsec-title">4.3 评估奖励引导与推理策略 (Reward Guidance and Reasoning Policy)</h3>
+<p>本文核心假设是：更好的搜索策略获得更高质量轨迹，能改进自训练。我们先在表 3 单独评估价值模型本身的有效性，再在表 4 评估不同推理策略的性能。</p>
+<p><strong>各类验证模型的性能比较。</strong> 我们在 GSM8K 与 MATH500 上用多个奖励模型与验证方法测试，并纳入 MATH-SHEPHERD (MS) 作对比（因其同样采用自动训练数据生成方法）。对 SC+ReST-MCTS∗，我们采用与 MS 相同的基于 CoT 的采样策略，仅以自身价值模型输出替代 MS 的奖励模型，构成对奖励模型训练方法的直接比较。结果显示 SC+ReST-MCTS∗ (Value) 在 GSM8K 与 MATH 上的解准确率提升更高，证实我们的价值模型有效，也说明质量值与加权奖励的定义有效或可能更优。</p>
+<p><strong>相同搜索预算下的性能比较。</strong> 尽管基于 MCTS 的搜索方法显著提升模型性能，却常需要可观的 token 输入与生成量。我们在 SciBench 科学问题上研究搜索 token 预算与模型性能的关系（图 2(b)）。结果显示 ReST-MCTS∗ 即便在预算不足时也大幅超越其他基线；基于 CoT 的方法虽可通过增大采样预算大幅提升，但很快收敛到有限的准确率，不如 ReST-MCTS∗。</p>
+<p><strong>不同推理策略在基准上的比较。</strong> 我们在 SciBench 上以 GLM4、GPT-3.5-turbo（API）与小规模 LLaMA2-13B-Chat 为骨干进行实验（表 4，每法重复 2 次取 10 个科目的平均准确率）。整体准确率上 ReST-MCTS∗ 在全部 3 个模型上超越其他基线，GLM4 提升超 4.0%、GPT-3.5-turbo 超 3.1%；在 chemmc、quan、stat 等具体科目上提升超 5.0%。我们的 ToT 基线在许多科目也表现良好，有时甚至超过 ReST-MCTS∗，反映价值模型能为基于树搜索的方法提供恰当引导。我们也发现 LLaMA2-13B-Chat 上提升不显著，揭示小规模策略在采用复杂树搜索时可能因逐步推理能力较低而受限。</p>
+
+<div class="table-note">
+<strong>表 4：SciBench 上与代表性模型的整体性能比较（节选）。</strong>方法含 CoT、ToT、ReST-MCTS∗。以 GLM4 为例：CoT 全体均值 12.68，ToT 15.82，<strong>ReST-MCTS∗ 16.77</strong>；GPT-3.5-turbo：CoT 6.92，ToT 8.44，<strong>ReST-MCTS∗ 10.06</strong>；LLaMA2-13B-Chat：CoT 2.23，ToT 2.37，<strong>ReST-MCTS∗ 2.90</strong>。ReST-MCTS∗ 在三个模型上均取得最高整体准确率。
+</div>
+
+<!-- ======== RELATED WORK ======== -->
+<h2 id="sec-related" class="sec-title">5. 相关工作 (Related Work)</h2>
+<h3 class="subsec-title">5.1 大语言模型训练 (LLM Training)</h3>
+<p>大语言模型（LLMs）已成为自然语言任务上的显著成功。近期研究聚焦于提升 LLM 推理能力，包括收集高质量/更大规模领域数据、设计精巧的提示、或训练监督学习与强化学习（RL）。当 LLM 用 RL 算法训练时，其生成可自然表达为马尔可夫决策过程（MDP）并针对特定目标优化。据此，InstructGPT 用基于人类反馈的 RLHF 优化 LLM 以对齐人类偏好取得巨大成功；RLAIF 则使用 AI 反馈扩展 RLHF。我们的工作旨在提出一种通过过程奖励引导树搜索的 LLM 自训练方法。</p>
+<h3 class="subsec-title">5.2 大语言模型推理 (LLM Reasoning)</h3>
+<p>LLM 推理算法包括基于提示的思维链（CoT），以及以思维树（ToT）为代表的基于规划的方法。科学推理有多种挖掘现有大模型潜力的类别。已有研究试图超越直接生成：例如逐步生成解、用另一模型/函数选出排名靠前的答案、通过限制输出范围避免幻觉；maieutic prompting 可生成递归解释并消除矛盾候选以实现逻辑一致推理。CoT 模仿人类逐步求解；自一致性 CoT 通过采样多种解释并选最频繁最终答案提升可靠性；ToT 进一步泛化 CoT，在树中考虑多条不同推理路径。本文在 [22; 24; 34; 35] 等困难科学推理任务上作基准比较。</p>
+
+<!-- ======== CONCLUSION ======== -->
+<h2 id="sec-concl" class="sec-title">6. 结论 (Conclusion)</h2>
+<p>本文提出 ReST-MCTS∗，通过奖励引导树搜索生成的高质量样本，对策略模型与过程奖励模型进行自训练。前一迭代推断出的奖励能够精炼过程奖励模型，并用高质量轨迹自训练策略模型。实验表明 ReST-MCTS∗ 超越其他自训练范式，并在相同搜索预算下比先前推理基线达到更高准确率。</p>
+<p><strong>局限性：</strong> 我们在附录 H 详述了局限性。概言之，我们需要证明 ReST-MCTS∗ 能推广到数学之外的其他推理任务（如编程、智能体等），以及无标准答案的任务（对话、SWE-Bench 等）；我们还需要扩大所提出的价值模型并进一步改进数据过滤技术。一个潜在思路是引入在线 RL 算法，以更好地对价值模型与策略模型进行自训练。</p>
+
+<div class="footer">本页为 ReST-MCTS∗ 论文的中文翻译，仅供学习研究使用。原文：arXiv:2406.03816 (NeurIPS 2024)。</div>
+
+</div>
+</body>
+</html>

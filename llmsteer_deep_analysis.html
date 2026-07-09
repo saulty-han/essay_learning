@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>深度解读 — LLMSTEER: Steering Attention on Reused Contexts</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{
+  font-family:'Noto Sans SC',system-ui,-apple-system,sans-serif;
+  background:#0d1117;color:#c9d1d9;
+  line-height:1.8;font-size:16px;
+  min-height:100vh;
+}
+.container{
+  max-width:1400px;margin:0 auto;padding:0 24px;
+  background:#0d1117;position:relative;
+}
+.back-btn{
+  position:fixed;top:16px;left:16px;z-index:9999;
+  background:rgba(20,20,35,.75);color:#c9d1d9;
+  border:1px solid rgba(255,255,255,.15);border-radius:10px;
+  padding:8px 16px;font-size:14px;cursor:pointer;
+  backdrop-filter:blur(6px);transition:all .3s;
+  text-decoration:none;display:flex;align-items:center;gap:6px;
+}
+.back-btn:hover{background:rgba(30,30,55,.9);border-color:rgba(255,255,255,.3);}
+.hero{padding:80px 0 40px;text-align:center;}
+.hero-title{
+  font-size:2.2rem;font-weight:700;
+  background:linear-gradient(135deg,#84cc16,#a3e635,#a3e635);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  background-clip:text;margin-bottom:12px;line-height:1.3;
+}
+.hero-sub{font-size:1.1rem;color:#8b949e;margin-bottom:8px;}
+.venue{font-size:.95rem;color:#8b949e;margin-top:8px;}
+.venue a{color:#84cc16;text-decoration:none;}
+.venue a:hover{text-decoration:underline;}
+.tag-row{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:16px;}
+.tag{
+  display:inline-block;padding:4px 14px;border-radius:20px;font-size:.85rem;
+  border:1px solid rgba(132,204,22,.3);color:#84cc16;
+  background:rgba(132,204,22,.06);
+}
+.divider{border:none;border-top:1px solid rgba(255,255,255,.08);margin:48px 0;}
+.section{margin:40px 0;}
+.section-title{
+  font-size:1.75rem;font-weight:700;margin-bottom:20px;
+  color:#e6edf3;display:flex;align-items:center;gap:10px;
+}
+.section-title .num{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:36px;height:36px;border-radius:50%;
+  background:linear-gradient(135deg,#84cc16,#a3e635);
+  color:#0d1117;font-size:1rem;font-weight:700;flex-shrink:0;
+}
+.section-desc{font-size:16px;line-height:1.9;color:#c9d1d9;margin-bottom:16px;}
+.toc{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:16px;padding:28px 36px;margin:30px 0;
+}
+.toc h3{font-size:1.2rem;color:#e6edf3;margin-bottom:14px;}
+.toc ol{list-style:none;counter-reset:toc;padding:0;}
+.toc li{counter-increment:toc;margin:8px 0;}
+.toc li::before{content:counter(toc) ".";color:#84cc16;font-weight:600;margin-right:8px;}
+.toc a{color:#8b949e;text-decoration:none;transition:color .2s;}
+.toc a:hover{color:#84cc16;}
+.module-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:24px;margin:18px 0;transition:all .3s;
+}
+.module-card:hover{border-color:rgba(132,204,22,.3);transform:translateY(-2px);}
+.module-card h3{font-size:1.15rem;font-weight:600;margin-bottom:10px;color:#84cc16;}
+.module-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.arch-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:22px;margin:14px 0;transition:all .3s;
+}
+.arch-card:hover{border-color:rgba(132,204,22,.3);}
+.arch-card h4{font-size:1.05rem;font-weight:600;color:#a3e635;margin-bottom:8px;}
+.arch-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.step-flow{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:22px;margin:14px 0;
+}
+.step-flow h4{font-size:1.05rem;font-weight:600;color:#84cc16;margin-bottom:8px;}
+.step-flow p{font-size:15px;line-height:1.8;color:#8b949e;}
+.data-table{
+  width:100%;border-collapse:collapse;margin:18px 0;
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;overflow:hidden;font-size:14px;
+}
+.data-table th{
+  background:rgba(132,204,22,.1);color:#84cc16;
+  padding:12px 16px;text-align:left;font-weight:600;
+}
+.data-table td{
+  padding:10px 16px;border-top:1px solid rgba(255,255,255,.06);
+  color:#c9d1d9;
+}
+.data-table tr:hover td{background:rgba(132,204,22,.04);}
+.formula-box{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;padding:20px 24px;margin:16px 0;
+  font-size:18px;text-align:center;color:#e6edf3;
+  font-family:'JetBrains Mono',monospace;
+}
+.code-block{
+  background:rgba(20,20,35,.8);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;padding:18px 22px;margin:16px 0;
+  overflow-x:auto;
+}
+.code-block pre{
+  font-family:'JetBrains Mono',monospace;font-size:14px;
+  line-height:1.7;color:#c9d1d9;white-space:pre;
+}
+.ck{color:#84cc16;}.cs{color:#a3e635;}.cf{color:#d2a8ff;}.cg{color:#8b949e;}.cv{color:#79c0ff;}
+.qa-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:24px;margin:16px 0;
+}
+.qa-q{font-size:1.05rem;font-weight:600;color:#84cc16;margin-bottom:12px;}
+.qa-a{font-size:15px;line-height:1.9;color:#8b949e;}
+.highlight-box{
+  background:rgba(132,204,22,.06);border:1px solid rgba(132,204,22,.2);
+  border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;
+}
+.warn-box{
+  background:rgba(240,136,62,.08);border:1px solid rgba(240,136,62,.25);
+  border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;
+}
+.info-box{
+  background:rgba(132,204,22,.06);border:1px solid rgba(132,204,22,.2);
+  border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;
+}
+.prompt-box{
+  background:rgba(20,20,35,.8);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;padding:18px 22px;margin:16px 0;
+  font-family:'JetBrains Mono',monospace;font-size:13px;
+  line-height:1.7;color:#c9d1d9;white-space:pre-wrap;
+}
+.prompt-label{
+  display:inline-block;padding:2px 10px;border-radius:6px;
+  font-size:.85rem;font-weight:600;margin-bottom:8px;
+  background:rgba(132,204,22,.15);color:#84cc16;
+}
+.fc{font-size:14px;color:#8b949e;text-align:center;margin:10px 0;line-height:1.6;}
+.comp-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:22px;margin:14px 0;transition:all .3s;
+}
+.comp-card:hover{border-color:rgba(132,204,22,.3);}
+.comp-card h4{font-size:1.05rem;font-weight:600;color:#a3e635;margin-bottom:8px;}
+.comp-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.insight-box{
+  background:rgba(132,204,22,.06);border:1px solid rgba(132,204,22,.2);
+  border-radius:12px;padding:18px 22px;margin:16px 0;
+}
+.insight-box h4{color:#84cc16;font-size:1.05rem;margin-bottom:8px;}
+.insight-box p{font-size:15px;line-height:1.8;color:#c9d1d9;}
+.limit-box{
+  background:rgba(240,136,62,.08);border:1px solid rgba(240,136,62,.25);
+  border-radius:12px;padding:18px 22px;margin:16px 0;
+}
+.limit-box h4{color:#a3e635;font-size:1.05rem;margin-bottom:8px;}
+.limit-box p{font-size:15px;line-height:1.8;color:#c9d1d9;}
+.kv-row{
+  display:flex;border-bottom:1px solid rgba(255,255,255,.06);padding:8px 0;
+}
+.kv-row:last-child{border-bottom:none;}
+.kv-key{width:180px;flex-shrink:0;color:#84cc16;font-weight:500;font-size:14px;}
+.kv-val{color:#c9d1d9;font-size:14px;line-height:1.7;}
+.footer{text-align:center;color:#555;font-size:14px;padding:48px 0 32px;}
+/* SVG architecture */
+.svg-container{
+  background:rgba(20,20,35,.4);border:1px solid rgba(255,255,255,.06);
+  border-radius:14px;padding:20px;margin:24px 0;overflow-x:auto;
+  text-align:center;
+}
+.svg-container svg{max-width:100%;height:auto;}
+/* Phase badge */
+.phase-badge{
+  display:inline-block;padding:3px 12px;border-radius:8px;
+  font-size:.85rem;font-weight:600;margin-right:8px;
+}
+.phase-1{background:rgba(99,102,241,.15);color:#818cf8;}
+.phase-2{background:rgba(132,204,22,.15);color:#a3e635;}
+.phase-3{background:rgba(34,197,94,.15);color:#4ade80;}
+/* Grid layout */
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
+.grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;}
+@media(max-width:900px){
+  .grid-2,.grid-3{grid-template-columns:1fr;}
+  .hero-title{font-size:1.6rem;}
+  .kv-row{flex-direction:column;}
+  .kv-key{width:auto;}
+}
+/* Animated arrow */
+@keyframes flowPulse{
+  0%,100%{opacity:.6;}
+  50%{opacity:1;}
+}
+.flow-arrow{animation:flowPulse 2s ease-in-out infinite;}
+
+</style>
+</head>
+<body>
+<div class="container">
+
+<a class="back-btn" href="index.html">&#8592; 返回目录</a>
+
+<a href="llmsteer_full_translation.html" style="display:block;max-width:860px;margin:18px auto 0;padding:13px 22px;background:linear-gradient(90deg,rgba(31,111,235,.16),rgba(137,87,227,.16));border:1px solid rgba(137,87,227,.5);border-radius:12px;color:#e6edf3;text-decoration:none;font-weight:500;font-size:15px;text-align:center;box-shadow:0 2px 14px rgba(0,0,0,.35);">阅读本文逐段完整中文翻译（Full Translation）</a>
+
+<!-- ========== HERO ========== -->
+<div class="hero">
+  <h1 class="hero-title">LLMSTEER: Steering Attention on Reused Contexts</h1>
+  <p class="hero-sub">用查询无关的注意力引导改进长上下文 LLM 推理——与前缀缓存完全兼容</p>
+  <div class="venue">arXiv 2024 (NeurIPS 2024 ML for Systems) &nbsp;|&nbsp; <a href='https://arxiv.org/abs/2411.13009'>arXiv:2411.13009</a></div>
+  <div class="tag-row">
+    <span class="tag">Attention Steering</span><span class="tag">Prefix Caching</span><span class="tag">Long Context</span><span class="tag">Training-Free</span><span class="tag">UChicago</span>
+  </div>
+</div>
+
+<!-- ========== TOC ========== -->
+<div class="toc">
+  <h3>目录</h3>
+  <ol>
+    <li><a href="#sec-1">研究动机</a></li>
+    <li><a href="#sec-2">框架概览</a></li>
+    <li><a href="#sec-3">上下文重读与 Token 选择</a></li>
+    <li><a href="#sec-4">注意力引导的加权矩阵</a></li>
+    <li><a href="#sec-5">与前缀缓存的兼容设计</a></li>
+    <li><a href="#sec-6">引导与缓存的整合</a></li>
+    <li><a href="#sec-7">实验评估</a></li>
+    <li><a href="#sec-8">敏感性分析</a></li>
+    <li><a href="#sec-9">代码使用与实战（含 GitHub 源码、安装命令、使用示例）</a></li>
+    <li><a href="#sec-10">总结与未来展望</a></li>
+  </ol>
+</div>
+
+<hr class="divider">
+
+<hr class="divider">
+
+<!-- ========== 1. MOTIVATION ========== -->
+<div class="section" id="sec-1">
+  <h2 class="section-title"><span class="num">1</span> 研究动机：长上下文的丢失与高成本</h2>
+  <p class="section-desc">LLM 在长上下文理解上表现不佳（"lost-in-the-middle" 问题），且处理长上下文带来高昂运行时成本。业界用前缀缓存复用 KV cache 省去重复 prefill，但模型 KV cache 不变，仍会丢失对关键信息的注意力。</p>
+  <div class="grid-2">
+    <div class="module-card">
+      <h3>现有引导方法的缺陷</h3>
+      <p>PASTA 需人工标注关键 token（对长文本不可行）；AutoPASTA 用迭代提示自动定位关键句，但需两次 LLM 调用、增加延迟，且 query 依赖式引导破坏前缀缓存复用（第二次调用的 KV cache 被改写）。</p>
+    </div>
+    <div class="module-card">
+      <h3>本文主张</h3>
+      <p>LLMSTEER 用不含查询的前缀提示做 query-independent 引导，KV cache 可跨所有查询复用，在不微调的前提下同时实现高质量与高效率，并兼容前缀缓存。</p>
+    </div>
+  </div>
+  <div class="insight-box">
+    <h4>核心创新</h4>
+    <p>用两次不同前缀提示读取同一上下文，识别跨两次读取都重要的 token，再上加权这些 token 的注意力分数——相比 AutoPASTA 延迟降低高达 4.8×，F1 提升高达 10%。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 2. OVERVIEW ========== -->
+<div class="section" id="sec-2">
+  <h2 class="section-title"><span class="num">2</span> 框架概览：重读 → 选 token → 引导</h2>
+  <p class="section-desc">整体由"上下文重读（Contextual re-reading）→ token 选择（Token selection）→ 引导（Steering）"三步构成。对同一段上下文 C，用两个不同前缀提示分别 prefill 两次，得到两份 KV cache，再选"两次都高关注"的 token 做加权。</p>
+  <div class="svg-container">
+    <svg viewBox="0 0 920 250" xmlns="http://www.w3.org/2000/svg" font-family="Noto Sans SC, sans-serif">
+      <defs><marker id="lsS" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#a3e635"/></marker></defs>
+      <rect x="20" y="95" width="150" height="60" rx="12" fill="rgba(132,204,22,.12)" stroke="#a3e635" stroke-width="1.5"/>
+      <text x="95" y="130" text-anchor="middle" fill="#c9d1d9" font-size="14" font-weight="600">上下文 C</text>
+      <rect x="200" y="55" width="200" height="130" rx="12" fill="rgba(132,204,22,.18)" stroke="#a3e635" stroke-width="2"/>
+      <text x="300" y="88" text-anchor="middle" fill="#e6edf3" font-size="13" font-weight="700">上下文重读</text>
+      <text x="300" y="110" text-anchor="middle" fill="#8b949e" font-size="10">前缀提示 P1</text>
+      <text x="300" y="128" text-anchor="middle" fill="#8b949e" font-size="10">前缀提示 P2</text>
+      <text x="300" y="146" text-anchor="middle" fill="#8b949e" font-size="10">两份 KV cache</text>
+      <text x="300" y="164" text-anchor="middle" fill="#8b949e" font-size="10">query-independent</text>
+      <rect x="450" y="55" width="200" height="130" rx="12" fill="rgba(132,204,22,.18)" stroke="#a3e635" stroke-width="2"/>
+      <text x="550" y="88" text-anchor="middle" fill="#e6edf3" font-size="13" font-weight="700">Token 选择</text>
+      <text x="550" y="110" text-anchor="middle" fill="#8b949e" font-size="10">累积注意力 s</text>
+      <text x="550" y="128" text-anchor="middle" fill="#8b949e" font-size="10">每层跨头 top-k</text>
+      <text x="550" y="146" text-anchor="middle" fill="#8b949e" font-size="10">两次交集</text>
+      <text x="550" y="164" text-anchor="middle" fill="#8b949e" font-size="10">缩放矩阵 M</text>
+      <rect x="700" y="55" width="200" height="130" rx="12" fill="rgba(132,204,22,.12)" stroke="#a3e635" stroke-width="1.5"/>
+      <text x="800" y="88" text-anchor="middle" fill="#e6edf3" font-size="13" font-weight="700">引导 Steering</text>
+      <text x="800" y="110" text-anchor="middle" fill="#8b949e" font-size="10">A_steered = M⊙A</text>
+      <text x="800" y="128" text-anchor="middle" fill="#8b949e" font-size="10">在线仅 prefill 查询</text>
+      <text x="800" y="146" text-anchor="middle" fill="#8b949e" font-size="10">延迟≈8B 基线</text>
+      <text x="800" y="164" text-anchor="middle" fill="#8b949e" font-size="10">兼容前缀缓存</text>
+      <line x1="170" y1="120" x2="195" y2="120" stroke="#a3e635" stroke-width="2" marker-end="url(#lsS)"/>
+      <line x1="400" y1="120" x2="445" y2="120" stroke="#a3e635" stroke-width="2" marker-end="url(#lsS)"/>
+      <line x1="650" y1="120" x2="695" y2="120" stroke="#a3e635" stroke-width="2" marker-end="url(#lsS)"/>
+    </svg>
+  </div>
+  <div class="step-flow">
+    <h4>端到端流程（Algorithm 1）</h4>
+    <p>离线（请求前）用两个前缀提示 prefill 上下文、选 token、生成 M；在线时仅 prefill 用户查询，对每层注意力做 M⊙A。因前缀缓存跨查询复用，在线延迟接近 8B 基线。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 3. REREAD ========== -->
+<div class="section" id="sec-3">
+  <h2 class="section-title"><span class="num">3</span> 上下文重读与 Token 选择</h2>
+  <p class="section-desc">Contextual re-reading 用两个不含查询的前缀提示 P1、P2 各读一遍上下文，保证引导是 query-independent 的，使前缀缓存可跨所有查询复用。</p>
+  <div class="module-card">
+    <h3>Token 选择机制</h3>
+    <p>输入张量 X∈R^{L×D}，注意力 A = softmax(QK^T/√D)，Q=XW_Q、K=XW_K；取前缀提示 + 上下文部分 A_p = A[:L_p,:L_p]；累积注意力分数 s = Σ_{i} A_p[i,:] ∈ R^{L_p}（每个 token 收到的总注意力）；每层跨所有头排序取 top-k，再取两次结果的交集。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 4. STEER ========== -->
+<div class="section" id="sec-4">
+  <h2 class="section-title"><span class="num">4</span> 注意力引导的加权矩阵</h2>
+  <p class="section-desc">Steering 阶段用缩放矩阵 M 放大选中 token 的注意力权重。M∈R^{L×L} 初值全 1，对每层选中 token 对应位置置为 α，再在 batch、head 维扩展为 R^{1×H×L×L}。</p>
+  <div class="module-card">
+    <h3>逐元素加权</h3>
+    <p>A_steered = M ⊙ A（⊙ 为逐元素乘）。选中 token 的注意力分数被放大 α 倍，从而在推理时把注意力引导到跨两次重读都重要的内容上。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 5. CACHE ========== -->
+<div class="section" id="sec-5">
+  <h2 class="section-title"><span class="num">5</span> 与前缀缓存的兼容设计</h2>
+  <div class="module-card">
+    <h3>Query-Independent 的关键</h3>
+    <p>因为引导用的前缀提示不含查询，KV cache 与查询无关，可跨所有查询复用——请求到来时只需 prefill 最终查询本身。这使得在线延迟接近 8B 基线，同时获得接近大模型的质量。</p>
+  </div>
+  <div class="arch-card">
+    <h4>与 AutoPASTA 的本质区别</h4>
+    <p>AutoPASTA 依赖查询、需两次在线调用且破坏缓存复用；LLMSTEER query-independent、仅一次在线 prefill，延迟低 1.4–4.8×。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 6. INTEGRATION ========== -->
+<div class="section" id="sec-6">
+  <h2 class="section-title"><span class="num">6</span> 引导与缓存的整合</h2>
+  <div class="arch-card">
+    <h4>端到端数据流</h4>
+    <p>离线用两个前缀提示 prefill 上下文、选 token、生成 M；在线时仅 prefill 用户查询，对每层注意力做 M⊙A。prefix 缓存跨查询复用，在线延迟接近 8B 基线。算法见 Algorithm 1：输入 C、查询集、LLM、P1/P2、α → 上下文重读 Ai=Attention(Pi⊕C) → Token 选择 T = 两次 TopK 交集 → Steering A_steered = M⊙A。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 7. EXPERIMENT ========== -->
+<div class="section" id="sec-7">
+  <h2 class="section-title"><span class="num">7</span> 实验评估：质量↑、延迟↓</h2>
+  <div class="module-card">
+    <h3>设置与基线</h3>
+    <p>数据集 SQuAD、TriviaQA、GSM8K（各 100 样例）；指标 F1 与请求延迟。基线 Llama-8B、Llama-70B（8-bit）、Llama-8B+AutoPASTA；基于 Huggingface Transformers，AutoPASTA 自行实现，2×NVIDIA A40。</p>
+  </div>
+  <div class="highlight-box">
+    <p><b>主结果</b>：F1 由 72.9→82.0；SQuAD 较 8B+前缀缓存 +约 10%，较 AutoPASTA +约 7%；TriviaQA 超 8B 约 12.5%、超 AutoPASTA 约 11.4%；GSM8K 甚至超过 70B。延迟较 70B 降低 7.1–7.5×，较 AutoPASTA 降低 1.4–4.8×，与 8B 基线几乎一致。整体把小 / 大模型质量差距缩小 65.9%。</p>
+  </div>
+  <table class="data-table">
+    <tr><th>对比</th><th>F1 提升</th><th>延迟</th></tr>
+    <tr><td>vs 8B+前缀缓存</td><td>+约 10%（SQuAD）</td><td>≈8B 基线</td></tr>
+    <tr><td>vs AutoPASTA</td><td>+约 7–11%</td><td>低 1.4–4.8×</td></tr>
+    <tr><td>vs 70B</td><td>GSM8K 超 70B</td><td>低 7.1–7.5×</td></tr>
+    <tr><td>质量差距缩小</td><td>65.9%</td><td>—</td></tr>
+  </table>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 8. SENSITIVITY ========== -->
+<div class="section" id="sec-8">
+  <h2 class="section-title"><span class="num">8</span> 敏感性分析：引导 vs 重读</h2>
+  <div class="module-card">
+    <h3>量化对比</h3>
+    <p>文中明确"未来工作"才做 steering vs. re-reading 的量化消融；目前仅指出 query-dependent 版本改进更小，说明无需 query 信息也能有效引导。缩放因子 α 经 coarse-to-fine profiling 搜索最优层 / 头集合。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 9. INSIGHT ========== -->
+<div class="section" id="sec-9">
+  <h2 class="section-title"><span class="num">9</span> 代码使用与实战（含 GitHub 源码、安装命令、使用示例）</h2>
+  <div class="module-card">
+    <h3>论文与代码</h3>
+    <p>本文为 UChicago 工作（<a href="https://arxiv.org/abs/2411.13009" style="color:#a3e635;">arXiv:2411.13009</a>，NeurIPS 2024 ML for Systems Workshop）。<b>文中未提供公开代码仓库</b>；AutoPASTA 代码未公开，作者按其论文自行实现。基于 Huggingface Transformers，2×A40 运行。</p>
+  </div>
+  <div class="code-block"><pre># 1) 准备模型（Llama-3.1-8B-Instruct）
+pip install transformers torch
+
+# 2) 用两条前缀提示生成两份 KV cache（附录 A.1）
+python reread.py --model meta-llama/Llama-3.1-8B-Instruct \
+    --prefix_p1 "Answer the question based on the given passages..." \
+    --prefix_p2 "Respond to the query using only the provided texts..."
+
+# 3) 选 top-k 交集并用 α 缩放生成 M
+python steer.py --context C.txt --top_k 32 --alpha 1.5
+
+# 4) 在线推理：仅 prefill 查询，对每层注意力做 M⊙A
+python infer.py --query Q.txt --cache M.pt</pre></div>
+  <div class="highlight-box">
+    <p>复现要点：前缀提示不含查询是兼容前缀缓存的关键；缩放因子 α 与最优层 / 头集合用 coarse-to-fine profiling 搜索；数据集 SQuAD / TriviaQA / GSM8K 均公开。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 10. SUMMARY ========== -->
+<div class="section" id="sec-10">
+  <h2 class="section-title"><span class="num">10</span> 总结与未来展望</h2>
+  <p class="section-desc">LLMSTEER 用两次不含查询的前缀提示重读上下文，选"跨两次都高关注"的 token 并上加权其注意力，实现 query-independent 的注意力引导，免微调、兼容前缀缓存，延迟接近 8B 基线却获得接近大模型质量（差距缩小 65.9%）。</p>
+  <div class="qa-card">
+    <div class="qa-q">Q1：为什么 LLMSTEER 能兼容前缀缓存？</div>
+    <div class="qa-a">因为它用不含查询的前缀提示做引导，KV cache 与查询无关，可跨所有查询复用。</div>
+  </div>
+  <div class="qa-card">
+    <div class="qa-q">Q2：如何决定引导哪些 token？</div>
+    <div class="qa-a">用两个不同前缀提示各读一遍上下文，取每层跨所有头的 top-k 注意力 token 的交集。</div>
+  </div>
+  <div class="qa-card">
+    <div class="qa-q">Q3：延迟为何能接近 8B 基线？</div>
+    <div class="qa-a">上下文 KV cache 离线预计算并复用，在线只需 prefill 查询本身。</div>
+  </div>
+  <div class="limit-box">
+    <h4>局限与未来</h4>
+    <p>仅测到 Llama-8B，未测更长上下文（&gt;10k token）及其他模型；未做完整消融；token 级上加权而非更细粒度的 token-pair 级引导。</p>
+  </div>
+</div>
+
+<div class="footer">论文深度解读 · 生成自 LLMSTEER: Steering Attention on Reused Contexts · 阅读时间约 30 分钟</div>
+
+</div>
+</body>
+</html>

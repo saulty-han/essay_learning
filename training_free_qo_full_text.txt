@@ -1,0 +1,853 @@
+=== PAGE 1 ===
+arXiv:2506.05853v2  [cs.DB]  7 Jul 2025
+Training-Free Query Optimization via LLM-Based
+Plan Similarity
+Nikita Vasilenko1*, Alexander Demin 1 and Vladimir Boorlakov 2
+1Ershov Institute of Informatics Systems, Novosibirsk, Russia.
+2Novosibirsk State Technical University, Novosibirsk, Russia.
+*Corresponding author(s). E-mail(s):
+vasilenko.nikita.research@gmail.com;
+Contributing authors: alexandredemin@yandex.ru;
+vladimir.boorlakov@gmail.com;
+Abstract
+Large language model (LLM) embeddings offer a promising new avenue for
+database query optimization. In this paper, we explore how pre-trained exe-
+cution plan embeddings can guide SQL query execution without the need for
+additional model training. We introduce LLM-PM (LLM-based Plan Mapping),
+a framework that embeds the default execution plan of a query, finds its k
+nearest neighbors among previously executed plans, and recommends database
+hintsets based on neighborhood voting. A lightweight consistency check val-
+idates the selected hint, while a fallback mechanism searches the full hint
+space when needed. Evaluated on the JOB-CEB benchmark using OpenGauss,
+LLM-PM achieves an average speed-up of 21% query latency reduction. This
+work highlights the potential of LLM-powered embeddings to deliver practical
+improvements in query performance and opens new directions for training-free,
+embedding-based optimizer guidance systems.
+Keywords: Query Optimization, LLM for Databases, Database Hints
+1 Introduction
+Query optimization is a core problem in relational database systems: the optimizer
+must construct an efficient execution plan for each SQL query from a vast search
+space of alternatives (potential join orders, join algorithms, table access methods,
+1
+
+=== PAGE 2 ===
+etc.). Decades of research have produced sophisticated cost-based optimizers, yet they
+remain imperfect and can still choose suboptimal plans that dramatically slow down
+query execution. A primary cause are inaccurate cardinality estimation and cost model
+which often relies on simplistic assumptions and thus can be wildly wrong. These
+mistakes lead to poor plan choices (e.g., using a nested-loop join where a hash join
+would be far faster).
+Modern database systems offer optimizer hints as a mechanism to influence or
+override plan choices. Hints are directives embedded in the SQL that guide the opti-
+mizer to consider specific strategies, such as using a particular join order, favoring a
+hash join over other join types, or using an index on a given table. In principle, a
+skilled DBA can use hints to steer the optimizer away from known bad decisions and
+toward a better plan. For example, a hint could force the use of a previously ignored
+index, or constrain the join order to avoid inefficient joins. The challenge, however, is
+that selecting the right hints is extremely complex – it requires a deep understanding
+of the query, the data, and the optimizer’s internal heuristics. An incorrect hint may
+even backfire and degrade performance rather than improve it.
+These difficulties have sparked interest in automating query optimization with
+machine learning. A recent trend is to treat the optimizer as a black box and use
+learning methods to assist it by suggesting hints or plan tweaks that lead to faster
+executions. This avoids wholesale replacement of the optimizer, focusing instead on
+guiding it toward better decisions. Recent studies have shown that Large Language
+Models (LLMs) can significantly enhance database query optimization. These models
+are increasingly employed in various ways, such as generating execution plans, embed-
+ding queries to understand their semantics, and providing optimization hints. The
+promising results from these approaches indicate that LLMs are becoming a valuable
+tool in the field. Given this progress, we believe that further exploration into LLM-
+driven query optimization is a worthwhile endeavor, with the potential to advance the
+efficiency and adaptability of database systems. However, despite these encouraging
+advances, LLM-based techniques remain far from being practical for real-world deploy-
+ment due to the high cost and latency of inference, which limits their applicability in
+time-sensitive or resource-constrained environments.
+In this paper, we introduce a straightforward method that leverages Large Lan-
+guage Model (LLM) embeddings of execution plans—not the queries themselves—to
+identify optimal sets of optimizer hints. Our approach combines the representational
+power of LLM embeddings with a simple, fast, analogy-based prediction system that
+requires no training.We aim to bridge the gap between the expressive power of LLMs
+and the need for rapid, efficient query optimization systems. Our method effectively
+learns from past experiences without requiring an extensive training phase—the heavy
+lifting is done by the pre-trained LLM, which provides a semantic representation of
+execution plans.
+To validate this approach, we built a prototype on the openGauss database system
+and evaluated it on one standard benchmark: JOB-CEB (3133 query instances derived
+from 16 query templates on the IMDB dataset). In our experiments, the LLM-based
+method successfully guided the optimizer toward faster plans for a large portion of
+the queries. The results demonstrate that using LLM embeddings for plan hinting
+2
+
+=== PAGE 3 ===
+can consistently outperform the default optimizer, even without relying on complex
+training or modifications to the underlying system.
+In summary, this paper makes the following contributions: (1) We introduce a
+method for query optimization that uses LLM-generated execution plan embeddings
+to enhance optimizer hint selection. (2) We propose a lightweight, fast optimization
+approach that leverages pre-trained LLMs to guide the database optimizer toward bet-
+ter execution plans without requiring extensive training or system modifications. (3)
+We demonstrate the effectiveness of LLM-PM through experiments on standard bench-
+mark (JOB-CEB), showing that LLM-based plan hinting can outperform the default
+optimizer. (4) We highlight the potential of LLM embeddings to improve query per-
+formance, offering a promising direction for efficient, LLM-driven query optimization
+systems.
+2 Related Work
+Recent research into improving the quality of query optimization can be broadly
+divided into two main directions. The first is aimed at completely replacing the tradi-
+tional cost-based optimizer with learned models that generate query execution plans
+from scratch. The second, more incremental direction seeks to augment or guide
+the existing optimizer using machine learning techniques by refining cost estimates,
+improving cardinality predictions, or introducing optimizer hints.
+Optimizers that Replace the Traditional Optimizer
+A first research line seeks to replace the entire cost–based optimizer with a
+learned model that decides the execution plan end-to-end.
+Neo [1] pioneered this direction: a tree-convolution network predicts the latency
+of a candidate plan and a search component selects the plan with the lowest predicted
+latency. This approach demonstrated the feasibility of end-to-end learned planning
+but required a long training time and extensive labeled data. Deep-learning cardi-
+nality models can also partially replace core optimizer logic: the MSCN model in
+Learned cardinalities: Estimating correlated joins with deep learning [2]
+and its follow-up Cardinality Estimation with Local Deep Learning Models
+[3] learn complex data correlations that traditional histograms miss, yielding better
+plans when integrated.
+These works demonstrate that partial or even full replacement of an optimizer is
+technically feasible, yet they come with significant trade-offs: (i) they require very
+large training sets; (ii) they discard decades of handcrafted heuristics embodied in
+mature optimizers; and (iii) they raise open questions about how well the learned
+models generalize to unseen data distributions, schemas, and query workloads.
+Optimizers that Guide the Traditional Optimizer
+A second, more pragmatic line keeps the native optimizer but steers it with learned
+signals such as cost and cardinality corrections or optimizer hints.
+3
+
+=== PAGE 4 ===
+AQO [4] is a PostgreSQL extension that rewrites only the cardinality-estimation
+component of the native optimizer. After each query execution, AQO stores the
+observed cardinalities for every plan node in a per-query “memory” and trains a
+k-nearest-neighbour regressor in the feature space. When the same query template re-
+appears, the learned estimates are injected in place of the built-in formulas, letting the
+standard search procedure pick a (usually much cheaper) plan. Three modes ( learn,
+use, intelligent) allow DBAs to trade warm-up time for safety. Downsides are the
+need for several training executions, extra shared-memory to hold the statistics, and
+instability in case of data shift.
+ACM [5] tackles a complementary problem: out-of-date cost parameters .
+Implemented inside openGauss, ACM monitors each query’s buffer-hit ratio
+and per-operator CPU times, then uses lightweight linear regression plus
+exponential smoothing to continuously retune five key constants of the cost
+model (seq page cost, random page cost, cpu tuple cost, cpu operator cost and
+cpu index tuple cost). This online calibration increases the cost–time correlation
+for plan nodes and cuts the end-to-end runtime all without any calibration workload
+or changes to the search space. Because ACM leaves cardinality estimation untouched,
+it cannot help when the dominant error source is row-count misestimation; nonethe-
+less it offers a low-overhead, DBMS-internal way to keep the cost model in sync with
+changing hardware and cache conditions.
+BAO [6] frames hint selection as a contextual bandit. The approach uses rein-
+forcement learning to iteratively steer PostgreSQL’s optimizer via a learned hints. Bao
+continuously learns from running queries, treating the optimizer’s plan choices as a
+bandit problem to gradually bias it toward better decisions. It achieved substantial
+speedups over PostgreSQL on benchmark workloads. While powerful such approach
+tailored to a specific DBMS, instance and data distribution.
+To reduce integration effort and generalize across systems, hybrid learned opti-
+mizers have been proposed. Anneser et al. (VLDB 2023) present AutoSteer [7],
+which extends Bao’s framework with automated hint-set discovery and a plug-and-play
+design that works on multiple SQL engines. AutoSteer treats the optimizer’s tunable
+“knobs” (e.g., enabling/disabling certain plan rules via hints) as actions and learns
+which hint combinations to apply for each query to improve performance, without
+requiring expert-defined hint sets.
+F ASTgres[8] formulates hint recommendation as a classification task: given a
+SQL query as input, output a combination of hints (e.g., enable/disable specific join
+algorithms) that will likely reduce its execution time. Under the hood, FASTgres
+partitions the query workload into contexts (groups of queries with similar structure)
+and trains a separate model per context to map query features to hint decisions. The
+predicted hint set is then applied, and the query runs on the unmodified optimizer.
+This design treats the optimizer as a black box, and FASTgres effectively learns a
+function f : SQL query → hints that optimizes performance. A key challenge for such
+approaches is reliability: ensuring the ML never recommends a harmful hint. FASTgres
+addresses this by retraining on any query where a predicted hint caused a slowdown
+(a form of feedback loop).
+4
+
+=== PAGE 5 ===
+COOOL [9] casts hint choice as a learning-to-rank problem, ordering candidate
+hinted plans rather than predicting absolute cost. Lero [10] also adopts a pair-wise
+ranking view: a binary classifier learns which of two plans will be faster, avoiding the
+need for a calibrated cost model, leveraging the native optimizer to generate candi-
+date plans and using actual execution feedback to label them. By focusing on pairwise
+choices, Lero avoids the difficulty of exact cost modeling and instead learns to consis-
+tently pick better plans. Finally, HERO [11] addresses the key challenges in learned
+hint-based query optimization: reliability, efficiency, and fast inference. Instead of a
+single neural network, HERO employs an ensemble of context-aware models—each spe-
+cialized for queries with the same default plan—and organizes them in a graph-based
+storage of past plans and their performance under various hints. This design ensures
+interpretable and reliable predictions by avoiding suggestions in unfamiliar contexts.
+To overcome the exponential search space, HERO uses a parameterized local search
+algorithm that balances between training cost and optimization quality, enabling rapid
+convergence to effective hint sets without requiring exhaustive enumeration.
+These approaches preserve the DBMS’s tried-and-tested search space and heuristics
+while adding a learned “advisor” layer, typically with far lower engineering overhead
+than wholesale replacement.
+Large Language Models (LLMs) for Query-Plan Optimization
+Recent research has begun to explore whether the rich prior knowledge encoded
+in foundation models—such as large language models (LLMs)—can be leveraged to
+improve query optimization.
+Tan et al. (VLDB 2025) proposeLLM-QO [12], an optimizer that uses a generative
+LLM to produce query plans in a textual form. Authors fine-tune a general-purpose
+LLM with a huge training set of queries and plans (using a technique called QInstruct
+to serialize database metadata, SQL, and plans into text). LLM-QO treats query
+optimization as a text generation problem: given the query (and some DB metadata)
+as input, the LLM directly writes out an execution plan step by step. This is an
+extreme end-to-end use of an LLM, essentially replacing the optimizer’s search process
+with the LLM’s learned knowledge. While this is an exciting and novel direction that
+showcases the potential of LLMs for direct plan generation, we believe the approach is
+still far from practical deployment. More extensive studies are needed to convincingly
+demonstrate that LLMs can consistently produce high-quality execution plans across
+diverse workloads and schemas. Additionally, the computational cost and latency of
+generating plans using large language models currently remain significantly higher
+than those of traditional optimizers, limiting their real-world applicability.
+An alternative direction, closer to our work, is using LLMs for plan tuning rather
+than full plan generation. LLMSteer [13] is an approach that keeps the existing
+optimizer but uses an LLM to assist in picking hints. They embed each query’s text
+using a pre-trained LLM (specifically, they obtain a fixed-size vector embedding of the
+SQL query), and then train a simple classifier on a small labeled dataset to decide how
+to steer the optimizer. In their prototype, the task was to choose between two possible
+plan options for each query (e.g., with or without a particular index or join hint), and
+the classifier learned to predict which option would be faster. Despite the simplicity of
+5
+
+=== PAGE 6 ===
+this approach (no complex feature engineering, just raw LLM embeddings as input),
+it managed to outperform PostgreSQL’s built-in optimizer on the evaluated queries.
+In the work LLM-R2 [14], query rewriting is used as an optimization method.
+This approach solves a similar query optimization task using a language model, but
+the method differs. The language model is prompted with previously optimized queries
+and their rewrite rules and tasked with providing recommended rewrite rules for new
+queries. However, LLM-R2 can only compose rules that Calcite already knows; it
+cannot invent semantics-preserving rewrites outside that catalogue.
+Position of Our Work.
+Our goal is not to chase state-of-the-art speed-ups at any cost. Instead, we aim to
+demonstrate both the practical value of execution plan embeddings and the feasibility
+of building a simple, robust system around them—a system that can realistically
+be used in practice. LLM-PM is deliberately lightweight and training-free: we use a
+pre-trained LLM to embed query plans and apply a simple nearest-neighbour search
+to transfer hint sets. Despite its simplicity, this approach proves to be surprisingly
+effective—plan embeddings alone can match or even surpass the quality of handcrafted
+plan encodings, while requiring far less engineering effort.
+Crucially, our method avoids the complexity and computational overhead of gen-
+erative LLM-based approaches. Using only plan embeddings extracted from a frozen
+LLM is both significantly cheaper and faster than generating plans or rewrite rules
+with an LLM, making it a far more practical solution for real-world deployment. The
+nearest-neighbour search component is not only efficient but also robust and transpar-
+ent—a training-free, plug-and-play mechanism that can easily adapt to new workloads,
+schemas, and data distributions.
+In short, we view our contribution as evidence that ”off-the-shelf” plan embeddings,
+combined with simple retrieval-based methods, offer a practical and low-overhead
+alternative to both traditional optimizers and complex learned pipelines—not as a bid
+for theoretical peak performance, but as a step toward real-world usability.
+3 LLM-PM
+This chapter presents LLM-PM, a two-part framework for automatic hint selection
+based on LLM plan embeddings. It combines our proposed plan-mapping algorithm,
+which transfers hint sets from similar plans in embedding space, with an adaptive
+search procedure that exhaustively explores the hint space to identify optimal con-
+figurations. While the search algorithm itself is not novel, we include it as a fallback
+mechanism to ensure completeness and make the overall system self-contained.
+3.1 Problem formulation
+We formalize the task of automatic hint selection for query optimization as follows.
+Let Q be a SQL query submitted to the database. The database’s query optimizer
+can produce an execution plan P for Q, which results in some cost C(Q, P). In the
+default case (with no hints), the optimizer chooses a plan Pdefault based on its built-
+in heuristics and cost estimates, yielding execution time T (Q, Pdefault). Our goal is to
+6
+
+=== PAGE 7 ===
+find a set of hints (hintset) H for query Q such that when the optimizer is guided
+by H (and thus may choose a different plan PH), the execution time is minimized.
+Formally, we seek:
+H ∗(Q) = arg min
+H∈H(Q)
+T (Q, P H) (1)
+where H(Q) denotes the space of all valid hint configurations for query Q. In other
+words, H ∗(Q) is the optimal hint set that yields the lowest latency for Q. This is akin
+to the definition of steering an optimizer: selecting a hint or set of hints that leads to
+the fastest plan for the query. In practice, H(Q) can be very large.
+3.2 Hints
+Exhaustively testing every hint combination quickly becomes infeasible, so we
+accelerate the search with two techniques.
+Timeout threshold (fastest-so-far).
+After each plan execution we update a variable Tmin ← min
+ 
+Tmin, T (Q, P)
+
+(initially
+Tmin = T (Q, Pdefault)). If any subsequent hinted plan exceeds the current Tmin, we
+abort its execution and mark the associated hint set as sub-optimal. This prunes
+expensive plans early.
+Plan caching.
+Each distinct physical plan is cached together with its measured latency. When the
+optimizer produces a plan already in the cache, we reuse the stored latency instead
+of executing the plan again. This is most effective when many hints have little or no
+impact on the chosen plan.
+The seven binary hints under consideration are:
+• enable nestloop
+• enable hashjoin
+• enable mergejoin
+• enable seqscan
+• enable indexscan
+• enable indexonlyscan
+• enable bitmapscan
+Tie-breaking Among Equivalent Hint Sets.
+Occasionally the same physical plan P can be generated by more than one hint
+configuration. For instance,
+H1 = (0, 1, 1, 1, 0, 1, 1), H 2 = (0, 1, 1, 1, 0, 1, 0),
+produce an identical plan even though they differ only in the final flag
+(enable bitmapscan). Here, the i-th bit denotes the i-th Boolean knob listed earlier;
+a value of 1 disables the operator, whereas 0 keeps its default, enabled state. To select
+7
+
+=== PAGE 8 ===
+a unique “canonical” hint set we choose the configuration that disables the fewest
+operators:
+bH(P ) = arg min
+H:PH=P
+7X
+i=1
+hi.
+In the example above, H2 is preferred because it disables one knob fewer than H1.
+This rule is motivated by two considerations. (i) If a plan can be produced whether a
+knob is on or off, that knob appears to have no influence on the plan’s efficiency, so
+leaving it enabled avoids unnecessary restrictions. (ii) Turning off additional operators
+compresses the optimizer’s search space and may cause poor performance on queries or
+data distributions that differ from the training workload. Selecting the most permissive
+hint set therefore preserves as much of the optimizer’s built-in expertise as possible
+while still steering it toward the desired plan.
+Adaptive hint search.
+Algorithm 1 scans the entire space of 128 binary hint sets in a single pass while
+continually tightening an execution-time threshold. The query is first executed with all
+operators enabled to establish an initial timeout Tmin and seed the plan–latency cache
+C. The remaining configurations are then dispatched across w = 8 worker threads. For
+each hint set the optimizer produces a physical plan; if the same plan has already been
+observed, its latency is retrieved from C without re-execution. Otherwise the query is
+executed under the current timeout Tmin. Plans that exceed the timeout are aborted
+early and the corresponding hint sets are labelled sub-optimal. Whenever a faster
+execution finishes, Tmin is atomically updated, immediately tightening the timeout
+for all workers still in flight. Because slow plans are terminated quickly and repeated
+plans are short-circuited via the cache, the procedure spends most of its effort on a
+small number of promising configurations while still guaranteeing full coverage of the
+hint space.
+8
+
+=== PAGE 9 ===
+Algorithm 1 Adaptive Hint Search with Timeout Pruning and Plan Cache
+Input: Query Q; full catalogue of binary hint sets H = {H1, . . . , H128}; worker count
+w ← 8
+Output: runtime threshold Tmin; plan–latency cache C
+1: Tmin ← execute(Q, default)
+2: C ←
+ 
+plan(Q, default), T min
+	
+3: for all H ∈ H \ {default} in parallel on w threads do
+4: P ← plan(Q, H)
+5: if P ∈ C then
+6: t ← C[P ]
+7: else
+8: t ← execute(Q, H, timeout = Tmin)
+9: if t = Timeout then
+10: mark H as sub-optimal
+11: continue
+12: end if
+13: C[P ] ← t
+14: end if
+15: Tmin ← min
+ 
+Tmin, t
+
+▷ atomic update
+16: end for
+17: return (Tmin, C)
+3.3 Plan-Mapping Algorithm
+This section will describe the principle of plan mapping and its motivation and how
+a new query plan receives hints from the existing embedding space. Based on the
+assumption that embeddings from an LLM can provide a good representation of a
+query plan, we can attempt to build a system that assigns the same hint set to similar
+plans. To achieve this, it is necessary to define a distance metric between plans, where
+plans within a certain distance from each other would be assigned the same hint set.
+When planning a query with a new hint, a new, potentially faster plan emerges.
+It would be useful to also consider this new plan in the system. Following this idea,
+a second embedding for the potentially faster plan can be created and compared
+with the optimized plan resulting from applying the hint in the embedding store. In
+this way, the assignment of hints will undergo a two-step verification process: first,
+comparing the default plans and searching for a hint candidate, and second, evaluating
+the modified plan.
+The goal is to decide, for a new plan P0 (obtained for the incoming query Q with
+all hints enabled), whether there exists a nearby plan in the embedding space whose
+associated hint set is likely to improve Q. We operate in the space of plan embeddings
+produced by a pre-trained LLM; the word “plan” below always refers to its embedding.
+From the offline search described in §3.2 we store triples ( di, H ⋆
+i , oi), where di
+is the embedding of the i-th default plan, H ⋆
+i is its optimal hint set, and oi is the
+9
+
+=== PAGE 10 ===
+embedding of the corresponding optimised plan. If no hint set speeds up the query,
+then H ⋆
+i is the all-enabled vector and oi = di.
+Key intuition.
+Plans that are close in embedding space tend to share physical structure; therefore
+the same hint set often remains beneficial within a local neighbourhood. We leverage
+this locality in two stages:
+1. Neighbourhood voting. Among the N nearest default plans, select the most
+popular non-default hint set. This rests on the assumption that structurally similar
+plans tend to share the same inefficiencies—so applying the hint that worked for
+those neighbors is likely to optimize the new plan in a similar way.
+2. Consistency check. Re-plan the query with the chosen candidate hint set and
+for both the default plan and the candidate-hint plan we gather their K nearest
+neighbors (all of which have known execution times), compute the average runtime
+in each neighborhood, and compare them. If the candidate-plan neighborhood’s
+average runtime is smaller than the default-plan neighborhood’s, we adopt the new
+hint set; otherwise, we keep the original.
+This two-stage test balances coverage and safety: the N nearest neighbours let us
+compile a list of locally popular hint sets and select the most frequent one as the
+candidate, while the consistency check with K prevents us from blindly applying a
+hint that would push the optimizer to sub-optimal space.
+Plan space
+N K
+p
+p0
+h(p)
+h(p0)
+pi
+pj
+pk
+hi(pi)
+hj(pj)
+hk(pk)
+Fig. 1 : Two-stage hint selection: vote among the N nearest default-plan neighbours
+to choose a candidate hint, then verify its benefit via the K-nearest optimized-plan
+neighbourhood.
+Detailed description.
+Let ϕ(·) be the LLM encoder mapping a query plan to a d-dimensional vector. In
+Figure 1, the left circle shows the embedding of the default plan P0 as point p0,
+10
+
+=== PAGE 11 ===
+together with its N nearest neighbours (semi-transparent blue). We vote among those
+neighbours’ hint sets to pick the candidate hint Hcand. On the right, we show the
+embedding of the re-planned query Pcand as h(p0) and its K nearest neighbours. By
+comparing the average runtimes in these twoK-neighbourhoods—one around p (using
+default runtimes) and one aroundpnew (using optimized runtimes)—we decide whether
+Hcand genuinely improves performance. This two-stage check maximizes hint coverage
+(via the first N-neighborhood vote) while guarding against harmful suggestions (via
+the second K-neighborhood consistency test).
+1. Embed the default plan. Compute
+p0 = ϕ(P0),
+where P0 is the optimizer’s default plan for query Q.
+2. Neighbourhood voting. Find the N nearest neighbours of p0:
+N =
+
+(di, H⋆
+i , ti) | i ∈ top-N closest to p0
+	
+,
+where each neighbour carries its hint set H ⋆
+i and known runtime ti. Build a
+frequency table over non-default {H ⋆
+i } and choose the most frequent as Hcand,
+breaking ties by smallest distance ∥p0 − di∥.
+3. Embed the candidate plan. Apply Hcand to Q, let the resulting plan be Pcand,
+and compute
+pcand = ϕ(Pcand).
+4. Consistency check via two K–neighborhoods.
+• Let
+K0 = {d0,1, . . . ,d0,K} and Kcand = {dcand,1, . . . ,dcand,K}
+be the K nearest neighbours of p0 and pcand, respectively.
+• Retrieve their known runtimes {t0,1, . . . , t0,K} and {tcand,1, . . . , tcand,K}.
+• Compute the average runtimes
+¯t0 = 1
+K
+KX
+j=1
+t0,j, ¯tcand = 1
+K
+KX
+j=1
+tcand,j.
+• Accept Hcand if ¯tcand < ¯t0; otherwise, reject it (i.e. keep the default plan).
+Hyper-parameters.
+The algorithm has three knobs:
+• N – neighbourhood size for the voting stage ( N =16 in our experiments);
+• K – consistency check via two K–neighborhoods; small K favours closest plans,
+large K increases coverage and stability ( K =16 also in our experiments);
+• distance metric (euclidean by default).
+11
+
+=== PAGE 12 ===
+Algorithm 2 Plan-Mapping Algorithm with Two-Neighborhood Consistency
+Input: new query Q; reference set T = {(di, H ∗
+i , oi, t def
+i , t opt
+i )}M
+i=1; parameters N (voting-neighbours), K
+(consistency-neighbours)
+Output: hint set Hout or ∅
+1: P0 ← plan
+ 
+Q, default hints
+
+2: p0 ← ϕ(P0)
+3: N ← the N nearest {di} to p0
+4: Hcand ← mode
+
+H ∗
+i | H ∗
+i ̸= 0, (di, . . . ) ∈ N
+	
+5: if Hcand is undefined then
+6: return ∅
+7: end if
+8: Pcand ← plan(Q, Hcand)
+9: pcand ← ϕ(Pcand)
+10: K0 ← the K nearest {di} to p0
+11: ¯t0 ← 1
+K
+X
+(di ,...,tdef
+i ,... )∈K0
+tdef
+i
+12: Kcand ← the K nearest {oi} to pcand
+13: ¯tcand ← 1
+K
+X
+(oi ,...,topt
+i ,... )∈Kcand
+topt
+i
+14: if ¯tcand < ¯t0 then
+15: Hout ← Hcand
+16: else
+17: Hout ← ∅
+18: end if
+19: return Hout
+3.4 Overall system design
+Incoming
+SQL query Q
+Plan–Mapping
+Algorithm
+(Alg. 2)
+Hint found
+& passes
+check?
+Adaptive Hint Search
+(Alg. 1)
+Execute Q
+with hint H
+Embeddings storage
+yes
+no
+(di, H∗
+i , oi)
+Fig. 2 : Overall-system control flow of LLM-PM.
+To effectively combine the strengths of our embedding-based approach, we integrate
+all proposed techniques into a unified query optimization pipeline. This hybrid design
+is intended to (1) enable fast query optimization via Plan-Mapping when similar past
+plans exist in the experience store, (2) fall back to a thorough hint search for novel
+queries, and (3) improve overall performance over time through continual accumulation
+of query execution experience. Figure 2 depicts the two-stage optimization pipeline.
+1. Plan-Mapping stage The incoming SQL query Q is planned with all hints
+enabled, embedded, and compared to the reference workload using Algorithm 2. If
+the selected candidate hint Hcand passes the two-neighbourhood consistency test,
+the query proceeds directly to execution with Hcand (“fast path”).
+12
+
+=== PAGE 13 ===
+2. F allback to Adaptive Hint Search When Plan-Mapping returns no hint
+(or the consistency test rejects the candidate), Q is forwarded to Algorithm 1.
+This exhaustive yet timeout-pruned search inspects the entire space of 128
+binary hint sets, finds the fastest configuration, and caches optimal observed
+⟨default plan, optimal hint, optimal plan⟩ triplet for future use.
+3. Execution and continual learning. Triplets produced by the fallback search
+continuously enlarge the reference set, which the Plan-Mapping stage consults on
+every new query (feedback arrow from store to map). Over time this feedback loop
+shrinks the fraction of queries that require the slower exhaustive search, steadily
+improving end-to-end latency.
+This design yields low median latency—because most queries are solved by
+the lightweight, embedding-based mapper—while guaranteeing that even “difficult”
+queries eventually benefit from the thorough search routine.
+4 Evaluation
+In this chapter we first outline the experimental design—including datasets, baselines,
+and implementation details—before detailing the quantitative and qualitative metrics
+used to assess performance. We then present the results, analyze their statistical sig-
+nificance, and discuss the practical implications that emerge. Finally, we highlight the
+key insights learned from the evaluation, setting the stage for the conclusions that
+follow.
+4.1 Setup and dataset
+0.2
+ 0.1
+ 0.0 0.1 0.2 0.3
+0.2
+0.1
+0.0
+0.1
+0.2
+0.3
+10a
+11a
+11b
+1a
+2a
+2b
+2c
+3a
+3b
+4a
+5a
+6a
+7a
+8a
+9a
+9b
+Query groups
+Fig. 3 : Default plans after PCA
+The experiments were conducted on a server with 128 CPU cores based on HiSilicon
+Kunpeng-920 processors, with a total of 1000 GB of RAM. Storage was provided by
+a 2 TB SSD NVMe disk, offering high read/write speeds for fast data access. The
+database used was single-node OpenGauss. The following configuration settings were
+applied:
+13
+
+=== PAGE 14 ===
+• shared buffers = 256 GB
+• bulk write ring size = 10 GB
+• work mem = 80 GB
+• cstore buffers = 4 GB
+• query dop = 1 (single-threaded query execution for optimal control over perfor-
+mance)
+The experiments were carried out on the IMDB dataset, which contains 3 133
+queries drawn from the JOB-CEB workload. The dataset relies on 16 templates
+from the original JOB benchmark, and each template contributes a different number
+of queries. Plan embeddings were generated with OpenAI’s text-embedding-3-large
+model, so every query is paired with both its default and optimized execution plans,
+their embeddings, and the associated runtimes. Figure 3 illustrates how the default
+plans are arranged after reducing the high-dimensional embeddings to two dimensions
+with Principal Component Analysis (PCA). Each point denotes a single plan pro-
+jected onto the first two principal components, and its color encodes the corresponding
+query-group label shown in the legend.
+Previous studies on PostgreSQL report that a handful of individual hints can
+by themselves accelerate the JOB–CEB workload by more than 60 %; for example,
+globally disabling nested-loop joins yields such a speed-up. In contrast, turning off the
+same join operator in openGauss degrades performance by roughly 50 %, substantially
+complicating the task of selecting an optimal hint set.
+Table 4 (a) lists the ten most frequent optimal hint sets. For roughly half of the
+queries the optimal configuration coincides with the default (all hints enabled); in
+total, 86 of the 128 possible bit-vectors were selected as optimal at least once. Figure
+4 (b) shows the global distribution of all observed hint sets. The leaders are diverse—
+only disabling enable nestloop is not always the winning strategy.
+(a)
+Hintset Count
+0000000 1468
+0001100 226
+1000100 146
+1100100 114
+0000100 106
+0100100 46
+0100000 45
+0000001 43
+1000000 41
+0011100 40
+(b)
+Hintset
+100
+101
+102
+103
+Count (log scale)
+Hintset Distribution (log scale)
+Fig. 4 : Hint-set statistics: (a) count table and (b) log-scale histogram.
+14
+
+=== PAGE 15 ===
+4.2 Results
+Figure 5 (a) summarizes the outcome of a ten-fold cross-validation: in each fold, 10 %
+of the JOB-CEB queries were held out for testing, while the remaining 90 % seeded
+the reference store for Plan-Mapping.
+The aggregate runtime across the ten folds was, on average, reduced by 19.1 %
+(i.e. queries run on average 1 .19× faster than the default optimizer). This gain is
+robust: even the slowest fold achieves an +8 % speed-up, and the best fold +32 %.
+The total aggregate speed-up achieved—computed by summing the runtimes of all
+test queries—is 21.1 %. The maximum achievable speed-up for the entire workload
+is 62.5 %. On an average fold , 20 % of queries accelerate, 20 % decelerate, and the
+remaining 60 % are unaffected. The 90th-percentile execution time falls by 24.7 %,
+while the median time improves slightly by 2.1 %.
+(a)
+1 2 3 4 5 6 7 8 9 10
+Fold
+Execution total
+0
+10
+20
+30
+40
+50
+Boost (%)
+Default
+Boosted
+Boost (%) (b)
+Upper
+percentile
+bound
+Mean
+default
+time
+Mean
+boosted
+time Boost
+0.1 564 628 -11
+0.2 1658 1651 0
+0.3 2812 2740 3
+0.4 4203 4096 3
+0.5 6144 5954 3
+0.6 8617 8293 4
+0.7 12802 11681 9
+0.8 19809 17059 14
+0.9 35201 27923 21
+1.0 121154 90734 25
+Fig. 5 : (a) Per-fold latency improvement under Plan-Mapping. (b) Percentile-level
+breakdown of mean runtime and boost (%).
+Table 5 (b) breaks average query runtime into percentile bands. The “Upper bound
+for percentile” column gives the upper edge of each band; the lower edge is the previous
+percentile. For example, the 0.5 row covers the 0.4–0.5 percentile slice. “Default” and
+“Boosted” columns report the mean runtime inside each slice, while “Boost” shows
+the percentage change within that slice. Plan-mapping delivers its largest gains in
+the long-tail slices with the slowest queries, although a few low-latency slices show
+occasional slow-downs.
+4.3 Ablation study
+A natural question is whether our learned LLM embeddings provide any real benefit
+beyond acting as an expensive form of string matching. To answer it, we reran the
+evaluation under two ablated configurations in which the consistency-check stage was
+disabled, in order to eliminate the influence of the additional verification step and
+assess whether LLM plan embeddings are truly useful for evaluating plan similarity
+compared to simple string-based matching metrics:
+15
+
+=== PAGE 16 ===
+1. Levenshtein distance – candidates are retrieved purely by the Levenshtein edit
+distance;
+2. LLM embeddings (no consistency check) – identical to our full system except
+that the consistency check is omitted.
+In the Levenshtein variant we no longer embed plans or compare vectors with the
+Euclidean metric; instead we compute the edit distance
+dlev(p1, p2) = min
+π
+|π|,
+where π is a sequence of single-character insertions, deletions, or substitutions that
+transforms plan string p1 into plan string p2.
+Table 1 reports the total speed-up and the number of queries that exceeded the
+450s time-out. Without the consistency check, the Levenshtein variant not only fails
+to accelerate the workload: it slows it down by 64.4 % and triggers 87 time-outs.
+By contrast, LLM embeddings still deliver a 16.1 % speed-up with only 5 time-
+outs—five times fewer than Levenshtein and close to the default optimizer (3). When
+the consistency check is re-enabled (Section 4.2), the speed-up rises to 21.1 % while
+time-outs drop to a single query.
+These observations confirm that the learned embeddings capture information well
+beyond raw string similarity and, together with the consistency check, are essential
+for robust performance gains.
+Hint selection only Time-outs
+Levenshtein −64.4% 87
+LLM embeddings 16 .1% 5
+T able 1 : Total latency change (positive =
+speed-up) and number of time-outs for each dis-
+tance metric
+4.4 Discussion and future work
+Our ablation study confirmed that learned LLM embeddings are valuable for hint
+prediction, yet even state-of-the-art OpenAI embeddings are trained on very little
+material that combines query plans with explicit information on how hints affect them.
+A natural next step is therefore to develop or fine-tune domain-specific embeddings
+whose training corpora contain not only rich SQL syntax but also detailed optimization
+techniques, hint annotations, and cost feedback. Such embeddings could underpin more
+powerful retrieval schemes and, more broadly, improve an LLM’s ability to reason
+about the inherently complex task of database query optimization.
+While the current Plan-Mapping pipeline delivers an average ≈ 20% accelera-
+tion—roughly one-third of the theoretical maximum on this workload—it also exposes
+16
+
+=== PAGE 17 ===
+clear opportunities for refinement. Half of the remaining gap arises during the
+candidate-hint selection stage: in an oracle configuration, where the consistency check
+is allowed to inspect the true runtimes of both default and candidate plans, we recoup
+almost 40% of the attainable speed-up (two-thirds of the maximum). This suggests
+that a more sophisticated similarity metric or voting mechanism for the first stage
+could close much of the residual gap.
+Hardware and engine heterogeneity further complicate direct comparisons. Previ-
+ous work on PostgreSQL reported over 60% average speed-up from a single “disable
+nested-loops” hint, yet on our openGauss platform the same hint regresses performance
+by more than 50%. This observation motivates our multi-neighbourhood strategy and
+highlights that no single hint is universally optimal.
+5 Conclusion
+We have presented LLM-PM, a lightweight, training-free framework that leverages pre-
+trained LLM embeddings of execution plans to steer a traditional cost-based optimizer
+via hint recommendations. One of the primary goals of this study was to evaluate the
+utility of these embeddings, and our experiments provide clear evidence of their effec-
+tiveness. Our method first identifies a locally popular hint set among the N nearest
+default plans, then verifies its benefit through a two-neighbourhood consistency check
+that compares average runtimes in both default and optimized plan regions. Impor-
+tantly, this approach requires no changes to the underlying DBMS or extensive offline
+training: it simply reuses past plan outcomes encoded in the embedding space.
+We evaluated the core component of the LLM-PM system—Plan-Mapping—on
+openGauss using standard benchmarks (JOB-CEB on the IMDB dataset), demonstrat-
+ing its consistent improvements in query performance. Looking forward, promising
+extensions include refining the embedding space with metric learning or hybrid plan-
+SQL features and dynamically adapting neighbour sizes based on local density. These
+enhancements could further narrow the gap toward optimal hint selection while pre-
+serving the simplicity and practicality that make Plan-Mapping suitable for real-world
+deployment.
+References
+[1] Marcus, R., Negi, P., Mao, H., Zhang, C., Alizadeh, M., Kraska, T., Papaem-
+manouil, O., Tatbul, N.: Neo: a learned query optimizer. Proceedings of the
+VLDB Endowment 12(11), 1705–1718 (2019) https://doi.org/10.14778/3342263.
+3342644
+[2] Kipf, A., Kipf, T., Radke, B., Leis, V., Boncz, P., Kemper, A.: Learned Cardinal-
+ities: Estimating Correlated Joins with Deep Learning (2018). https://arxiv.org/
+abs/1809.00677
+[3] Woltmann, L., Hartmann, C., Thiele, M., Habich, D., Lehner, W.: Cardi-
+nality estimation with local deep learning models. In: Proceedings of the
+17
+
+=== PAGE 18 ===
+Second International Workshop on Exploiting Artificial Intelligence Tech-
+niques for Data Management. aiDM ’19. Association for Computing Machin-
+ery, New York, NY, USA (2019). https://doi.org/10.1145/3329859.3329875 .
+https://doi.org/10.1145/3329859.3329875
+[4] Ivanov, O., Bartunov, S.: Adaptive query optimization in PostgreSQL. In: Pro-
+ceedings of PGCon 2017, Ottawa, Canada (2017). Conference presentation and
+software available at https://github.com/postgrespro/aqo
+[5] Vasilenko, N., Demin, A., Ponomaryov, D.: Adaptive Cost Model for Query
+Optimization (2024). https://arxiv.org/abs/2409.17136
+[6] Marcus, R., Negi, P., Mao, H., Tatbul, N., Alizadeh, M., Kraska, T.: Bao: Making
+learned query optimization practical. In: Proceedings of the 2021 International
+Conference on Management of Data. SIGMOD ’21, pp. 1275–1288. Association
+for Computing Machinery, New York, NY, USA (2021). https://doi.org/10.1145/
+3448016.3452838 . https://doi.org/10.1145/3448016.3452838
+[7] Anneser, C., Tatbul, N., Cohen, D., Xu, Z., Pandian, P., Laptev, N., Marcus, R.:
+Autosteer: Learned query optimization for any sql database. Proc. VLDB Endow.
+16(12), 3515–3527 (2023) https://doi.org/10.14778/3611540.3611544
+[8] Woltmann, L., Thiessat, J., Hartmann, C., Habich, D., Lehner, W.: Fastgres:
+Making learned query optimizer hinting effective. Proc. VLDB Endow. 16(11),
+3310–3322 (2023) https://doi.org/10.14778/3611479.3611528
+[9] Xu, X., Zhao, Z., Zhang, T., Kang, R., Sun, L., Chen, J.: COOOL: A Learning-
+To-Rank Approach for SQL Hint Recommendations (2023). https://arxiv.org/
+abs/2304.04407
+[10] Zhu, R., Chen, W., Ding, B., Chen, X., Pfadler, A., Wu, Z., Zhou, J.: Lero: A
+learning-to-rank query optimizer. Proc. VLDB Endow. 16(6), 1466–1479 (2023)
+https://doi.org/10.14778/3583140.3583160
+[11] Zinchenko, S., Iazov, S.: HERO: Hint-Based Efficient and Reliable Query Opti-
+mizer (2024). https://arxiv.org/abs/2412.02372
+[12] Tan, J., Zhao, K., Li, R., Yu, J.X., Piao, C., Cheng, H., Meng, H., Zhao, D., Rong,
+Y.: Can Large Language Models Be Query Optimizer for Relational Databases?
+(2025). https://arxiv.org/abs/2502.05562
+[13] Akioyamen, P., Yi, Z., Marcus, R.: The Unreasonable Effectiveness of LLMs for
+Query Optimization (2024). https://arxiv.org/abs/2411.02862
+[14] Li, Z., Yuan, H., Wang, H., Cong, G., Bing, L.: LLM-R2: A Large Language Model
+Enhanced Rule-based Rewrite System for Boosting Query Efficiency (2024).
+https://arxiv.org/abs/2404.12872
+18

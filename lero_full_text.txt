@@ -1,0 +1,1919 @@
+=== PAGE 1 ===
+Lero: A Learning-to-Rank Query Optimizer
+Rong Zhu#, Wei Chen#
+Alibaba Group
+Hangzhou, China
+{red.zr,wickeychen.cw}@alibaba-
+inc.com
+Bolin Ding
+Alibaba Group
+Hangzhou, China
+bolin.ding@alibaba-inc.com
+Xingguang Chen
+Alibaba Group, The Chinese
+University of Hong Kong
+Hangzhou, China
+xgchen@link.cuhk.edu.hk
+Andreas Pfadler
+Alibaba Group
+Hangzhou, China
+andreaswernerrober@alibaba-
+inc.com
+Ziniu Wu
+Massachusetts Institute of Technology
+MA, USA
+ziniuw@mit.edu
+Jingren Zhou∗
+Alibaba Group
+Hangzhou, China
+jingren.zhou@alibaba-inc.com
+ABSTRACT
+A recent line of works apply machine learning techniques to assist
+or rebuild cost-based query optimizers in DBMS. While exhibiting
+superiority in some benchmarks, their deficiencies, e.g., unstable
+performance, high training cost, and slow model updating, stem
+from the inherent hardness of predicting the cost or latency of
+execution plans using machine learning models. In this paper, we
+introduce a learning-to-rank query optimizer, called Lero, which
+builds on top of a native query optimizer and continuously learns
+to improve the optimization performance. The key observation is
+that the relative order or rank of plans, rather than the exact cost or
+latency, is sufficient for query optimization.Lero employs a pairwise
+approach to train a classifier to compare any two plans and tell
+which one is better. Such a binary classification task is much easier
+than the regression task to predict the cost or latency, in terms
+of model efficiency and accuracy. Rather than building a learned
+optimizer from scratch, Lero is designed to leverage decades of
+wisdom of databases and improve the native query optimizer. With
+its non-intrusive design, Lero can be implemented on top of any
+existing DBMS with minimal integration efforts. We implementLero
+and demonstrate its outstanding performance using PostgreSQL.
+In our experiments, Lero achieves near optimal performance on
+several benchmarks. It reduces the plan execution time of the native
+optimizer in PostgreSQL by up to 70% and other learned query
+optimizers by up to 37%. Meanwhile, Lero continuously learns and
+automatically adapts to query workloads and changes in data.
+PVLDB Reference Format:
+Rong Zhu, Wei Chen, Bolin Ding, Xingguang Chen, Andreas Pfadler, Ziniu
+Wu, Jingren Zhou. Lero: A Learning-to-Rank Query Optimizer. PVLDB,
+16(6): XXX-XXX, 2023.
+doi:XX.XX/XXX.XX
+# Equal contribution. ∗ Corresponding author.
+This work is licensed under the Creative Commons BY-NC-ND 4.0 International
+License. Visit https://creativecommons.org/licenses/by-nc-nd/4.0/ to view
+a copy of this license. For any use beyond those covered by this license, obtain
+permission by emailing info@vldb.org. Copyright is held by the owner/author(s).
+Publication rights licensed to the VLDB Endowment.
+Proceedings of the VLDB Endowment, Vol. 16, No. 6 ISSN 2150-8097.
+doi:XX.XX/XXX.XX
+PVLDB Artifact Availability:
+The source code, data, and/or other artifacts have been made available at
+https://github.com/Blondig/Lero-on-PostgreSQL .
+1 INTRODUCTION
+Query optimizer plays one of the most significant roles in databases.
+It aims to select an efficient execution plan for each query. Im-
+proving its performance has been a longstanding problem. Tra-
+ditional cost-based query optimizers [ 40] find the plan with the
+minimum estimated cost, which is a proxy of execution latency
+or other user-specified metrics about resource consumption. Such
+cost models contain various formulas to approximate the actual
+execution latency, whose magic constant numbers are exhaus-
+tively and extensively tuned based on engineering practice. Recent
+works [32, 33, 51] refine traditional cost models and plan enumera-
+tion algorithms with machine learning techniques. Although some
+progress has been made, they still suffer from deficiencies caused
+by the intrinsically difficult latency prediction problem.
+In this paper, we propose Lero, a learning-to-rank query opti-
+mizer which features a new lightweight pairwise machine learning
+model for query optimization. Lero adopts a non-intrusive design,
+with minimal modification to the existing system components in
+DBMS. Instead of building from scratch,Lero is designed to leverage
+decades of wisdom of query optimizers without extra, potentially
+significant, cold-start learning costs.Lero can quickly improve qual-
+ity of query optimization by judiciously exploring different opti-
+mization opportunities and learning to rank them more accurately.
+1.1 From Heuristic-Based Costing Models to
+Machine Learning Models
+Traditional cost-based query optimizers [40] have three major com-
+ponents: cardinality estimator, cost model, and plan enumerator. For
+an input query 𝑄, cardinality estimator can be invoked to estimate
+the cardinality, i.e., the number of tuples in the output, for each
+sub-query of 𝑄. The cost of a plan 𝑃 (with physical operators, e.g.,
+merge join and hash join) for the query 𝑄 is a proxy of latency or
+other user-specified metrics regarding the efficiency of executing
+𝑃. The cost model PlanCost(𝑃) estimates 𝑃’s cost and is usually a
+function of estimated cardinalities of𝑄’s sub-queries. The plan enu-
+merator considers valid plans of 𝑄 in its search space and returns
+the one with the minimum estimated cost for execution.
+arXiv:2302.06873v2  [cs.DB]  20 Feb 2023
+
+=== PAGE 2 ===
+Various heuristics were essential in developing these compo-
+nents. For example, independence between attributes across tables
+is assumed and utilized for estimating cardinalities of joins of mul-
+tiple tables [24, 45]. Magic constant numbers are prevalent in cost
+models. They are often calibrated and tuned over years to ensure
+that the estimated cost matches the plan’s performance well empir-
+ically, under certain system and hardware configurations though.
+It is realized that such heuristics are not always reliable for varying
+data distributions or system configurations. As a result, cost models
+may produce significant errors and the plan generated from the
+traditional query optimizer may have poor quality [11, 16, 24, 45].
+It is a natural idea to develop machine learning models to replace
+traditional cardinality estimators, heuristic-based cost models, and
+plan enumerators. For example, there are works on learning cardi-
+nality estimators (refer to [16, 58] for a survey). For learning cost
+models, different model parameters, instead offixed magic constant
+numbers in traditional cost models, can be learned from different
+datasets and workloads to enable finer-grained characterization
+of various data distributions and system configurations, thus pro-
+viding instance-level optimization of each query. A recent line of
+works on learned query optimizers are built upon the above idea
+and demonstrate some promising results [32, 33, 51].
+Neo [33] and Balsa [51] provide end-to-end learned solutions for
+query optimization. A plan value function PlanVal(), inspired by
+the value networks in deep reinforcement learning, is learned to
+replace the traditional cost model PlanCost. For a partial plan 𝑃 ′ of
+the query 𝑄, the machine learning model PlanVal(𝑃 ′, 𝑄) predicts
+the minimum latency of a complete plan 𝑃 that contains 𝑃 ′ as a
+sub-plan, with statistics and patterns about the tables, predicates,
+and joins involved in 𝑃 ′ and 𝑄 as input features. With PlanVal, Neo
+and Balsa use their best-first search strategies to find the best plan
+with the minimum estimated latency.
+Bao [32] learns to steer a native query optimizer. It tunes the
+native query optimizer with different sets of hints to generate a
+number of different candidate plans for the query 𝑄. Each hint set
+forces/disables some operations, e.g., index scan or hash join, so
+the query optimizer may output a different, and possibly better,
+execution plan. Bao uses a machine learning model PlanVal(𝑃, 𝑄)
+to estimate the quality (e.g., latency) of each candidate plan 𝑃 and
+select the best candidate for execution. Meanwhile, Bao periodi-
+cally updates its model parameters based on execution statistics
+using Thompson sampling [43], as solving a contextual multi-armed
+bandits problem [56] to minimize the overall performance regret.
+Although learned query optimizers exhibit superiority than tra-
+ditional ones in some applications [ 37], their performance is far
+from satisfactory. They still suffer from three major deficiencies:
+• Unstable performance. These learned models are easily to pro-
+duce inaccurate latency estimates, which leads to sub-optimal
+plans. Sometimes, the performance regression is very significant.
+As shown in Section 6.2, their performance could even be worse
+than PostgreSQL’s native query optimizer on TPC-H benchmark.
+• High learning cost. The cost of learning a query optimizer
+includes both the cost of exploring and executing different query
+plans and the cost of model training. Some models [33, 51] require
+tens to hundreds of training iterations to coverage, and execute
+all newly explored plans in each iteration. For complex datasets,
+this would consume several days to even weeks.
+• Slow model updating. Existing learned optimizers need to up-
+date their latency prediction models to fit dynamic data, which
+is very challenging especially considering that the latency of the
+same plan may vary on dynamic data. Thus, model updating in
+this case requires huge efforts (training data and cost), and easily
+leads to performance regression, as shown in Section 6.4.
+We recognize that, the deficiencies of both traditional and newly
+proposed learned query optimizers stem from the notoriously diffi-
+cult problem of predicting the execution latency or cost of a plan.
+The exact execution latency depends on numerous factors [24, 25,
+34, 39, 49], e.g., underlying data distribution, workload patterns, and
+system environment. Training such a prediction model is a costly
+operation, which requires collecting a large volume of training data,
+by executing query plans and measuring latency statistics, and a
+lengthy training process to explore the huge hypothesis space.
+Moreover, cardinality and cost estimations are only partial fac-
+tors for query optimization. No matter whether with the traditional
+calibrated estimators/models or with the learned models trained on
+previous statistics, improving the estimations’ accuracy does not
+necessarily lead to improvement in query optimization.
+Is it really necessary to predict the latency? We ask such a fun-
+damental research question:for the purpose of query optimization, do
+we really need to estimate/predict the execution latency (or any other
+performance-related metric) of every possible query plan? With the
+goal of finding the best execution plan, training a machine learning
+model to predict the exact latency (cost) is an overkill.
+1.2 A Learning-to-Rank Query Optimizer
+In this paper, we introduce a learning-to-rank query optimizer,
+called Lero. In essence, what we need for query optimization is
+a learned oracle that is able to rank a set of candidate query plans
+with respect to their execution efficiency.
+Looking back, traditional cost models are essentially “human
+learning” models, whose parameters, i.e., magic constant numbers,
+have been tuned with decades of engineering efforts. Under the
+learning-to-rank paradigm, traditional and learned cost models can
+be regarded as pointwise approaches [28], which outputs an ordinal
+score (i.e., estimated cost) for each plan to rank them. Lero adopts
+an effective pairwise learning-to-rank approach without discarding
+human wisdom in developing traditional cost models and query
+optimizers. We summarize our contributions as follows.
+• Lero applies learning-to-rank paradigm to query optimization.
+Compared to previous proposals to learn cost models or cardi-
+nalities which are partial factors for query optimization, Lero
+directly ranks and learns to improve plans’ quality.Lero is more
+effective in selecting plans with good quality.
+• Lero adopts a pairwise approach which learns to compare two
+plans and predict the better one. Compared to other pointwise
+approaches, training such a binary classifier is often easier[19].
+Lero has significantly lower training costs, requiring fewer train-
+ing samples, and much less time to train. A pairwise comparison
+model is also used for index tuning in [10]. Lero implements a
+novel deep learning model which consists of a classifier over two
+plan embeddings with shared parameters. The model is able to
+
+=== PAGE 3 ===
+capture the detailed structural properties for given plans and is
+proven more effective in the context of query optimization.
+• Lero is able to explore and learn new plan space (and new opti-
+mization opportunities) more effectively. Instead of using query-
+level hints as previous proposals [32], Lero can be equipped with
+various strategies to adjust cardinality estimates at expression
+level to effectively consider diversified plans and prioritize ex-
+ploring more promising ones.
+• Lero leverages decades of wisdom of databases and query op-
+timization, rather than building a brand new optimizer from
+scratch. Lero starts with the default behavior of the native query
+optimizer and gradually learns to improve. Therefore, Lero is
+guaranteed with a good initial quality and does not need a lengthy
+cold-start training process.
+• Lero employs a non-intrusive design. It can be implemented on
+top of any existing DBMS and integrated seamlessly with the
+native query optimizer. To be specific,Lero takes advantage of
+public interfaces provided by most DBMSs and jointly works
+with the native query optimizer to improve optimization quality.
+We implementLero on PostgreSQL [2] and conduct extensive ex-
+periments to evaluate its efficiency and effectiveness. Lero reduces
+the execution time of the native query optimizer in PostgreSQL
+by up to 70% and other learned query optimizers by up to 37%.
+Experiments show that Lero adapts faster with stable performance
+to various query workloads and dynamically changing data.
+Organization. Section 2 outlines Lero’spairwise learning-to-rank
+system architecture and key components. Section 3 presents the
+design of Lero’s comparator model and describes how to train
+and infer using the model. Section 4 describes how Lero explores
+different plans and new optimization opportunities, for the purposes
+of both plan selection and model training. Extensions are discussed
+in Section 5. We report detailed evaluation results in Section 6. We
+cover related work in Section 7 and conclude in Section 8.
+2 SYSTEM OVERVIEW
+Lero is a learning-to-rank query optimizer which continuously ex-
+plores different query plans, observes their performance, andlearns
+to rank them more accurately. Lero adopts a pairwise approach
+whose objective is to predict which of two plans is more efficient.
+Compared with other learning-to-rank approaches, e.g., pointwise
+and listwise [28], Lero’s pairwise approach makes the best trade-off
+between model accuracy and learning efficiency for our task.
+Figure 1 shows the overall architecture of Lero. For each input
+query 𝑄, the plan explorer works with the native query optimizer
+to generate a number of potentially good and diversified candi-
+date plans 𝑃1, 𝑃2, . . . , 𝑃𝑛. The pairwise plan comparator model
+CmpPlan is then invoked to select the best plan 𝑃 ∗ from the candi-
+dates for answering 𝑄. In system background, the model trainer
+executes other candidate plans using idle workers whenever system
+resources become available, collects the latency information into
+the runtime stats repository, and continuously trains the comparator
+model CmpPlan and updates it periodically. Such design enables
+the comparator model to be continuously trained and become better
+over time without affecting normal database services. The three
+components are briefly introduced as follows.
+𝑃!
+Plan 
+Comparator
+Plan Explorer
+Native 
+Query 
+Optimizer
+Query 𝑄
+…
+Candidate Plans
+…
+… Execution 
+Engine
+Idle Workers
+Model 
+Trainer
+𝑃"
+𝑃#
+𝑃∗
+Runtime 
+Stats 
+Repository
+Execution 
+Engine
+Results
+Model
+Update
+Figure 1: System architecture of Lero.
+Plan Comparator Model. Formally, let CmpPlan(𝑃1, 𝑃2) be an
+oracle comparing any two plans 𝑃1 and 𝑃2 of a query:
+CmpPlan(𝑃1, 𝑃2) =
+(
+0 if Latency(𝑃1) < Latency(𝑃2)
+1 if Latency(𝑃1) > Latency(𝑃2) , (1)
+with ties broken arbitrarily. We use execution latencyLatency(𝑃)
+as the performance metric, but it can be easily generalized.
+Our comparator model is to learn the above oracle CmpPlan.
+To be more specific, we organize the training datasets (e.g. from
+runtime stats repository) in the form of (𝑃𝑖, 𝑃 𝑗 , 𝑙𝑎𝑏𝑒𝑙 ) for all pairs of
+executed plans of each query where 𝑙𝑎𝑏𝑒𝑙 indicates which plan in a
+pair is better. The learning goal is to fit the output of the oracle in
+Eq. (1). We also useCmpPlan to denote the learned plan comparator
+model (or comparator for short). The design of CmpPlan, including
+training and inference techniques, is described in Section 3.
+Plan Explorer. For a query, the plan explorer generates a variety
+of 𝑛 candidate plans 𝑃1, 𝑃2, . . . , 𝑃𝑛. While the best one chosen by
+the comparator is returned by the optimizer for query execution,
+the rest candidate plans are used by the model trainer to refine the
+model. Therefore, the candidate plans serve the purposes of both
+plan selection and model training, and they should: i) contain some
+truly good candidates (although we do not have to know who they
+are) and ii) be sufficiently diversified so that the model could learn
+to distinguish between good and bad plans.
+To satisfy the two requirements, our plan explorer uses the car-
+dinality estimator as the tuning knob to generate more plans for
+each query: the cardinality estimates of sub-queries are purposely
+scaled up/down before being fed into the cost model for the native
+query optimizer to generate different candidate plans. In particular,
+it is shown that diversity can be introduced in the generated plans
+by tuning selectivities (cardinalities) of predicates in a query [9, 11].
+Our plan explorer is built on the intuition that the plan from the
+native query optimizer is usually not too bad; by tuning cardinality
+estimates, it may either generate some better plans in the neigh-
+boring plan space (if tuning towards the true cost of a sub-query
+which was incorrectly estimated), or some worse plans (tuning in
+the opposite direction). Plans with various quality also increase the
+diversity among candidates to train the comparator, and it is the
+comparator’s job to identify the best among them.
+Details about our plan exploration strategy are described in
+Section 4. One obvious advantage of our plan explorer is that the
+cardinality estimator is an essential component in almost all query
+optimizers, and thus the strategy and the implementation of our
+plan explorer can be easily migrated to different databases.
+
+=== PAGE 4 ===
+Model Trainer. For each query, the trainer executes other candi-
+date plans generated by the plan explorer, whenever system re-
+sources become available, and adds their plan information and
+execution statistics into the runtime stats repository. Such infor-
+mation is further used for training and updating the comparator
+model CmpPlan. By doing so, Lero is able to explore new plan
+space as much as possible and learn from its potential mistakes.
+In real-world distributed systems, idle workers and computation
+resources commonly exist due to scheduling [20] or synchroniza-
+tion [6]. Some platforms [4, 37] provide an individual environment
+for performance testing, which can be also used as a resource for
+executing candidate plans and collecting runtime stats.
+3 A LEARNED PLAN COMPARATOR
+The comparatorCmpPlan is trained/updated to fit a training dataset
+from the runtime stats repository which continuously monitors
+query execution and collects execution information.
+3.1 Model Design
+The overall model architecture of our comparatorCmpPlan(𝑃1, 𝑃2)
+is shown in Figure 2. It consists ofplan embedding layers followed by
+a comparison layer. The plan embedding layer is carefully designed
+to effectively capture all the crucial information about a query plan,
+including tables, operators, and plan structural properties, etc., and
+the comparison layer comparesembeddings (1-𝑑𝑖𝑚 or 𝑑-𝑑𝑖𝑚 vectors
+output by the embedding layers) from the two plans and calculates
+their difference in terms of plan quality for the comparison purpose.
+Plan Embedding Layers. The plan embedding layers of CmpPlan
+map 𝑃1 and 𝑃2 from the original feature space to a one-dimensional
+(1-𝑑𝑖𝑚) embedding space, in order to learn differences between plans.
+A sub-model PlanEmb takes features from each plan and generate
+its plan embedding, PlanEmb(𝑃𝑖 ) ∈ R for each plan 𝑃𝑖 (𝑖 = 1, 2). We
+use the parameter sharing technique in machine learning: the two
+plan embeddings, PlanEmb(𝑃1) and PlanEmb(𝑃2), are generated
+by two copies of PlanEmb, which are two components in CmpPlan
+sharing the same model structure and learnable parameters.
+Judicious design of embedding model to capture critical infor-
+mation in the tree-structured plan is crucial for the overall model’s
+effectiveness and efficiency.Lero builds on top of the tree convolu-
+tion model, similar to [32, 33, 36] but with significant improvements.
+As in Figure 2, a plan 𝑃 is featurized as a tree structure of vectors.
+The vector for each sub-plan 𝑃 𝑗 that answers sub-query 𝑄 𝑗 (cor-
+responding to a tree node) concatenates: a one-hot encoding of
+the last operation on 𝑃 𝑗 , the cardinality estimate, the row width
+of 𝑄 𝑗 ’s output, and 0/1 encoding of tables touched by𝑄 𝑗 . As the
+cardinality C(𝑄 𝑗 ) spans in a wide range, we use a min-max nor-
+malization over log(C(𝑄 𝑗 )) in the feature vector. Unlike previous
+approaches [32, 33], the vector does not include the estimated cost,
+as it is strongly correlated with the estimated cardinality and row
+width and it may introduce additional inaccuracy of the cost model.
+The tree convolution operation slides multiple triangle shaped
+filters over each node and its two children to transform the plan
+into another tree. Finally, vectors on the tree nodes are flattened to
+be fed into a neural network to generate the plan embedding.
+It is worth noting that previous works use machine learning
+models to predict latency. Our embedding model PlanEmb and
+comparator CmpPlan are trained and used differently. Instead of
+predicting plan latency, PlanEmb tries to extract key information
+from plans and enables thecomparison layer of CmpPlan to compare
+two plans. The learned 1-𝑑𝑖𝑚 plan embedding can be interpreted as
+a ranking criteria, and all pairs of plans for a query are comparable
+based on PlanEmb(·). Thus, the scale ofPlanEmb(𝑃) for a plan 𝑃 is
+not restricted, and its value does not have to be proportional to (or
+approximate) 𝑃’s performance metric, e.g., latency. Such flexibility
+allows the overall model to be more effective and easier to train.
+Comparison Layer. The plan embedding model PlanEmb(·) is
+learned together with CmpPlan via pairwise comparisons of plans,
+with binary labels indicating which one is better for each pair.
+Thus, in the comparison layer of CmpPlan, we feed the difference
+𝑥 = PlanEmb(𝑃1) − PlanEmb(𝑃2) of embeddings of two plans into
+a logistic activation function 𝜙 (𝑥) = (1 + exp(−𝑥)) −1 to generate
+the model’s final output(indicating whether 𝑃1 or 𝑃2 is better):
+CmpPlan(𝑃1, 𝑃2) = 𝜙 (PlanEmb(𝑃1) − PlanEmb(𝑃2)), (2)
+which is within (0, 1) and can be interpreted as how likely 𝑃2 is
+more preferable than 𝑃1. This is consistent with the learning goal
+of our comparator model as in Eq. (1): 𝑃1 is more preferable if
+CmpPlan(𝑃2, 𝑃1) < 0.5 or approaches to 0, and 𝑃2 is more prefer-
+able if CmpPlan(𝑃2, 𝑃1) > 0.5 or approaches to 1. Equivalently, a
+smaller 1-𝑑𝑖𝑚 plan embedding is more preferable. More formally,
+CmpPlan(𝑃1, 𝑃2) →
+
+0 if PlanEmb(𝑃1, 𝑄) ≪ PlanEmb(𝑃2, 𝑄)
+1 if PlanEmb(𝑃1, 𝑄) ≫ PlanEmb(𝑃2, 𝑄) .
+From how the model’s output is derived in (2) and the fact
+that 𝜙 (𝑎 − 𝑏) + 𝜙 (𝑏 − 𝑎) = 1, our comparator model preserves
+two nice properties: i) ( commutativity) CmpPlan(𝑃1, 𝑃2) = 1 −
+CmpPlan(𝑃2, 𝑃1), that is, exchanging the order of input plans does
+not affect the comparison result; ii) (transitivity): CmpPlan(𝑃1, 𝑃2) <
+0.5 and CmpPlan(𝑃2, 𝑃3) < 0.5 ⇒ CmpPlan(𝑃1, 𝑃3) < 0.5, that is,
+𝑃1 is better than 𝑃2 and 𝑃2 is better than 𝑃3 imply that 𝑃1 is better
+than 𝑃3. Thus, the comparatorCmpPlan(·, ·)induces a total order of
+all plans, and we could select𝑃 ∗ = arg min𝑃1...𝑃𝑛 PlanEmb(𝑃𝑖 ) with
+the minimum value of PlanEmb(·) as the best plan for execution.
+Loss Function. The goal ofCmpPlan is to maximize the likelihood
+of outputting the right order between any two plans, so that the
+best plan can be selected. Thus, the loss function of CmpPlan is
+designed towards this goal. Conceptually, let A be a (randomized)
+algorithm that decides which one of 𝑃1 and 𝑃2 is more preferable
+based on the model’s outputCmpPlan(𝑃1, 𝑃2) ∈ ( 0, 1):
+A (𝑃1, 𝑃2) →
+(
+𝑃1 with probability 1 − CmpPlan(𝑃1, 𝑃2)
+𝑃2 with probability CmpPlan(𝑃1, 𝑃2) . (3)
+We have CmpPlan(𝑃1, 𝑃2) + CmpPlan(𝑃2, 𝑃1) = 1 by the com-
+mutativity. Thus, the algorithm A is well-defined: A (𝑃1, 𝑃2) and
+A (𝑃2, 𝑃1) output 𝑃1 with the same probability. Let 𝑃1 ≺ 𝑃2 denote
+the event that Latency(𝑃1) < Latency(𝑃2) and 𝑃1 ≻ 𝑃2 vice versa.
+The goal is to train CmpPlan such that A is as accurate as possible.
+Suppose we have a workload of queries in W = {𝑄 } and a set of
+candidate plans 𝑃 (𝑄) = {𝑃1, . . . , 𝑃𝑛 } for each query, as the training
+data. We use A to compare all pairs of candidate plans for each
+𝑄 ∈ W ; the probability that A makes no mistake is:
+
+=== PAGE 5 ===
+PlanEmb(𝑃!) 
+−
+𝜙⋅256 channels 128 channels 64 channels
+Pooling Layer
+Fully Connected
+Fully Connected
+1 ×641 ×321 ×1Tree Convolution
+PlanEmbSub-Model
+Comparator Model CmpPlanIndex ScanMerge Join
+HashJoin
+Table C
+Index Scan
+Table B
+Seq Scan
+Table A
+Index ScanMerge Join
+LoopJoin
+Table A
+Index Scan
+Table C
+Seq Scan
+Table B
+Plan 𝑃!
+Plan 𝑃"
+PlanEmb(𝑃") 
+Merge JoinHash JoinLoop Join
+[ 1,   0,   0,   0,   0,   0,   0.12,   4,   1,   1,   0 ]
+Index ScanSeq ScanAggregateCardinalityRow WidthTable ATable BTable C
+(0,  1)
+Latency(𝑃!) >Latency(𝑃") 
+Latency(𝑃!) <Latency(𝑃") 
+Comparison LayerPlan Embedding Layers (d = 1)Plan encoding on each node
+[ 0,   0,   0,   1,   0,   0,   0.23,   3,   1,   0,   0 ]
+Figure 2: Plan encoding and the structure of our plan comparator model ( 𝑑 = 1).
+ACC(A, W) =
+Ö
+𝑄 ∈W
+©­
+«
+Ö
+𝑃𝑖 ≺𝑃 𝑗 ∈𝑃 (𝑄)
+(1 − CmpPlan(𝑃𝑖, 𝑃𝑗 )) (4)
+·
+Ö
+𝑃𝑖 ≻𝑃 𝑗 ∈𝑃 (𝑄)
+CmpPlan(𝑃𝑖, 𝑃𝑗 )ª®
+¬
+.
+We train CmpPlan to fit the observed orders of plans for queries in
+W, so the loss function is chosen to be 𝐿 = − log ACC(A, W):
+𝐿 = −
+∑︁
+𝑄 ∈W
+∑︁
+𝑃𝑖,𝑃 𝑗 ∈𝑃 (𝑄)
+
+I𝑃𝑖 ≺𝑃 𝑗 ·log(1 − CmpPlan(𝑃𝑖, 𝑃𝑗 )) (5)
++I𝑃𝑖 ≻𝑃 𝑗 ·log(CmpPlan(𝑃𝑖, 𝑃𝑗 ))
+
+,
+where the indicator functionIx returns 1 if the conditionx holds and
+0 otherwise. 𝐿 coincides with the cross-entropy loss in classification.
+3.2 Model Training
+Instead of training from scratch, we pre-train our comparator model
+CmpPlan offline first on synthetic workloads to inherit the wisdom
+of the native query optimizer and its cost model. It is then continu-
+ously trained and updated online on real workloads with training
+data collected during actual executions of query plans.
+Model Pre-training: Starting from Traditional Wisdom. To
+leverage decades of wisdom of cost models developed in DBMSs,
+we pre-train the comparator model using the estimated costs of
+candidate plans (without executing them) generated from a sample
+workload of queries in an offline training stage. After pre-training,
+the 1-𝑑𝑖𝑚 embedding PlanEmb(𝑃) is expected to be an approxima-
+tion to the native estimated cost PlanCost(𝑃). Thus, the model is
+bootstrapped to perform similarly to the native query optimizer at
+the beginning. As more and more queries are executed, CmpPlan
+is continuously improved and tuned to adapt to possibly dynamic
+data distribution and workloads that drift over time.
+In the native cost model, the cost of a plan is usually a piecewise
+linear or quadratic function of estimated cardinalities of sub-queries
+with magic constants as co-coefficients for different operators. The
+goal of pre-trainingPlanEmb(𝑃) is to learn such functions in a data-
+agnostic way, so as to handle any unseen query. Thus, we could
+pre-train PlanEmb(𝑃) purely using synthetic workloads. Namely,
+we randomly generate a number of plans with different join orders
+and predicates on different tables, and featurize them as the training
+data; we also randomly set the cardinality for each sub-plan of each
+plan and feed them into the native cost model (without executing
+the plans) to derive the estimated plan costs as labels. As the cost
+models are often in a class of functions with simple structures, the
+model pre-training converges very fast.
+Pairwise Training. In the online stage, we train and update the
+comparator CmpPlan in the pairwise comparison framework. For
+each query 𝑄, its candidate plans {𝑃1, . . . , 𝑃𝑛 } are generated by
+the plan explorer to be introduced in Section 4; these plans are
+executed by idle workers, whenever system resources become
+available, with execution statistics collected in the runtime stats
+repository. According to the loss function in Eq. (5), we construct
+𝑛(𝑛 − 1) training data points for each query: for each pair(𝑖, 𝑗 ) with
+1 ≤ 𝑖 ≠ 𝑗 ≤ 𝑛, we construct a data point with features (𝑃𝑖, 𝑃𝑗 ) and
+label 1 if Latency(𝑃𝑖 ) > Latency(𝑃 𝑗 ), and 0 otherwise.
+Periodically, we use an SGD optimizer to update CmpPlan to-
+gether with PlanEmb by backward propagation with the train-
+ing dataset constructed above. For parameters in the sub-model
+PlanEmb, as they are shared in two copies of PlanEmb that output
+PlanEmb(𝑃𝑖 ) and PlanEmb(𝑃 𝑗 ), respectively, we add up the gradi-
+ents from the two copies for each shared parameter together to
+update this parameter in the model PlanEmb.
+Our comparator, by nature of its design, adapts fast to dynami-
+cally changing data during the processing of model training and
+updating. When tuples are inserted or deleted into the database, the
+relative orders of two plans (i.e., labels ofCmpPlan) are more robust
+than their execution latencies (i.e., labels of a latency prediction
+model). The latter would vary for the same plan even when tuples
+from the same distribution are inserted, which makes the training
+of a latency prediction model costly especially on dynamic data.
+Our experimental study in Section 6.4 verifies the above intuition.
+4 PLAN EXPLORATION STRATEGY
+The plan explorer of Lero generates a list of candidate plans𝑃1, . . . ,
+𝑃𝑛 for a query 𝑄, for two purposes. First, for the purpose of query
+optimization, Lero applies the comparator model to identify the best
+plan among the candidates for execution. Thus the candidate list
+must include some truly good plans for consideration.
+Second, for the purpose of plan exploration, Lero prioritizes ex-
+ploring other promising plans for the query. By executing them
+and comparing their performance pairwise, Lero is able to catch
+past optimization mistakes and adjust the model timely using the
+newly observed runtime information. In addition, whenever system
+resources are available, other candidate plans which are diversified
+sufficiently (e.g., with different join orders or in different shapes
+such as left-deep and bushy trees) are also considered so that Lero
+learns new plan space and improves the model over time.
+For the ease of deployment, Lero makes minimal changes to
+the native query optimizer. Therefore, the plan explorer should
+be able to be implemented in a lightweight way, e.g., through re-
+implementing some system provided interfaces. Meanwhile, we
+
+=== PAGE 6 ===
+hope that the framework of Lero could be generally used in any
+DBMS; thus, the strategy should not be system-specific.
+Existing Plan Exploration Methods. A straightforward strategy
+is to explore a random sample of valid plans for each query, which is
+used by reinforcement learning-based approaches such as Neo [33]
+and Balsa [51]. The obvious drawback is that, with high likelihood,
+high-quality plans could be missing in a random sample; otherwise,
+the sample size has to be so large that executing these sample plans
+would be too costly for model training.
+Bao [32] explores plans by tuning a set of hints (boolean flags) to
+disable/force certain types of optimization rules. For example, the
+native query optimizer initially generates a plan with merge join
+for a query; with a hint set that disables merge join and forces in-
+dexed nested loop join, it would generate a different candidate plan.
+However, this optimizer-level tuning strategy has two drawbacks.
+First, a hint set is typically applied for the whole query during
+the entire plan search procedure. If different parts of a query have
+different optimal choices, tuning a flag at a query level may miss
+opportunities for finding high-quality plans. For example, let 𝑄
+be a query joining two sub-queries 𝑄1 and 𝑄2 where the best join
+operations for 𝑄1 and 𝑄2 are indexed nested loop join and merge
+join, respectively. The query optimizer may use merge join for both
+𝑄1 and 𝑄2 due to cardinality estimation errors. With a hint set
+disabling/forcing either merge join or indexed nested loop join, at
+most one of 𝑄1 and 𝑄2 could select the right operation. In such
+cases, the optimal plan can never be included in the candidate list.
+Second, the set of available hints is system specific. An optimizer
+usually contains hundreds of flags to enable/disable certain opti-
+mization rules. Enumerating all kinds of combinations is infeasible
+in practice. Selecting an effective subset of hint sets manually re-
+quires a deep understanding on the system and comprehensive
+analysis on the workload [37].
+Thus, it motivates us to pursue other routes for designing a plan
+exploration strategy. We introduce our tuning knob in Section 4.1,
+followed with practical heuristic strategies in Section 4.2.
+4.1 Cardinality as Knob for Plan Explorer
+Lero uses the cardinality estimator as the tuning knob for our plan
+explorer. In the native cost-based query optimizer, the estimated
+cardinality for each sub-query of an input query 𝑄 is fed into the
+cost model to guide plan enumeration and selection. Each time
+with different cardinality estimates on one or more sub-queries, the
+query optimizer would select a different plan for 𝑄. In Lero’s plan
+explorer, we tune (magnify or reduce) the estimated cardinalities
+multiple times to generate a list of different candidate plans.
+Formally, let C() be the native cardinality estimator in DBMS.
+For each sub-query 𝑄 ′ of a query 𝑄, C(𝑄 ′) gives a cardinality
+estimate. Instead of invokingC() in the cost model, we ask the query
+optimizer to invoke a tuned estimator eC(), so it would generate a
+different plan. Our plan explorer would tune C() in different ways;
+with different tuned estimators fed into the cost model, the query
+optimizer generates different plans as the candidates 𝑃1, . . . , 𝑃𝑛.
+Using the cardinality estimator as a tuning knob has following
+advantages. First, in cost-based query optimizers, cardinality esti-
+mates decide the estimated costs, and thus determine join orders
+and physical operations on tables and sub-queries. Therefore, under
+the same resource budget (e.g. work memory) for plan execution,
+tuning cardinality estimates would be highly possible to introduce
+diversity in candidate plans, possibly with different join orders or
+different operators (e.g., sort-merge join v.s. nested loop join). Sec-
+ond, cardinality tuning is platform-independent. For most DBMSs,
+there exist system-provided interfaces to modify the estimated
+cardinality, which is friendly for system deployment.
+A Brute-Force Exploration Strategy. Let C∗ () be the true car-
+dinality. For any query 𝑄, the difference between C∗ (𝑄) and the
+DBMS’s estimateC(𝑄) is unknown. However, with a reasonable
+number of different ways to tune C(𝑄), we can ensure that at least
+one tuned estimator eC(𝑄) is close to C∗ (𝑄), in terms of q-error,
+which is defined as QE(estimate, true) = max{ estimate
+true , true
+estimate }.
+We tune the cardinality estimatorC() with exponentially varying
+step sizes. Suppose we know an upper bound of the q-error of C(),
+namely, QE(C(𝑄 ′), C∗ (𝑄 ′)) ≤ Δ for any sub-query 𝑄 ′ of 𝑄. Let
+𝐹 Δ
+𝛼 = {𝛼𝑡 | ⌊− log𝛼 Δ⌋ ≤ 𝑡 ≤ ⌈ log𝛼 Δ⌉, 𝑡 ∈ Z} (6)
+be the set of guesses of scaling factors . For each 𝑓 = 𝛼𝑡 ∈ 𝐹 Δ𝛼 , we
+tune C(𝑄 ′) as eC(𝑄 ′) = 𝑓 ·C(𝑄 ′). Then there is at least one 𝑓 ∈ 𝐹 Δ𝛼
+such that QE(𝑓 · C(𝑄 ′), C∗ (𝑄 ′)) ≤ 𝛼. The estimation of Δ does
+not need to be tight, since the number of guesses |𝐹 Δ𝛼 | = Θ(log𝛼 Δ)
+depends logarithmically on Δ. In practice, it can be set based on
+users’ experience or q-error distribution on historical queries.
+In order to explore plans for the query 𝑄, we repeat the above
+tuning process recursively for all of its sub-queries: for each sub-
+query 𝑄 ′ of 𝑄, we pick a scaling factor 𝑓𝑄′ ∈ 𝐹 Δ𝛼 and set eC(𝑄 ′) =
+𝑓𝑄′ ·C(𝑄 ′). For each combination of scaling factors ⟨𝑓𝑄′ ⟩𝑄′ ⊆𝑄, we
+construct an estimator eC() defined for all the sub-queries of 𝑄, and
+we can feed it into the cost model to generate a candidate plan.
+From the way how tuned estimators are constructed above, there
+is at least one combination of scaling factors such that the result-
+ing eC() satisfies QE(eC(𝑄 ′), C∗ (𝑄 ′)) ≤ 𝛼 for all sub-queries of 𝑄.
+Theoretically, a near-optimal candidate plan under a specific cost
+model can be generated by the optimizer using an estimator eC()
+with q-error bounded by 𝛼; more formally, from [35], with some
+mild assumptions about the cost model, the optimal plan undereC()
+is no worse than the optimal plan under C∗ () by a factor of 𝛼 4.
+Ensuring that at least one candidate plan is near-optimal suffices
+for the purpose of optimization, as it is the comparator’s job to
+identify it among all candidates. However, the overhead of the above
+method is too high: the number of different sub-queries𝑄 ′ is at least
+2𝑞 where 𝑞 is the number of tables in𝑄, and |𝐹 Δ𝛼 | = Θ(log𝛼 Δ); thus,
+the total number of combinations of scaling factors is Θ(log2𝑞
+𝛼 Δ).
+From the above discussion, we can prove the following results.
+Proposition 1. In the above brute-force exploration strategy, the
+number of candidate plans generated is at most O(log2𝑞
+𝛼 Δ); with
+some mild assumptions about the cost model as in [ 35], at least one of
+them is no worse than the optimal plan by a factor of 𝛼 4.
+The list of candidate plans generated in the above way is too
+long, which is unbearably costly for model training. We propose
+more effective heuristic methods in the following subsection.
+
+=== PAGE 7 ===
+Algorithm plan_explorer(𝑄, 𝛼, Δ)
+1: Priority queue candidate_plans ← ∅
+2: for each 𝑓 ∈ 𝐹 Δ𝛼 in the increasing order of | log 𝑓 | do
+3: for 𝑘 ← 1 to 𝑞 (the number of tables in 𝑄) do
+4: Inside query optimizer: let C() be the default cardinality esti-
+mator in native query optimizer
+5: eC(𝑄′) ← 𝑓 ·C(𝑄′) for size-𝑘 sub-queries 𝑄′ ∈ sub𝑘 (𝑄)
+6: eC(𝑄′) ← C(𝑄′) for sub-queries 𝑄′ ∈ sub(𝑄) − sub𝑘 (𝑄)
+7: feed cardinality eC() into the cost model to generate a plan 𝑃
+8: candidate_plans ← candidate_plans ∪ { 𝑃 }
+9: return candidate_plans
+Figure 3: Plan exploration strategy in Lero.
+4.2 Priority-Based Heuristic Methods
+Plan exploration is conducted in background whenever system
+resources become available. The key idea of our heuristics is to
+prioritize exploring where the native optimizer is likely to make
+mistakes. In addition, instead of exploring all possibilities and tun-
+ing cardinality estimates for all sub-queries simultaneously as in
+the brute-force strategy, we introduce a heuristic which focuses
+on mistakes in estimating cardinalities for size-𝑘 sub-queries on 𝑘
+tables (for each different 𝑘 ≥ 1 at one time). 1
+The necessity of considering 𝑘 > 1 is because the difficulty (as
+well as the error) of estimating cardinality of size- 𝑘 sub-queries
+increases significantly as 𝑘 increases (due to cross-table correlation
+among columns). Thus, the native optimizer tends to make mistakes
+in generating partial plans for sub-queries on a larger number𝑘 > 1
+of tables. As a trade-off between efficiency and effectiveness, the
+following strategy tries to guess where the biggest mistake is (by
+enumerating all possible values of𝑘), and tune cardinality estimates
+for all size-𝑘 sub-queries together.
+The plan explorer in Lero is illustrated in Figure 3. In the outer
+loop (line 2), we enumerate a scaling factor𝑓 ∈ 𝐹 Δ𝛼 , in the increasing
+order of | log 𝑓 | with ties broken arbitrarily. That is, we prioritize
+exploring the neighboring plan space surrounding the native opti-
+mizer’s choice (with𝑓 closer to 1), where plan quality is not too bad
+and the optimizer is likely to make mistakes, if any. Letsub𝑘 (𝑄) be
+the set of size-𝑘 sub-queries of a query 𝑄 on 𝑞 tables. An extensive
+experimental study in [24] shows that sub-queries with the same
+size are often underestimated together with similar q-errors. Thus,
+in the inner loop, we enumerate𝑘 and tune the cardinality estimates
+for all sub-queries 𝑄 ′ ∈ sub𝑘 (𝑄) together, resulting in a tuned es-
+timator eC (lines 5-6) to be fed into the optimizer. The resulting
+candidate plans are maintained in a priority queue for evaluation
+and execution whenever system resources allow. Considering the
+sizes of the two loops in lines 2-3, the following result is obvious.
+Proposition 2. In the heuristic strategy in Figure 3, the number
+of candidate plans generated is at most O(𝑞 ·log𝛼 Δ).
+Encouraging Diversity in Candidates. An important goal of our
+plan explorer is to generate diversified candidates. In Figure 4, we
+give conceptual examples of typical cases when our plan explorer
+encourages diversity in the candidates (with different plan shapes
+and join orders), for a query joining four tables, 𝐴 ⊲ ⊳𝐵 ⊲ ⊳𝐶 ⊲ ⊳𝐷:
+1We also consider heuristics based on plan diagram [ 9, 11], which can be found in
+Appendix B.
+⋈
+𝐴 𝐶
+⋈
+𝐵
+𝐷
+⋈
+𝑃!
+⋈
+𝐴 𝐵
+⋈
+⋈
+𝐶 𝐷
+𝑃"
+⋈
+𝐴 𝐵
+⋈
+𝐶
+𝐷
+⋈𝑃#
+⋈
+𝐶 𝐷
+⋈
+𝐴
+𝐵
+⋈𝑃$
+Figure 4: Intuitions on why our plan explorer based on sub-
+query grouping encourages diversity.
+(Diversity of plan shapes) Two valid plans𝑃1 and 𝑃2 have different
+shapes (left-deep tree and bushy tree, respectively). When we tune
+cardinality estimates for size-2 sub-queries ( 𝑘 = 2 in line 2 of
+Figure 3), different values of 𝑓 would encourage different plan
+shapes. Namely, when 𝑓 ≪ 1, two sub-queries 𝐴 ⊲ ⊳𝐵 and 𝐶 ⊲ ⊳𝐷
+in 𝑃2 have reduced cardinality estimates in eC(), while only one
+sub-query 𝐴 ⊲ ⊳𝐶 in 𝑃1 has a reduced cardinality estimate. As a
+result, the estimated cost of 𝑃2 is reduced more than that of 𝑃1, and
+thus a bushy tree is more likely to be generated by our plan explorer
+and included in the candidate list. When𝑓 ≫ 1, with a similar logic,
+a left-deep tree is more likely to appear in the candidate list.
+(Diversity of join orders ) Plans 𝑃3 and 𝑃4 are both left-deep trees
+but have different join orders. In Figure 4, the length of bar on each
+single and joined table represents its size. 𝑃3 first executes 𝐴 ⊲ ⊳𝐵
+which has a large estimated cardinality, while 𝑃4 first executes 𝐶 ⊲ ⊳
+𝐷 which is estimated to be much smaller. When we tune cardinality
+estimates for size-2 sub-queries, we multiply both estimates with a
+scaling factor 𝑓 . Suppose 𝑃3 and 𝑃4 have similar total estimated cost
+before tuning. When 𝑓 ≪ 1, the decrease of the tuned cardinality
+estimate eC(𝐴 ⊲ ⊳𝐵) − C(𝐴 ⊲ ⊳𝐵) for 𝐴 ⊲ ⊳𝐵 is more significant than
+eC(𝐶 ⊲ ⊳𝐷) − C(𝐶 ⊲ ⊳𝐷), and thus 𝑃3 is more likely to be in the
+candidate list; when 𝑓 ≫ 1, the increase eC(𝐴 ⊲ ⊳𝐵) − C(𝐴 ⊲ ⊳𝐵) is
+more significant, and thus 𝑃4 is more preferable.
+Some Implementation Details. The tuned estimator eC() in our
+plan explorer (in Figure 3) is not constructed explicitly by setting
+the cardinality estimate for every possible sub-query 𝑄 ′ of 𝑄 (as in
+lines 5-6). Instead, we only need a “hook” to the native cardinality
+estimator C(): if the size of a sub-query 𝑄 ′ is 𝑘, we invoke C(𝑄 ′)
+and return 𝑓 · C(𝑄 ′) as eC(𝑄 ′); otherwise, we just return C(𝑄 ′).
+We implement Lero on PostgreSQL. Thanks to Lero’s non-intrusive
+design, the implementation is straightforward. The only major
+modification to PostgreSQL is a hook function pg_hint_plan that
+implements the tuned cardinality estimator eC() in the above way.
+Our implementation on PostgreSQL can be easily ported to other
+databases that offer similar interfaces for cardinality estimators.
+5 EXTENSIONS AND DISCUSSION
+Comparator with 𝑑-𝑑𝑖𝑚 Embedding. Our comparator CmpPlan
+could be extended to a𝑑-dimensional (𝑑-𝑑𝑖𝑚) embedding space. We
+only need to leave the dimensionality of the last plan embedding
+layer (in Figure 2) as𝑑 > 1, with the hope to summarize more sophis-
+ticated statistical and structural information about each plan in plan
+embeddings. After that, the comparison layer is a learnable linear
+layer that compares the two𝑑-𝑑𝑖𝑚 embeddings PlanEmb(𝑃1) ∈ R𝑑
+
+=== PAGE 8 ===
+and PlanEmb(𝑃2) ∈ R𝑑, and outputs 0 (𝑃1 is better) or 1 (𝑃2 is
+better). We defer detailed analysis to Appendix A.
+How to Handle Varying Resource Budget. Traditionally, each
+query is assigned a resource budget (e.g. work memory) under
+which the query is optimized and later executed. It is the database
+engine’s responsibility to guarantee each query receives its assigned
+budget at runtime and ensure performance isolation among differ-
+ent queries to avoid any resource contention. This is an orthogonal
+task to query optimization. When resource condition in the data-
+base engine changes dramatically and the assigned budget for a
+query can no longer be guaranteed at runtime, re-optimization for
+the query under a different budget might be triggered.
+We assume constant resource budget per plan execution in this
+paper. In principle, Lero can include resource budget information
+into the feature set of our comparator model, namely, as inputs to
+the plan embedding layers. In this way, the resulting plan embed-
+dings encode such information about available resource, and plans
+can be compared in the comparison layer under different resource
+budgets at runtime. This augmented design will bring more chal-
+lenges in model training, as the comparator now needs to observe
+runtime stats under various resource budgets to be fully trained,
+which we leave for future work.
+6 EXPERIMENTAL EV ALUATION
+We make our implementation of Lero open-source [2]. We also im-
+plement recently proposed learned query optimizers, Neo [33] and
+Bao [32], and use Balsa’s open-source implementation in [1, 51] on
+PostgreSQL. We describe our experimental setup in Section 6.1. We
+first answer the most crucial questions about Lero’s performance:
+• How much improvement on query execution performance could
+Lero achieve in comparison with PostgreSQL’s native and other
+learned query optimizers? (Sections 6.2 and 6.8)
+• How much is Lero’s query optimization cost? (Section 6.3)
+• Could Lero adapt to workloads on dynamic data? (Section 6.4)
+We then examine the design choices and settings in Lero and
+understand how they affect the performance of Lero:
+• What are the benefits of using pre-training in Lero? (Section 6.5)
+• Is the proposed plan exploration strategy efficient and effective?
+How is it compared with alternative strategies? (Section 6.6)
+• With less or limited idle resource, could Lero still achieve similar
+performance gains? (Section 6.7)
+6.1 Experimental Setup
+Benchmarks. We evaluate all the query optimizers on three widely
+used benchmarks.
+• The IMDB dataset has 21 tables on movies and actors, and its
+JOB workload [24] has 113 realistic queries. For large-scale eval-
+uation in most of our experiments, we generate a workload of
+1,000 queries from JOB (similar to the one in [ 32]): each time
+we randomly sample a query template from JOB, fetch its join
+template and attach some randomly generated predicates to it.
+• The STATS dataset and STATS-CEB workload [ 15, 16] are re-
+cently proposed to evaluate the end-to-end performance of query
+optimizer. STATS contains8 tables of user-contributed content
+on the Stats Stack Exchange network. Its data distribution is more
+complex than IMDB. STATS-CEB contains 146 query templates
+varying in join sizes and types. We generate a query workload
+using the same approach as described above.
+• The TPC-H [8] has its data synthetically generated under a uni-
+form distribution. We set the scale factor to 10, and use its query
+templates #3, 5, 7, 8, 9, 10 for workload generation. Under each
+template, we generate a number of queries with varying predi-
+cates. We exclude other templates which are either too simple
+(on only one or two tables), or with views or nested SQL queries.
+Queries with views or nested SQL queries cannot be fully opti-
+mized by Lero due to a limitation of our implementation: to tune
+cardinality estimations for operators in the plans, we modify the
+hook function pg_hint_plan, which does not support to impose
+any hints on views and nested SQL queries. We would try to fix
+this limitation in the future implementation.
+• The TPC-DS [7] is another benchmark for evaluating database
+performance. Similar to TPC-H, we also set its scale factor to 10
+and exclude all templates that are either too simple or can not be
+supported by the pg_hint_plan hook function. The remaining 23
+templates are used to generate a query workload with various
+predicates in a similar way to TPC-H.
+Learned Optimizers in Comparison. Neo and Balsa need to find
+a plan to execute using their latest model in each training epoch,
+and use the execution statistics to update the model. The generated
+plans are unknown before each epoch, so the training can only be
+done sequentially, which leads to a very long training time even
+with unlimited resource. By their evaluation [33, 51], the models
+converge after tens of epochs. On the contrary, both Bao and Lero
+can simultaneously run the selected plans and collect the training
+data in background, which greatly expedite the training process.
+In our experiments, neither Neo nor Balsa could match the per-
+formance of PostgreSQL’s native query optimizer after training for
+72 hours on all of our datasets, except the original JOB workload
+(with 113 queries) on the IMDB dataset. On the contrary, Bao often
+outperforms PostgreSQL after training for several hours. Thus, we
+only report performance of Bao and Lero in most of our experi-
+ments in Sections 6.2-6.7. We compare Lero with Balsa on IMDB
+with the original JOB workload in Section 6.8. Bao and Balsa have
+demonstrated their superiority over Neo in [32, 51], so we do not
+further compare with it in the rest experiments.
+As described in [32], Bao selects one candidate plan by Thomp-
+son sampling to execute and collects its execution time to update
+its model periodically. To have a fair comparison with Lero, we
+also implement an extended version of Bao, called Bao+, which
+witnesses more plans for model training. For each training query,
+it runs all candidate plans generated by its hint set tuning strategy
+using idle computation resource and collects their execution time
+to update the model periodically, in a similar way to Lero.
+Evaluation Scenarios We compareLero with PostgreSQL’s native
+query optimizer and other learned optimizers in different settings.
+PostgreSQL’s native query optimizer does not need a separate train-
+ing phase. For fair comparisons with the native and learned opti-
+mizers, we use the “time series split” strategy [32] for training and
+
+=== PAGE 9 ===
+Execution Time (in hour)Query Optimizer STATS IMDB TPC-H TPC-DS
+PostgreSQL 20.19 1.15 0.94 1.68
+Bao 15.32 0.47 1.17 1.55
+Bao+ 13.85 0.41 0.89 1.57
+Lero 11.32 0.35 0.74 1.47
+Fastest Found Plan 10.73 0.19 0.72 1.39
+Table 1: Overall performance of different query optimizers.
+evaluating Bao, Bao+, and Lero. Namely, unique queries in a work-
+load are randomly shuffled as 𝑄1, 𝑄2, . . .. The learned optimizers
+are always evaluated on queries that have never seen during the
+procedure of model training and updating. In the experiments, we
+evaluate their performance under two realistic scenarios:
+• Performance curve since deployment. The learned optimizers are
+continuously updated since deployed for each workload. Bao+
+and Lero may execute multiple candidate plans for a query on
+idle workers. When 𝑄𝑡 +1 is evaluated, all learned optimizers are
+only trained with information from earlier queries 𝑄1, . . . , 𝑄𝑡 .
+Their models are updated in the background every 100 queries
+on IMDB and STATS, every 30 queries on TPC-H and every 50
+queries on TPC-DS. By reporting the (accumulated) latency on
+each 𝑄𝑡 +1, we meter the performance of different optimizers since
+the deployment and how quickly they adapt to a new workload.
+• Performance with stable models. The learned optimizers tend to be
+stable (that is, the model training process converges) after seeing
+a sufficient number of queries in the workload, i.e., 𝑄1, . . . , 𝑄𝑇
+(training queries), then we would use the optimizers to evaluate
+queries 𝑄𝑇 +1, 𝑄𝑇 +2, . . . (test queries) without further updating
+the models. The numbers of test queries on IMDB, STATS, TPC-H
+and TPC-DS are 113, 146, 30 and 115, respectively. By reporting
+their (average) performance on 𝑄𝑇 +1, 𝑄𝑇 +2, . . ., we compare the
+performance of learned optimizers after they are deployed on a
+workload and stabilized for a while.
+Setup. We deploy learned optimizers on a Linux machine with
+an Intel(R) Xeon(R) Platinum 8163 CPU running at 2.5 GHz, 96
+cores, 512GB DDR4 RAM and 1TB SSD. It is also equipped with
+one NVIDIA RTX-2080TI GPU for model training and inference.
+PostgreSQL 13.1 is installed and configured with 4GB shared buffers.
+6.2 Query Performance
+We compare Lero with other optimizers for the two scenarios in
+Section 6.1. For the hyper-parameters ofLero, we set the cardinality
+tuning factor 𝛼 = 10 and q-error upper bound Δ = 102, so the set
+of scaling factors is 𝐹 Δ𝛼 = {10−2, 10−1, 1, 10, 102}. For Bao and Bao+,
+we use the same family of 48 hint sets [ 30] for plan generation.
+As in Bao’s original implementation [31], Bao and Bao+ select the
+same plan as PostgreSQL’s optimizer for the first 100 queries while
+their machine learning models are trained and warmed up.
+6.2.1 Performance with Stable Models. We first compare the perfor-
+mance of different optimizers, after Bao, Bao+, and Lero have been
+deployed for a while and the model training converges after seeing
+all training queries. We will then use the learned optimizers to
+process the unseen test queries. Table 1 reports their performance
+on finishing all test queries on all benchmarks.“Fastest Found Plan”
+refers to the fastest plan generated by exhaustively search for each
+query. Overall, Lero achieves the best performance, compared with
+Bao, Bao+, and PostgreSQL’s optimizer. Its performance is close to
+the fastest found plans on STATS, TPC-H and TPC-DS.
+• Lero’s execution time is70%, 44%, 21% and 13% less than Post-
+greSQL’s native query optimizer on IMDB, STATS, TPC-H, and
+TPC-DS, respectively. This demonstrates Lero’s practical value
+and advantages over the traditional optimizer in this scenario.
+• Lero’s execution time is26%, 25%, 37% and 5% less than Bao on
+IMDB, STATS, TPC-H and TPC-DS, respectively. This verifies the
+effectiveness of our learning-to-rank paradigm and the pairwise
+trained comparator model (rather than a model predicting the
+exact latency). Moreover, compared with the hint set tuning
+approach in Bao, the plan explorer in Lero is able to generate
+better and more diversified plans, as described in Section 4.2,
+for the comparator model to learn and achieve superior query
+performance. Detailed comparison and experimental analysis of
+different plan exploration strategies will be given in Section 6.6.
+• Bao+ learns from all the candidate plans generated by hint set
+tuning and achieves a decent performance improvement over
+Bao. Nevertheless, Lero’s execution time is still around20% less
+than Bao+ on the three benchmarks, due to Lero’s more effective
+pairwise learning-to-rank model and plan exploration strategy.
+6.2.2 Analysis of Performance Improvement/Regression. Figure 5
+compares the per-query execution time of each learned optimizer
+(Bao, Bao+ and Lero) with PostgreSQL on the 146 test queries of
+STATS. We do not plot the 47 queries, for each of which PostgreSQL
+and all the three learned optimizers choose the same plan for execu-
+tion. We sort all remaining queries by latency differences between
+each optimizer and PostgreSQL from slowdown to speedup to visu-
+alize performance regression/improvement of Lero and others.
+In comparison to Bao and Bao+,Lero significantly reduces perfor-
+mance regressions and brings much more performance gains. Only
+9 queries (6.2%) are slowed down inLero (for more than one second)
+among 146 queries, while 33 queries are accelerated significantly.
+Bao and Bao+ cause regressions for 29 queries each, which are even
+more than the number of queries they are able to improve (26 in
+Bao and 24 in Bao+). When performance regression does happen
+in Lero, the relative slowdown of execution time, however, is much
+smaller. For instance, for the STATS workload, the maximum slow-
+down in Lero is 246𝑠, which translates to a relative performance
+regression of 5.2%, while the maximum slowdown in Bao is 1, 276𝑠
+with a relative performance regression of 46.5%. Appendix C pro-
+vides more detailed analysis on how the plans selected by different
+optimizers rank among the truly best plans, which explains the
+performance improvement in Lero.
+6.2.3 Performance Curves since Deployment. In Figure 6, we meter
+the performance curves of learned optimizers since their deploy-
+ment for each workload, i.e., accumulated execution time of the
+best plans chosen by different optimizers in each workload (see Sec-
+tion 6.1 for the definition). The “Fastest Found Plan” curve refers to
+the conceptual latency lower bound as is defined in Section 6.2.1.
+• The training of Lero converges faster. After seeing 200 queries
+in IMDB, 100 queries in STATS, TPC-H and TPC-DS respectively,
+Lero’s performance is consistently better than PostgreSQL and
+
+=== PAGE 10 ===
+103
+102
+10
+1
+10
+102
+103
+104
+Time (s)
+Bao
+Slowdown
+Speedup
+103
+102
+10
+1
+10
+102
+103
+104
+Time (s)
+Bao+
+Slowdown
+Speedup
+103
+102
+10
+1
+10
+102
+103
+104
+Time (s)
+Lero
+Slowdown
+Speedup
+Figure 5: Per-query execution time of different query optimizers in comparison with PostgreSQL on the STATS benchmark.
+100 200 300 400 500 600 700 800 9001000
+# of queries
+0
+2
+4
+6
+8
+10
+12
+14Time (h)
+IMDB
+PostgreSQL
+Bao
+Bao+
+Lero
+Fastest Found Plan
+100 200 300 400 500 600 700 800 9001000
+# of queries
+0
+25
+50
+75
+100
+125
+150
+175
+200Time (h)
+STATS
+PostgreSQL
+Bao
+Bao+
+Lero
+Fastest Found Plan
+30 60 90 120 150 180 210 240 270
+# of queries
+0
+2
+4
+6
+8
+10Time (h)
+TPC-H
+PostgreSQL
+Bao
+Bao+
+Lero
+Fastest Found Plan
+50 100 150 200 250 300 350 400 450
+# of queries
+0
+1
+2
+3
+4
+5
+6
+7Time (h)
+TPC-DS
+PostgreSQL
+Bao
+Bao+
+Lero
+Fastest Found Plan
+Figure 6: Performance curve of different query optimizers since deployment on benchmarks.
+other learned optimizers. While Bao and Bao+ eventually out-
+perform PostgreSQL, they do so after seeing much more queries.
+This confirms that training Lero’s learning-to-rank model for
+query optimization is much more effective than training the
+latency prediction models in Bao and Bao+.
+• The performance gaps between Lero and Bao/Bao+ gradually
+enlarge as more and more queries are executed. Eventually, Lero
+brings much more significant performance gain over PostgreSQL
+than Bao and Bao+ do. Its total execution time (right-end of each
+in Figure 6) is, e.g., 47%, 38% and 23% less than PostgreSQL, Bao
+and Bao+, respectively, on STATS.
+• Lero’s performance is more robust. It consistently outperforms
+PostgreSQL on all the benchmarks while the performance of Bao
+and Bao+ is sometimes worse than PostgreSQL (e.g. on TPC-H
+and TPC-DS). This is due to the intrinsic hardness of latency
+prediction which could require more training data and more
+time to converge in order to demonstrate any performance gain.
+6.3 Query Optimization Cost
+While achieving significant improvement in query execution per-
+formance, Lero spends extra query optimization time in generat-
+ing a list of candidate plans for an input query and applying the
+comparator model to pick the best candidate. The average query
+optimization time per-query of different optimizers is reported in
+Table 2. We observe that this extra cost in query optimization is
+very low. In particular, the total extra cost is only at most2.4% of the
+total query execution time on IMDB and less than 0.1% on STATS,
+TPC-H and TPC-DS. Whereas, Lero saves 13% to 70% execution
+time in comparison with PostgreSQL on these benchmarks.
+6.4 Adapting to Dynamic Data
+We now examine the performance of learned query optimizers on
+dynamic data. We use the STATS dataset for the experiment as each
+tuple is associated with a time stamp. We split the data by time.
+Initially, the earliest 50% of the data is stored in the database. After
+the first 200 queries are executed on this database, we add 12.5%
+of the data into the database in the order of time stamps every 200
+following queries. The goal is to evaluate how well different learned
+optimizers adapt to dynamic data by updating their models.
+0 1 2 3 4 5 6 7 8 9 10
+# of queries (x100)
+0
+20
+40
+60
+80
+100Time (h)
+STATS
+PostgreSQL
+Bao
+Bao+
+Lero
+(a) Performance since deployment
+PostgreSQL Bao Bao+ Lero
+12
+14
+16
+18
+20
+22Time (h)
+STATS (b) Performance with stable models
+Figure 7: Performance of optimizers on dynamic data.
+Time (in millisecond) PostgreSQL Bao/Bao+ Lero
+IMDB 842 856 1 , 736
+STATS 7 8 .1 16
+TPC-H 5.3 6 .2 12 .6
+TPC-DS 6.7 8 .5 15 .8
+Table 2: Average query optimization time per query.
+We report the performance curve since deployment for each opti-
+mizer on dynamic data in Figure 7(a), as well as their performance
+with stable models in Figure 7(b).
+Lero outperforms PostgreSQL, Bao, and Bao+ in both settings.
+After 1,000 queries, Lero’s accumulated query execution time is50%
+less than PostgreSQL and 38% less than Bao/Bao+ (right-end of Fig-
+ure 7(a)). In parallel to query processing, all the learned optimizers
+continuously refine their models to adapt to the dynamic changes
+of data. It turns out that Lero adapts to such data changes better
+than the other two learned optimizers. Eventually, after all the data
+changes are done, Lero’s query performance (Figure 7(b)) is 33%,
+29% and 10% better than PostgreSQL, Bao and Bao+, respectively.
+In Figure 7(a), we observe Lero’s robust performance, for the
+reason analyzed at the end of Section 3.2. Only Lero consistently
+performs better than PostgreSQL, while Bao is worse than Post-
+greSQL at the beginning and Bao+ performs worse in the middle.
+6.5 Importance of Pre-Training
+Lero relies on the pre-training procedure to learn from the na-
+tive query optimizer and better bootstrap its own model. The pre-
+training time is only around 5 minutes on each of these benchmarks.
+It converges fast as the native cost model often consists of functions
+with simple structures, i.e., piecewise linear or quadratic function
+of estimated cardinalities of sub-queries with magic constants as
+coefficients for different operators.
+
+=== PAGE 11 ===
+0 100 200 300 400 500
+# of queries
+0
+2
+4
+6
+8Time (h)
+IMDB
+PostgreSQL
+Lero (pre-train)
+Lero (cold-start)
+0 100 200 300 400 500
+# of queries
+0
+20
+40
+60
+80Time (h)
+STATS
+PostgreSQL
+Lero (pre-train)
+Lero (cold-start)
+Figure 8: Effects of pre-training on Lero’s performance
+curve.
+Average Plans Faster Plans SlowerDataset Strategy #of Plansthan PostgreSQLthan PostgreSQL
+IMDB Lero’s plan explorer 9 47% 42%
+Hint set tuning 16 36% 57%
+STATS Lero’s plan explorer 5 31% 49%
+Hint set tuning 19 25% 69%
+TPC-H Lero’s plan explorer 7 24% 64%
+Hint set tuning 15 6% 88%
+Table 3: Number and quality of unique candidate plans gen-
+erated by different plan exploration strategies.
+0 1 2 3 4 5 6 7 8 9 10
+# of queries (x100)
+0
+2
+4
+6
+8
+10
+12
+14Time (h)
+IMDB
+PostgreSQL
+Lero (our method)
+Lero (hint set)
+Lero (random)
+0 3 6 9 12 15 18 21 24 27
+# of queries (x10)
+0
+2
+4
+6
+8
+10
+12Time (h)
+TPC-H
+PostgreSQL
+Lero (out method)
+Lero (hint set)
+Lero (random)
+Figure 9: Performance curves of Lero since deployment with
+different plan exploration strategies.
+In this experiment, we evaluate the impact of the pre-training
+procedure on Lero’s performance. We start with either a pre-trained
+comparator model, or a cold-start model with random parameters;
+both are continuously trained/updated as more and more queries
+are executed. Figure 8 illustrates their performance curves on IMDB
+and STATS for the first 500 queries (the results on TPC-H are similar,
+so the figure is omitted due to the space constraint).
+With pre-training, for the initial 100 queries, Lero could gener-
+ate almost the same plans as PostgreSQL since its comparator is
+pre-trained to fit PostgreSQL’s native cost model; thus, their per-
+formances are very close (this can be also observed in our former
+experiments where Lero is pre-trained). Note that Lero does not
+need to execute any query during the pre-training procedure, as
+introduced in Section 3.2. Without pre-training,Lero’s performance
+can be worse than PostgreSQL for the first 200 queries before it
+eventually catches up. After executing nearly 300 queries, the slope
+of the two methods are almost the same. This indicates that Lero
+with a cold-start could catch up but with more training time.
+Proper pre-training from the knowledge of the native query
+optimizer gives Lero a good starting point and also accelerates its
+model’s convergence. With pre-training,Lero could consistently
+outperform PostgreSQL after the initial 100 queries, while with a
+cold-start comparator, Lero consistently outperforms PostgreSQL
+only after seeing nearly 200 queries.
+6.6 Plan Exploration Strategies
+Recall that, for each query, the plan explorer in Lero generates
+a list of candidate plans, which need to include some truly good
+plans (for query optimization) and be diversified (for model to learn
+0 1 2 3 4 5 6 7 8 9 10
+# of queries (x100)
+0
+2
+4
+6
+8
+10
+12
+14
+16Time (h)
+IMDB
+PostgreSQL
+Lero (100%)
+Lero (50%)
+Lero (25%)
+Lero (12.5%)
+0 1 2 3 4 5 6 7 8 9
+# of queries (x100)
+0
+25
+50
+75
+100
+125
+150
+175Time (h)
+STATS
+PostgreSQL
+Lero (100%)
+Lero (50%)
+Lero (25%)
+Lero (12.5%)
+Figure 10: Performance curves of Lero since deployment
+with different amounts of idle resource.
+new knowledge). Besides the plan exploration strategy described
+in Figure 3, we also implement two other alternative approaches
+in Lero to compare their performance: 1) the hint set-based strat-
+egy introduced in Bao and 2) a random strategy which randomly
+generates a number of plans.
+Table 3 compares the quality and diversity of candidate plans
+generated by our plan explorer with those generated by the hint
+set-based strategy. On the third column, we report the number of
+unique plans without duplication. On one hand, even with better
+performance, Lero’s plan explorer actually generates fewer candi-
+date plans per query on average than the hint set-based strategy
+(duplicate plans may be output in different iterations of lines 4-8 in
+Figure 3), which helps bring down the exploration cost. On the other
+hand, a higher percentage of candidate plans generated by Lero’s
+plan explorer run faster than the plan generated by PostgreSQL’s
+native optimizer, which proves such candidate plans worthy to
+explore and learn further. With cardinality tuning, Lero’s plan ex-
+plorer is able to generate more diversified plans while the hint
+set-based strategy typically generates plans with minor difference.
+Figure 9 reports performance curves of Lero using different plan
+exploration strategies on IMDB and TPC-H (performance on STATS
+is similar to the one on IMDB, and thus is omitted due to the space
+limits). Both Lero’s plan explorer and the hint set-based tuning
+strategy perform much better than the random strategy. We also
+observe that replacing Lero’s plan explorer with the hint set-based
+tuning strategy performs worse. The hint set-based strategy has
+some intrinsic limitations, as analyzed at the beginning of Section 4.
+Lero’s plan explorer generates good and diversified plans for the
+pairwise comparator model to explore and learn more effectively.
+6.7 Effects of Idle Resource
+We examine the performance curve of Lero since deployment with
+different amounts of idle computation resource. By default, when
+an incoming query 𝑄𝑡 +1 is to be processed, the comparator model
+in Lero is trained and updated using execution statistics of different
+candidate plans for earlier queries 𝑄1, 𝑄2, . . . , 𝑄𝑡 . Such statistics
+are collected by running candidate plans in idle resource. When
+the idle resource is limited, we may only be able to finish executing
+candidate plans for a fraction of earlier queries𝑄1, 𝑄2, . . . , 𝑄𝑡 . With
+only the first 50%, 25%, and 12.5% earlier queries having all of their
+candidates executed on idle resource, we re-run the experiments in
+Section 6.2.3. We demonstrate in Figure 10 that the performance of
+Lero can still be improved over time and converge eventually.
+Even with limited idle resource, the initial performance of Lero
+is no worse than PostgreSQL, thanks to the pre-training procedure.
+However, at the beginning, the quality of the selected plans is
+indeed worse than the default setting (when 100% of earlier queries
+
+=== PAGE 12 ===
+Random Split Slow SplitSpeedup Ratio Train Test Train Test
+Bao 1.62 1 .49 1 .17 1 .05
+Bao+ 2.93 1 .58 4 .01 1 .74
+Balsa 2.46 1 .55 1 .23 2.31
+Lero 3.54 1.59 4.38 1.34
+Table 4: Learned optimizers on IMDB with original JOB.
+have their candidate plans executed on idle resource), because the
+comparator model is not fully trained. We observe that the model
+still converges fast even with very limited idle resource. For instance,
+when only 12.5% queries have their candidate plans executed and
+explored, the model converges after the first 500 and 200 queries
+on IMDB and STATS, respectively.
+Regardless of under which configuration, Lero becomes stable
+eventually and performs almost the same (curves become parallel
+towards the right end). This implies that limited idle resource would
+definitely slow down the model’s learning and convergence, but
+has little impact on the ultimate performance of Lero.
+6.8 Comparison with Balsa
+We compare Lero with Balsa on IMDB with the original JOB work-
+load. We use its open-source implementation in [1, 51] and prepare
+the dataset in the same way as [51]. Specifically, the 113 queries in
+JOB are split into a training set (with 94 queries) and a testing set
+(with 19 queries) in two ways: 1) random split and 2) the test set
+consists of the 19 slowest-running queries. We run Balsa using its
+default settings and compare it with Lero, Bao, and Bao+.
+Table 4 exhibits the speedup ratio of each learned query optimizer
+in comparison to PostgreSQL’s native optimizer. The performance
+of Balsa matches or outperforms Bao, which is consistent with the
+results in [51]. Both Bao and Balsa try to predict plan latency to
+guide plan search, while Balsa has higher freedom of exploration
+(Bao’s search space is limited by hint set tuning) [ 51]. Thus, it
+performs better than Bao on small and stable workload. However,
+even after Balsa’s model is comprehensively trained on this small
+JOB workload, it still performs worse than Bao+ and Lero.
+7 RELATED WORK
+Learning to Optimize Queries. Recently, there is a flurry of re-
+search to apply machine learning in query optimization [58]. The
+majority of them focus on learned cardinality estimation, using
+either query-driven or data-driven approaches. Query-driven meth-
+ods [12, 22, 27] apply learned models to map featurized query to its
+cardinality. Data-driven methods [18, 45, 50, 52, 53, 59] use different
+generative models to directly learn the underlying data distribution.
+Their superiority and limitations have been evaluated [16, 48]. Oth-
+ers focus on refining traditional cost models and plan enumeration
+algorithms. For learned cost models, [41] and [55, 57] utilize TreeL-
+STM and convolution models to learn cost of single and concurrent
+queries, respectively. Plan enumeration is often modelled as a re-
+inforcement learning problem on deciding the best join order of
+tables. [17, 23] and [54] use simple neural networks and TreeLSTM
+model as value networks for join order selection, respectively. [44]
+considers how to adjust the join order on the fly. These works only
+optimize an individual component in query optimizer, which does
+not necessarily improve the overall performance.
+Besides them, recent works [33, 51] provide end-to-end learned
+solutions for query optimization, and [32] learns to steer a native
+query optimizer using hint set tuning. However, as analyzed in
+Section 1.1, they suffer from lots of deficiencies arising from pre-
+dicting the cost or latency. Based on plan exploration and pairwise
+plan comparison, Lero learns the difference between plan pairs and
+learns to improve the end-to-end quality of query optimization.
+Learning-to-Rank Paradigm. Lero follows a learning-to-rank
+paradigm, which is a class of learning techniques to train models for
+ranking tasks [21, 28, 47]. It has been widely applied for, e.g., docu-
+ment retrieval, collaborative filtering, and recommendation systems.
+Based on how ranking is generated, the learning-to-rank techniques
+could be classified into pointwise [14, 26], pairwise [13, 29] and list-
+wise [38, 42] approaches. Among them, pairwise approach learns a
+classifier on a pair of items to identify which one is better. To our
+best knowledge, we are the first to apply apairwise learning-to-rank
+paradigm to develop a learned query optimizer.
+Learning to Tune Indexes. The task of indexing tuning is to find
+the set of indexes that fits in a given storage budget and results
+in the lowest execution cost for a given workload of queries. A
+traditional index tuner [3, 5, 46] first searches for the optimal index
+configuration for each query (query-level search), and then enumer-
+ates different sets of those index configurations to find the optimal
+index set for the workload under the budget (workload-level search).
+Both phases need to compare the execution costs of two plans of
+the same query given different index configurations. Traditional
+index tuners rely on optimizer’s estimates for such comparisons,
+while [10] trains a classifier to this end with higher accuracy.
+While the query-level search in [10] can be regarded as an appli-
+cation of learning-to-rank in index tuning, it has two fundamental
+differences in comparison to Lero. First, the index tuner in [10] is
+similar to traditional tuners [3, 5, 46], except that the classifier, as a
+pairwise comparator model, is invoked during search procedures
+to determine whether the plan of a query under a new index config-
+uration is improved in comparison to the one under the initial one;
+for a completely different task, query optimization,Lero is equipped
+with two carefully designed components, plan explorer and plan
+comparator model, which work together to explore the plan space.
+Second, the comparator models in [10] and Lero both compare the
+performance of two plans; however, with different goals in the two
+tasks, the ways how features are encoded and the model architec-
+tures in the two comparators are different. Appendix C compares
+the two models experimentally.
+8 CONCLUSIONS
+We propose Lero, a learning-to-rank query optimizer. First, Lero
+applies learning-to-rank machine learning techniques to query opti-
+mization. We argue that it is an overkill to develop machine models
+to predict the exact execution latency or cardinalities in terms of
+query optimization. Instead, Lero adopts a pairwise approach to
+train a binary classifier to compare any two plans, which is proven
+to be more efficient and effective. Second, Lero takes advantage of
+decades of wisdom of database research and jointly works with
+the native query optimizer to improve optimization quality. Third,
+Lero is equipped with a plan exploration strategy, which enables
+Lero to explore new optimization opportunities more effectively.
+
+=== PAGE 13 ===
+Finally, an extensive evaluation on our implementation on top of
+PostgreSQL demonstrates Lero’s superiority in query performance
+and its ability to adapt to changing data and workload.
+REFERENCES
+[1] 2022. Balsa Implementation. https://github.com/balsa-project/balsa.
+[2] 2022. Lero on PostgreSQL. https://github.com/Blondig/Lero-on-
+PostgreSQL.
+[3] Sanjay Agrawal, Surajit Chaudhuri, Lubor Kollár, Arunprasad P. Marathe, Vivek R.
+Narasayya, and Manoj Syamala. 2004. Database Tuning Advisor for Microsoft
+SQL Server 2005. In VLDB. 1110–1121.
+[4] Ronnie Chaiken, Bob Jenkins, Per-Åke Larson, Bill Ramsey, Darren Shakib, Simon
+Weaver, and Jingren Zhou. 2008. Scope: easy and efficient parallel processing of
+massive data sets. PVLDB 1, 2 (2008), 1265–1276.
+[5] Surajit Chaudhuri and Vivek R. Narasayya. 1997. An Efficient Cost-Driven Index
+Selection Tool for Microsoft SQL Server. In VLDB. 146–155.
+[6] Jianmin Chen, Xinghao Pan, Rajat Monga, Samy Bengio, and Rafal Jozefowicz.
+2016. Revisiting distributed synchronous SGD. arXiv:1604.00981 (2016).
+[7] Transaction Processing Performance Council(TPC). 2021. TPC-DS Vesion 2 and
+Version 3. http://www.tpc.org/tpcds/.
+[8] Transaction Processing Performance Council(TPC). 2021. TPC-H Vesion 2 and
+Version 3. http://www.tpc.org/tpch/.
+[9] Atreyee Dey, Sourjya Bhaumik, Harish Doraiswamy, and Jayant R. Haritsa. 2008.
+Efficiently approximating query optimizer plan diagrams. Proc. VLDB Endow. 1,
+2 (2008), 1325–1336.
+[10] Bailu Ding, Sudipto Das, Ryan Marcus, Wentao Wu, Surajit Chaudhuri, and
+Vivek R Narasayya. 2019. Ai meets ai: Leveraging query executions to improve
+index recommendations. In SIGMOD. 1241–1258.
+[11] Harish Doraiswamy, Pooja N. Darera, and Jayant R. Haritsa. 2008. Identifying
+robust plans through plan diagram reduction. Proc. VLDB Endow. 1, 1 (2008),
+1124–1140.
+[12] Anshuman Dutt, Chi Wang, Azade Nazi, Srikanth Kandula, Vivek Narasayya,
+and Surajit Chaudhuri. 2019. Selectivity estimation for range predicates using
+lightweight models. PVLDB 12, 9 (2019), 1044–1057.
+[13] Yoav Freund, Raj Iyer, Robert E Schapire, and Yoram Singer. 2003. An efficient
+boosting algorithm for combining preferences. Journal of machine learning
+research 4, Nov (2003), 933–969.
+[14] Norbert Fuhr. 1989. Optimum polynomial retrieval functions based on the proba-
+bility ranking principle. ACM Transactions on Information Systems 7, 3 (1989),
+183–204.
+[15] Yuxing Han. 2021. Github repository: STATS End-to-End CardEst Benchmark.
+https://github.com/Nathaniel-Han/End-to-End-CardEst-Benchmark .
+[16] Yuxing Han, Ziniu Wu, Peizhi Wu, Rong Zhu, Jingyi Yang, Tan Wei Liang, Kai
+Zeng, Gao Cong, Yanzhao Qin, Andreas Pfadler, Zhengping Qian, Jingren Zhou,
+Jiangneng Li, and Bin Cui. 2021. Cardinality Estimation in DBMS: A Comprehen-
+sive Benchmark Evaluation. PVLDB 15, 4 (2021), 752–765.
+[17] Todd Hester, Matej Vecerik, Olivier Pietquin, Marc Lanctot, Tom Schaul, Bilal
+Piot, Dan Horgan, John Quan, Andrew Sendonaris, Ian Osband, et al. 2018. Deep
+q-learning from demonstrations. In AAAI. 3223–3230.
+[18] Benjamin Hilprecht, Andreas Schmidt, Moritz Kulessa, Alejandro Molina, Kristian
+Kersting, and Carsten Binnig. 2020. DeepDB: learn from data, not from queries!
+PVLDB 13, 7, 992–1005.
+[19] Fürnkranz Johannes and Hüllermeier Eyke. 2011. Preference Learning. Preference
+Learning.
+[20] John J Kanet and V Sridharan. 2000. Scheduling with inserted idle time: problem
+taxonomy and literature review. Operations Research 48, 1 (2000), 99–110.
+[21] Alexandros Karatzoglou, Linas Baltrunas, and Yue Shi. 2013. Learning to rank
+for recommender systems. In RecSys. ACM, 493–494.
+[22] Andreas Kipf, Thomas Kipf, Bernhard Radke, Viktor Leis, Peter Boncz, and
+Alfons Kemper. 2019. Learned cardinalities: Estimating correlated joins with
+deep learning. In CIDR.
+[23] Sanjay Krishnan, Zongheng Yang, Ken Goldberg, Joseph Hellerstein, and Ion
+Stoica. 2018. Learning to optimize join queries with deep reinforcement learning.
+arXiv:1808.03196 (2018).
+[24] Viktor Leis, Andrey Gubichev, Atanas Mirchev, Peter Boncz, Alfons Kemper, and
+Thomas Neumann. 2015. How good are query optimizers, really? PVLDB 9, 3
+(2015), 204–215.
+[25] Jiexing Li, Arnd Christian König, Vivek Narasayya, and Surajit Chaudhuri. 2012.
+Robust estimation of resource consumption for sql queries using statistical tech-
+niques. arXiv:1208.0278 (2012).
+[26] Ping Li, Qiang Wu, and Christopher Burges. 2007. Mcrank: Learning to rank using
+multiple classification and gradient boosting. Advances in neural information
+processing systems 20 (2007).
+[27] Jie Liu, Wenqian Dong, Qingqing Zhou, and Dong Li. 2021. Fauce: fast and
+accurate deep ensembles with uncertainty for cardinality estimation. PVLDB 14,
+11 (2021), 1950–1963.
+[28] Tie-Yan Liu. 2009. Learning to Rank for Information Retrieval. Foundations and
+Trends in Information Retrieval 3, 3 (2009), 225–331.
+[29] Weiwen Liu, Qing Liu, Ruiming Tang, Junyang Chen, Xiuqiang He, and
+Pheng Ann Heng. 2020. Personalized Re-ranking with Item Relationships for
+E-commerce. In CIKM. 925–934.
+[30] Ryan Marcus. 2020. Bao appendix. https://rmarcus.info/appendix.html.
+[31] Ryan Marcus. 2020. Github repository: Bao for PostgreSQL. https://github.
+com/learnedsystems/BaoForPostgreSQL.
+[32] Ryan Marcus, Parimarjan Negi, Hongzi Mao, Nesime Tatbul, Mohammad Al-
+izadeh, and Tim Kraska. 2021. Bao: Making learned query optimization practical.
+In SIGMOD. 1275–1288.
+[33] Ryan Marcus, Parimarjan Negi, Hongzi Mao, Chi Zhang, Mohammad Alizadeh,
+Tim Kraska, Olga Papaemmanouil, and Nesime Tatbul. 2019. Neo: A Learned
+Query Optimizer. PVLDB 12, 11 (2019), 1705–1718.
+[34] Ryan Marcus and Olga Papaemmanouil. 2019. Plan-structured deep neural
+network models for query performance prediction. PVLDB 12, 11 (2019), 1733–
+1746.
+[35] Guido Moerkotte, Thomas Neumann, and Gabriele Steidl. 2009. Preventing Bad
+Plans by Bounding the Impact of Cardinality Estimation Errors. VLDB 2, 1 (2009),
+982–993.
+[36] Lili Mou, Ge Li, Lu Zhang, Tao Wang, and Zhi Jin. 2016. Convolutional neural
+networks over tree structures for programming language processing. In AAAI.
+1287–1293.
+[37] Parimarjan Negi, Matteo Interlandi, Ryan Marcus, Mohammad Alizadeh, Tim
+Kraska, Marc Friedman, and Alekh Jindal. 2021. Steering Query Optimizers: A
+Practical Take on Big Data Workloads. In SIGMOD. 2557–2569.
+[38] Liang Pang, Jun Xu, Qingyao Ai, Yanyan Lan, Xueqi Cheng, and Jirong Wen.
+2020. Setrank: Learning a permutation-invariant ranking model for information
+retrieval. In SIGIR. 499–508.
+[39] Naveen Reddy and Jayant R. Haritsa. 2005. Analyzing Plan Diagrams of Database
+Query Optimizers. In VLDB. 1228–1240.
+[40] P Griffiths Selinger, Morton M Astrahan, Donald D Chamberlin, Raymond A
+Lorie, and Thomas G Price. 1989. Access path selection in a relational database
+management system. In Readings in Artificial Intelligence and Databases . Elsevier,
+511–522.
+[41] Ji Sun and Guoliang Li. 2019. An end-to-end learning-based cost estimator. PLDB
+13, 3 (2019), 307–319.
+[42] Robin Swezey, Aditya Grover, Bruno Charron, and Stefano Ermon. 2021. Pirank:
+Scalable learning to rank via differentiable sorting.Advances in Neural Information
+Processing Systems 34 (2021), 21644–21654.
+[43] William R Thompson. 1933. On the likelihood that one unknown probability
+exceeds another in view of the evidence of two samples.Biometrika 25, 3-4 (1933),
+285–294.
+[44] Immanuel Trummer, Junxiong Wang, Deepak Maram, Samuel Moseley, Saehan
+Jo, and Joseph Antonakakis. 2019. Skinnerdb: Regret-bounded query evaluation
+via reinforcement learning. In SIGMOD. 1153–1170.
+[45] Kostas Tzoumas, Amol Deshpande, and Christian S Jensen. 2011. Lightweight
+graphical models for selectivity estimation without independence assumptions.
+PVLDB 4, 11 (2011), 852–863.
+[46] Gary Valentin, Michael Zuliani, Daniel C. Zilio, Guy M. Lohman, and Alan Skelley.
+2000. DB2 Advisor: An Optimizer Smart Enough to Recommend Its Own Indexes.
+In ICDE. 101–110.
+[47] Saúl Vargas and Pablo Castells. 2011. Rank and relevance in novelty and diversity
+metrics for recommender systems. In Proceedings of the fifth ACM conference on
+Recommender systems. 109–116.
+[48] Xiaoying Wang, Changbo Qu, Weiyuan Wu, Jiannan Wang, and Qingqing Zhou.
+2021. Are We Ready For Learned Cardinality Estimation? PVLDB 14, 9 (2021),
+1640–1654.
+[49] Wentao Wu, Yun Chi, Shenghuo Zhu, Junichi Tatemura, Hakan Hacigümüs, and
+Jeffrey F Naughton. 2013. Predicting query execution time: Are optimizer cost
+models really unusable?. In ICDE. 1081–1092.
+[50] Ziniu Wu and Amir Shaikhha. 2020. BayesCard: A Unified Bayesian Framework
+for Cardinality Estimation. arXiv:2012.14743 (2020).
+[51] Zongheng Yang, Wei-Lin Chiang, Sifei Luan, Gautam Mittal, Michael Luo, and Ion
+Stoica. 2022. Balsa: Learning a Query Optimizer Without Expert Demonstrations.
+SIGMOD (2022), 931–944.
+[52] Zongheng Yang, Amog Kamsetty, Sifei Luan, Eric Liang, Yan Duan, Xi Chen, and
+Ion Stoica. 2021. NeuroCard: One Cardinality Estimator for All Tables. PVLDB
+14, 1 (2021), 61–73.
+[53] Zongheng Yang, Eric Liang, Amog Kamsetty, Chenggang Wu, Yan Duan, Xi Chen,
+Pieter Abbeel, Joseph M Hellerstein, Sanjay Krishnan, and Ion Stoica. 2019. Deep
+unsupervised cardinality estimation. PVLDB 13, 3 (2019), 279–292.
+[54] Xiang Yu, Guoliang Li, Chengliang Chai, and Nan Tang. 2020. Reinforcement
+learning with tree-lstm for join order selection. In ICDE. 1297–1308.
+[55] Johan Kok Zhi Kang, Sien Yi Tan, Feng Cheng, Shixuan Sun, and Bingsheng
+He. 2021. Efficient Deep Learning Pipelines for Accurate Cost Estimations Over
+Large Scale Query Workload. In SIGMOD. 1014–1022.
+
+=== PAGE 14 ===
+[56] Li Zhou. 2015. A survey on contextual multi-armed bandits. arXiv:1508.03326
+(2015).
+[57] Xuanhe Zhou, Ji Sun, Guoliang Li, and Jianhua Feng. 2020. Query performance
+prediction for concurrent queries using graph embedding. PVLDB 13, 9 (2020),
+1416–1428.
+[58] Rong Zhu, Ziniu Wu, Chengliang Chai, Andreas Pfadler, Bolin Ding, Guoliang Li,
+and Jingren Zhou. 2022. Learned Query Optimizer: At the Forefront of AI-Driven
+Databases.. In EDBT. 1–4.
+[59] Rong Zhu, Ziniu Wu, Yuxing Han, Kai Zeng, Andreas Pfadler, Zhengping Qian,
+Jingren Zhou, and Bin Cui. 2021. FLAT: Fast, Lightweight and Accurate Method
+for Cardinality Estimation. PVLDB 14, 9 (2021), 1489–1502.
+APPENDIX
+A COMPARATOR WITH 𝑑-𝑑𝑖𝑚 EMBEDDING
+Our plan comparator model CmpPlan (described in Section 3.1)
+could be easily extended from 1-𝑑𝑖𝑚 plan embedding to use 𝑑-𝑑𝑖𝑚
+(𝑑 > 1) plan embedding. We use the same way on encoding plans
+and slightly modify the plan comparator model (shown in Figure 2)
+as follows:
+(1) In the plan embedding layers, we change the output dimen-
+sion of last embedding layer to 𝑑 so that the plan embedding
+PlanEmb(𝑃) becomes a 𝑑-𝑑𝑖𝑚 vector for any plan 𝑃.
+(2) We change the comparison layer to a learnable linear layer.
+It takes two 𝑑-𝑑𝑖𝑚 vectors PlanEmb(𝑃1) and PlanEmb(𝑃2)
+as inputs, and outputs 0 (𝑃1 is better) or 1 (𝑃2 is better).
+Next, we discuss how to select the best plan under 𝑑-𝑑𝑖𝑚 em-
+bedding (in A.1) and the performance of plan comparator w.r.t. the
+dimensions of plan embedding (in A.2).
+A.1 Selecting the Best Plan using Comparators
+Recall that the plan comparator CmpPlan(𝑃1, 𝑃2) is an oracle com-
+paring any two plans 𝑃1 and 𝑃2 of a query. Given a list of candidate
+plans 𝑃1, 𝑃2, . . . , 𝑃𝑛 of a query, for 𝑑-𝑑𝑖𝑚 embeddings, let
+Wins(𝑃𝑖 ) = |{𝑃 𝑗 | CmpPlan(𝑃𝑖, 𝑃𝑗 ) = 0, 𝑗 ≠ 𝑖}|, (7)
+be the number of plans whose latencies are worse than𝑃𝑖. Wins(𝑃𝑖 )
+defines a full order of all candidate plans. Obviously, the best candi-
+date plan 𝑃 ∗ has Wins(𝑃 ∗) = 𝑛 − 1.
+A comparator with 𝑑-𝑑𝑖𝑚 plan embeddings can be trained in a
+pairwise way similar to the one introduced in Section 3.2 (without
+pre-training though). After the comparator is fully trained, we can
+use it to pick the best plan among candidates𝑃1, . . . , 𝑃𝑛 of a possibly
+unseen query 𝑄. In the general design where we have 𝑑 ≥ 1 for
+the plan embeddings, we do not require a fully trained CmpPlan to
+preserve transitivity, i.e., 𝑃1 is better than 𝑃2 and 𝑃2 is better than
+𝑃3 imply that 𝑃1 is better than 𝑃3. In order to pick the best plan
+among candidates 𝑃1, . . . , 𝑃𝑛, we can invoke CmpPlan 𝑛(𝑛 − 1)
+times to compare all pairs of candidates. In general, the output
+CmpPlan(𝑃𝑖, 𝑃𝑗 ) ∈ ( 0, 1) gives a soft prediction (i.e., the predicted
+probability of whether 𝑃𝑖 or 𝑃 𝑗 is better). We use the algorithm A
+in Eq. (3) to pick the better one, and define randomized wins as
+RandomWins(𝑃𝑖 ) = |{𝑃 𝑗 | A (𝑃𝑖, 𝑃𝑗 ) = 𝑃𝑖, 𝑗 ≠ 𝑖}| .
+Accordingly, in the 𝑑-𝑑𝑖𝑚 setting, we choose the best plan as
+𝑃 ∗ = arg max
+𝑃𝑖 ∈ {𝑃1,...,𝑃𝑛 }
+RandomWins(𝑃𝑖 )
+with the most randomized wins–ties are broken arbitrarily.
+In the more practical design of CmpPlan with 1-𝑑𝑖𝑚 plan em-
+bedding (Section 3.1), we do not need to derive RandomWins(𝑃𝑖 )
+as above. Instead, the output of the sub-model PlanEmb defines a
+total order on all candidate plans. For any pair of plans (𝑃𝑖, 𝑃𝑗 ), if
+PlanEmb(𝑃𝑖 ) > PlanEmb(𝑃 𝑗 ), we always have CmpPlan(𝑃𝑖, 𝑃𝑗 ) >
+0.5, i.e., 𝑃 𝑗 is more preferable than 𝑃𝑖 with higher probability than
+vice versa. Therefore, we could select 𝑃 ∗ = arg min𝑃𝑖 PlanEmb(𝑃𝑖 )
+in the 1-𝑑𝑖𝑚 setting as the best plan for execution.
+We can show that, 𝑃 ∗ chosen in this way is indeed the one
+with the most randomized wins in expectation (thus, the choice is
+equivalent to the one for the general design, in expectation).
+Proposition 3. 𝑃 ∗ = arg min𝑃𝑖 PlanEmb(𝑃𝑖 ) chosen with the
+lowest 1-𝑑𝑖𝑚 embedding also wins the most: it satisfies
+𝑃 ∗ = arg max
+𝑃𝑖 ∈ {𝑃1,...,𝑃𝑛 }
+E[RandomWins(𝑃𝑖 )] .
+Proof. By the model construction, for each 𝑃𝑖, we have
+E[RandomWins(𝑃𝑖 )] =
+∑︁
+𝑗 ∈ [𝑛],𝑗 ≠𝑖
+Pr
+
+A (𝑃𝑖, 𝑃𝑗 ) = 𝑃𝑖
+
+=
+∑︁
+𝑗 ∈ [𝑛],𝑗 ≠𝑖
+(1 − CmpPlan(𝑃𝑖, 𝑃𝑗 )) =
+∑︁
+𝑗 ∈ [𝑛],𝑗 ≠𝑖
+CmpPlan(𝑃 𝑗 , 𝑃𝑖 )
+=©­
+«
+∑︁
+𝑗 ∈ [𝑛]
+𝜙 (PlanEmb(𝑃 𝑗 ) − PlanEmb(𝑃𝑖 ))ª®
+¬
+− 𝜙 (0). (8)
+From Eq. (8), it is straightforward that 𝑃 ∗ ∈ { 𝑃1, . . . , 𝑃𝑛 } with
+the lowest PlanEmb(·) would maximize E[RandomWins(·)]. □
+A.2 Performance of Comparator with Different
+Dimension of Plan Embedding
+We test the performance of Lero with different dimensions of plan
+embedding. We set 𝑑 = {1, 2, 4, 8, 16}, train Lero on the training
+workload and then test its performance on the test workload. Table 5
+reports the execution time of Lero with different dimensions of
+plan embedding on IMDB and STATS benchmarks. Similar results
+are also observed on TPC-H and TPC-DS benchmarks.
+Time (in hour) IMDB STATS
+PostgreSQL 1.15 20.19
+Lero (𝑑 = 1) 0.35 11.32
+Lero (𝑑 = 2) 0.77 20.74
+Lero (𝑑 = 4) 0.69 21.2
+Lero (𝑑 = 8) 0.49 21.38
+Lero (𝑑 = 16) 0.59 21.19
+Table 5: Performance of Lero with different dimensions of
+plan embedding.
+Interestingly, we observe that the performance of Lero does
+not necessarily increase with higher dimensional embeddings. On
+the contrary, Lero with complex embedding ( 𝑑 > 1) has much
+worse performance than using the simplest 1-𝑑𝑖𝑚 plan embedding.
+Specifically, on IMDB, the the execution time of Lero with a larger
+𝑑 ∈ { 2, 4, 8, 16} is 1.4 times to 2.2 times as long as the case with𝑑 = 1.
+On STATS, the execution time ofLero with 𝑑 > 1 is around 1.8 times
+longer than 𝑑 = 1, even longer than the execution time of the native
+PostgreSQL. The reason could be that, with 𝑑 > 1, the embedding
+model PlanEmb tries to summarize more sophisticated information
+
+=== PAGE 15 ===
+in plan embeddings, but also requires larger training dataset and
+more training time to obtain more accurate embeddings and to
+converge. Therefore, the training workload may be not enough to
+comprehensively capture enough information for plan comparison,
+so the selected plan may be not the best one.
+In our experiments, Lero using 1-𝑑𝑖𝑚 plan embedding already
+attains significant performance improvement in comparison to
+the native query optimizer. Moreover, when 𝑑 > 1, it is not as
+convenient to select the best plan as when 𝑑 = 1 (although Proposi-
+tion 3 says that there is an equivalent way for plan selection), since
+PlanEmb(𝑃) cannnot define a total order on all plans𝑃 when 𝑑 > 1.
+Thus, we use the simplest 1-𝑑𝑖𝑚 plan embeddings in Lero.
+B EXPLORATION HEURISTIC BASED ON
+PLAN DIAGRAM
+Errors in estimating predicate selectivities can be propagated from
+bottom to top during the plan search, and incur a wrong join order
+and sub-optimal choices of join types. A plan diagram [9, 11] can
+be constructed by varying values of parameters in one or more
+predicates of the query 𝑄, so that the optimizer generates a set
+of different plans. For example, for a query with a parameterized
+predicate “@lower ≤ Age ≤ @upper”, the optimizer may generate
+different plans by setting (@lower, @upper) as (20, 30) or (10, 40).
+These plans form a diagram of different regions on the 2D space
+(@lower, @upper): within each region, the optimizer outputs the
+same plan.
+It is shown in [9, 11] that replacing selectivity error-sensitive plan
+choices with alternatives in the plan diagram provides potentially
+better performance. Therefore, we can use plans in the plan diagram
+as the list of candidates to explore the uncertainty from estimating
+predicates’ selectivities in the native optimizer.
+The drawbacks of this strategy are obvious. It is not affordable to
+generate a plan diagram by varying parameters on more than two
+tables, as the number of candidate plans would be too large [9]. If we
+tune parameters on two tables, the candidates may not be diversified
+enough to include plans with quality sufficiently higher than the
+plan generated by the native optimizer. In our evaluation on the
+STATS benchmark [16], even the best candidate in a plan diagram
+does not have significant performance improvement. Specifically,
+the average performance improvement of the best candidate is less
+than 3%, and the best candidates of only less than 5% of queries are
+faster than those generated by PostgreSQL’s optimizer.
+C ADDITIONAL EXPERIMENTS
+C.1 Rank-Specific Analysis
+For a query optimizer, what we care about is whether the selected
+plan 𝑃 ∗ is truly the best one; if not, whether it is among the top-𝑘
+best plans. To this end, let P𝑘 be the set of top-𝑘 fastest plans gen-
+erated by exhaustively search for each query (in terms of execution
+time). For different benchmarks, we record the ratio of queries for
+which 𝑃 ∗ falls into P𝑘. Table 6 lists results for each query optimizer
+for P1 and P5. The percentage of plans selected byLero falling into
+P1 and P5 is much higher than that by other query optimizers. This
+verifies that Lero could find plans having higher quality in terms of
+the rank-specific metrics.
+Query Plans inP1 Plans inP5
+Optimizer STATS IMDB TPC-H STATS IMDB TPC-H
+PostgreSQL 0.137 0.000 0.167 0.459 0.336 0.867
+Bao 0.144 0.159 0.000 0.226 0.230 0.167
+Bao+ 0.096 0.221 0.833 0.171 0.319 1.000
+Lero 0.425 0.442 0.733 0.925 0.708 1.000
+Table 6: Rank-specific metrics for different query optimiz-
+ers.
+100 200 300 400 500 600 700 800 9001000
+# of queries
+0
+2
+4
+6
+8
+10
+12
+14Time (h)
+IMDB
+PostgreSQL
+Lero (Our Model)
+Lero (Ding's Model)
+30 60 90 120 150 180 210 240 270
+# of queries
+0
+2
+4
+6
+8
+10Time (h)
+TPC-H
+PostgreSQL
+Lero (Our Model)
+Lero (Ding's Model)
+Figure 11: Performance curves of Lero with different com-
+parator models.
+C.2 Effects of Comparator Model
+To verify the effectiveness of our comparator model in Lero, we
+conduct an experiment to replace Lero’s plan encoding approach
+and comparator model with the ones in [ 10], and compare their
+performance. The results on IMDB and TPC-H are reported in
+Figure 11.Lero with the comparator model from [10] performs much
+worse than ours, which is not surprising as the model from [ 10]
+does not consider the structural information in the plan.
+Specifically, the goal of [10] is index selection, what really mat-
+ters is the amount of work done in the plan by the each type of
+operators, with or without indexes. Thus, a plan is flattened as a
+vector encoding the total estimated costs and amount of data pro-
+cessed by each type of operator. In Lero, the goal is plan selection,
+and thus we need finer-grained information on each node (e.g.,
+operator type, estimates, tables involved) unfolded and use the tree
+convolution operation to capture more structural information and
+correlation between tables.

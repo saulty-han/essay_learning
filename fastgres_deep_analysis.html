@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>深度解读 — FASTgres: 让学习型查询优化器 Hint 指导真正有效</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{font-family:'Noto Sans SC',system-ui,-apple-system,sans-serif;background:#0d1117;color:#c9d1d9;line-height:1.8;font-size:16px;min-height:100vh;}
+.container{max-width:1400px;margin:0 auto;padding:0 24px;background:#0d1117;position:relative;}
+.back-btn{position:fixed;top:16px;left:16px;z-index:9999;background:rgba(20,20,35,.75);color:#c9d1d9;border:1px solid rgba(255,255,255,.15);border-radius:10px;padding:8px 16px;font-size:14px;cursor:pointer;backdrop-filter:blur(6px);transition:all .3s;text-decoration:none;display:flex;align-items:center;gap:6px;}
+.back-btn:hover{background:rgba(30,30,55,.9);border-color:rgba(255,255,255,.3);}
+.hero{padding:80px 0 40px;text-align:center;}
+.hero-title{font-size:2.2rem;font-weight:700;background:linear-gradient(135deg,#0ea5e9,#0284c7,#7dd3fc);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:12px;line-height:1.3;}
+.hero-sub{font-size:1.1rem;color:#8b949e;margin-bottom:8px;}
+.venue{font-size:.95rem;color:#8b949e;margin-top:8px;}
+.venue a{color:#0ea5e9;text-decoration:none;}
+.venue a:hover{text-decoration:underline;}
+.tag-row{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:16px;}
+.tag{display:inline-block;padding:4px 14px;border-radius:20px;font-size:.85rem;border:1px solid rgba(14,165,233,.3);color:#0ea5e9;background:rgba(14,165,233,.06);}
+.divider{border:none;border-top:1px solid rgba(255,255,255,.08);margin:48px 0;}
+.section{margin:40px 0;}
+.section-title{font-size:1.75rem;font-weight:700;margin-bottom:20px;color:#e6edf3;display:flex;align-items:center;gap:10px;}
+.section-title .num{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#0ea5e9,#0284c7);color:#0d1117;font-size:1rem;font-weight:700;flex-shrink:0;}
+.section-desc{font-size:16px;line-height:1.9;color:#c9d1d9;margin-bottom:16px;}
+.toc{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:28px 36px;margin:30px 0;}
+.toc h3{font-size:1.2rem;color:#e6edf3;margin-bottom:14px;}
+.toc ol{list-style:none;counter-reset:toc;padding:0;}
+.toc li{counter-increment:toc;margin:8px 0;}
+.toc li::before{content:counter(toc) ".";color:#0ea5e9;font-weight:600;margin-right:8px;}
+.toc a{color:#8b949e;text-decoration:none;transition:color .2s;}
+.toc a:hover{color:#0ea5e9;}
+.module-card{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:24px;margin:18px 0;transition:all .3s;}
+.module-card:hover{border-color:rgba(14,165,233,.3);transform:translateY(-2px);}
+.module-card h3{font-size:1.15rem;font-weight:600;margin-bottom:10px;color:#0ea5e9;}
+.module-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.arch-card{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:22px;margin:14px 0;transition:all .3s;}
+.arch-card:hover{border-color:rgba(14,165,233,.3);}
+.arch-card h4{font-size:1.05rem;font-weight:600;color:#7dd3fc;margin-bottom:8px;}
+.arch-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.step-flow{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:22px;margin:14px 0;}
+.step-flow h4{font-size:1.05rem;font-weight:600;color:#0ea5e9;margin-bottom:8px;}
+.step-flow p{font-size:15px;line-height:1.8;color:#8b949e;}
+.data-table{width:100%;border-collapse:collapse;margin:18px 0;background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:12px;overflow:hidden;font-size:14px;}
+.data-table th{background:rgba(14,165,233,.1);color:#0ea5e9;padding:12px 16px;text-align:left;font-weight:600;}
+.data-table td{padding:10px 16px;border-top:1px solid rgba(255,255,255,.06);color:#c9d1d9;}
+.data-table tr:hover td{background:rgba(14,165,233,.04);}
+.formula-box{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:20px 24px;margin:16px 0;font-size:18px;text-align:center;color:#e6edf3;font-family:'JetBrains Mono',monospace;}
+.code-block{background:rgba(20,20,35,.8);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:18px 22px;margin:16px 0;overflow-x:auto;}
+.code-block pre{font-family:'JetBrains Mono',monospace;font-size:14px;line-height:1.7;color:#c9d1d9;white-space:pre;}
+.ck{color:#0ea5e9;}.cs{color:#7dd3fc;}.cf{color:#d2a8ff;}.cg{color:#8b949e;}.cv{color:#79c0ff;}
+.qa-card{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:24px;margin:16px 0;}
+.qa-q{font-size:1.05rem;font-weight:600;color:#0ea5e9;margin-bottom:12px;}
+.qa-a{font-size:15px;line-height:1.9;color:#8b949e;}
+.highlight-box{background:rgba(14,165,233,.06);border:1px solid rgba(14,165,233,.2);border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;}
+.warn-box{background:rgba(125,211,252,.08);border:1px solid rgba(125,211,252,.25);border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;}
+.info-box{background:rgba(14,165,233,.06);border:1px solid rgba(14,165,233,.2);border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;}
+.prompt-box{background:rgba(20,20,35,.8);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:18px 22px;margin:16px 0;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.7;color:#c9d1d9;white-space:pre-wrap;}
+.prompt-label{display:inline-block;padding:2px 10px;border-radius:6px;font-size:.85rem;font-weight:600;margin-bottom:8px;background:rgba(14,165,233,.15);color:#0ea5e9;}
+.fc{font-size:14px;color:#8b949e;text-align:center;margin:10px 0;line-height:1.6;}
+.comp-card{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:22px;margin:14px 0;transition:all .3s;}
+.comp-card:hover{border-color:rgba(14,165,233,.3);}
+.comp-card h4{font-size:1.05rem;font-weight:600;color:#7dd3fc;margin-bottom:8px;}
+.comp-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.insight-box{background:rgba(14,165,233,.06);border:1px solid rgba(14,165,233,.2);border-radius:12px;padding:18px 22px;margin:16px 0;}
+.insight-box h4{color:#0ea5e9;font-size:1.05rem;margin-bottom:8px;}
+.insight-box p{font-size:15px;line-height:1.8;color:#c9d1d9;}
+.limit-box{background:rgba(125,211,252,.08);border:1px solid rgba(125,211,252,.25);border-radius:12px;padding:18px 22px;margin:16px 0;}
+.limit-box h4{color:#7dd3fc;font-size:1.05rem;margin-bottom:8px;}
+.limit-box p{font-size:15px;line-height:1.8;color:#c9d1d9;}
+.kv-row{display:flex;border-bottom:1px solid rgba(255,255,255,.06);padding:8px 0;}
+.kv-row:last-child{border-bottom:none;}
+.kv-key{width:180px;flex-shrink:0;color:#0ea5e9;font-weight:500;font-size:14px;}
+.kv-val{color:#c9d1d9;font-size:14px;line-height:1.7;}
+.footer{text-align:center;color:#555;font-size:14px;padding:48px 0 32px;}
+.svg-container{background:rgba(20,20,35,.4);border:1px solid rgba(255,255,255,.06);border-radius:14px;padding:20px;margin:24px 0;overflow-x:auto;text-align:center;}
+.svg-container svg{max-width:100%;height:auto;}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
+.grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;}
+@media(max-width:900px){.grid-2,.grid-3{grid-template-columns:1fr;}.hero-title{font-size:1.6rem;}.kv-row{flex-direction:column;}.kv-key{width:auto;}}
+@keyframes flowPulse{0%,100%{opacity:.6;}50%{opacity:1;}}
+.flow-arrow{animation:flowPulse 2s ease-in-out infinite;}
+.translation h3{font-size:1.3rem;color:#7dd3fc;margin:26px 0 12px;font-weight:700;}
+.translation h4{font-size:1.1rem;color:#0ea5e9;margin:18px 0 8px;font-weight:600;}
+.translation p{font-size:15.5px;line-height:1.95;color:#c9d1d9;margin-bottom:12px;}
+.fig-note{background:rgba(14,165,233,.07);border-left:3px solid #0ea5e9;border-radius:8px;padding:12px 18px;margin:14px 0;font-size:14.5px;color:#a9d8ee;line-height:1.8;}
+.fig-note b{color:#7dd3fc;}
+</style>
+</head>
+<body>
+<div class="container">
+
+<a class="back-btn" href="index.html">&#8592; 返回目录</a>
+
+<a href="fastgres_full_translation.html" style="display:block;max-width:860px;margin:18px auto 0;padding:13px 22px;background:linear-gradient(90deg,rgba(31,111,235,.16),rgba(137,87,227,.16));border:1px solid rgba(137,87,227,.5);border-radius:12px;color:#e6edf3;text-decoration:none;font-weight:500;font-size:15px;text-align:center;box-shadow:0 2px 14px rgba(0,0,0,.35);">阅读本文逐段完整中文翻译（Full Translation）</a>
+
+<!-- ========== HERO ========== -->
+<div class="hero">
+  <h1 class="hero-title">FASTgres: 让学习型查询优化器 Hint 指导真正有效</h1>
+  <p class="hero-sub">把优化器当黑盒，用「分而治之的上下文感知分类」直接为每个查询预测最优 hint 组合</p>
+  <div class="venue">
+    PVLDB 2023, 16(11): 3310-3322 &nbsp;|&nbsp;
+    <a href="https://github.com/db-tu-dresden/FASTgres-PVLDBv16">GitHub: db-tu-dresden/FASTgres-PVLDBv16</a>
+  </div>
+  <div class="tag-row">
+    <span class="tag">Query Optimizer Hinting</span>
+    <span class="tag">Context-Aware</span>
+    <span class="tag">Gradient Boosting</span>
+    <span class="tag">Multi-class</span>
+    <span class="tag">Black-box</span>
+  </div>
+</div>
+
+<!-- ========== TOC ========== -->
+<div class="toc">
+  <h3>目录</h3>
+  <ol>
+    <li><a href="#sec-1">研究动机：Hint 的巨大潜力与「非平凡」挑战</a></li>
+    <li><a href="#sec-2">系统概览：FASTgres 两阶段集成架构（含图）</a></li>
+    <li><a href="#sec-3">分而治之：上下文（multi-way join group）与三种粒度</a></li>
+    <li><a href="#sec-4">Hint 集多分类 + 谓词特征化 + 梯度提升模型</a></li>
+    <li><a href="#sec-5">训练：智能标注与分层采样</a></li>
+    <li><a href="#sec-6">运行时维护：基于主动学习的重训与超时机制</a></li>
+    <li><a href="#sec-7">实验：潜力挖掘、训练集大小、粒度、重训、漂移</a></li>
+    <li><a href="#sec-8">代码使用与实战（GitHub / 安装 / 复现）</a></li>
+    <li><a href="#sec-9">总结与核心问答</a></li>
+    <li><a href="#sec-10">全文中文翻译（对应嵌入图片）</a></li>
+  </ol>
+</div>
+
+<!-- ========== SEC 1 ========== -->
+<div class="section" id="sec-1">
+  <h2 class="section-title"><span class="num">1</span>研究动机：Hint 的巨大潜力与「非平凡」挑战</h2>
+  <p class="section-desc">传统基于代价的优化器（如 PostgreSQL）并不总选到最优计划。许多系统提供了叫「查询优化器 hint」的配置参数，可在每条查询上单独设定，把优化器「引导」向更优计划。FASTgres 的核心问题：如何为每个查询直接预测合适的 hint 组合？</p>
+
+  <div class="module-card">
+    <h3>1.1 六个 Boolean Hint（PG 标准）</h3>
+    <p>论文聚焦 PG 的六个物理算子 Boolean hint，可启用/禁用对应计划类型：<b>hash join</b>、<b>merge join</b>、<b>nested loop join</b>、<b>index scan</b>、<b>sequential scan</b>、<b>index-only scan</b>。默认全开（搜索空间最大）。单条配置称 hint，多条称 hint set；6 个布尔 hint 共 <b>2⁶=64</b> 种 hint set，按二进制编号（如仅开 hash join = 100000₂ = 32₁₀）。</p>
+  </div>
+
+  <div class="highlight-box">
+    <b>潜力评估（论文 Table 1）</b>：对每条查询穷举 64 种 hint 组合，取每个查询响应时间最低的「最优 hint set」，再整体跑基准。相比默认配置，整体响应时间加速 <b>1.3×–3.7×</b>：
+    <table class="data-table">
+      <thead><tr><th>基准 / PG 版本</th><th>默认</th><th>最优 hint set（加速）</th></tr></thead>
+      <tbody>
+        <tr><td>Stack / PG 12.4</td><td>19,384s</td><td>7,234s（2.6×）</td></tr>
+        <tr><td>Stack / PG 14.6</td><td>9,087s</td><td>3,561s（2.5×）</td></tr>
+        <tr><td>JOB / PG 12.4</td><td>204s</td><td>87s（2.3×）</td></tr>
+        <tr><td>TPC-H / PG 12.4</td><td>445s</td><td>119s（3.7×）</td></tr>
+      </tbody>
+    </table>
+    且<b>尾延迟（tail latency）查询</b>（默认下最慢的那批）受益最大。注意：我们没有改动优化器内部，只是「用现有 hint 正确引导它」就获得可观收益。
+  </div>
+
+  <div class="warn-box">
+    <h4>为什么是「非平凡」挑战？</h4>
+    <p>① <b>无通用模式</b>：最优 hint set 分布随<b>负载、PG 版本、硬件</b>而变（图 2/3/5）。例如 Stack 在 PG 12.4 最频繁 hint set 是 43（101011），PG 14.6 是 47（101111）——仅 seq scan 开关不同；换硬件后分布又变。</p>
+    <p>② <b>细粒度差异关键</b>：即便把查询按「连接的表集合」分组（同组只差过滤谓词），组内 hint set 分布仍差异巨大。</p>
+    <p>③ <b>BAO 的局限</b>：唯一的 hint 优化工作 BAO 只用 5 个硬编码 hint set（35/43/47/55/63），远未利用全部潜力（Stack 上仅 1.29×，且因 hint 依赖硬件，硬编码集并不适配）。</p>
+  </div>
+
+  <div class="insight-box">
+    <h4>FASTgres 的设计信条</h4>
+    <p>既然 hint 强大但依赖「查询+版本+硬件」细粒度决策，就应当<b>直接为每个查询预测合适的 hint 集</b>，并把优化器当作<b>黑盒</b>（无需改其内部、无需深度集成），从而广泛适用。且 hint 集按<b>负载与硬件分别学习</b>以保证适应性。</p>
+  </div>
+</div>
+
+<!-- ========== SEC 2 ========== -->
+<div class="section" id="sec-2">
+  <h2 class="section-title"><span class="num">2</span>系统概览：两阶段集成架构</h2>
+  <p class="section-desc">FASTgres 是一个独立的学习组件，为每个进入的分析查询预测最优 hint set，再把「查询 + 预测 hint」交给<b>未修改的</b>优化器与执行引擎。其设计是四个轻量概念：(1) 分而治之把问题空间划分为子问题（上下文）；(2) 每个上下文学一个独立的监督多分类模型；(3) 提供上下文感知、针对挑战的训练阶段以降低开销；(4) 必要时运行时重训上下文模型。</p>
+
+  <div class="svg-container">
+    <svg viewBox="0 0 960 250" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif">
+      <defs><marker id="aF" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#7dd3fc"/></marker></defs>
+      <rect x="20" y="90" width="150" height="70" rx="10" fill="rgba(20,20,35,.85)" stroke="#0ea5e9"/>
+      <text x="95" y="120" fill="#e6edf3" font-size="13" text-anchor="middle" font-weight="700">Incoming</text>
+      <text x="95" y="140" fill="#e6edf3" font-size="13" text-anchor="middle" font-weight="700">SQL Query</text>
+
+      <rect x="220" y="50" width="220" height="60" rx="10" fill="rgba(14,165,233,.1)" stroke="#0ea5e9"/>
+      <text x="330" y="78" fill="#7dd3fc" font-size="12" text-anchor="middle" font-weight="700">Phase 1: 划分上下文</text>
+      <text x="330" y="98" fill="#8b949e" font-size="11" text-anchor="middle">按 multi-way join group</text>
+
+      <rect x="220" y="130" width="220" height="60" rx="10" fill="rgba(14,165,233,.1)" stroke="#0ea5e9"/>
+      <text x="330" y="158" fill="#7dd3fc" font-size="12" text-anchor="middle" font-weight="700">Phase 2: 每上下文分类</text>
+      <text x="330" y="178" fill="#8b949e" font-size="11" text-anchor="middle">GB 多分类 → hint set</text>
+
+      <rect x="500" y="90" width="200" height="70" rx="10" fill="rgba(20,20,35,.85)" stroke="#7dd3fc"/>
+      <text x="600" y="120" fill="#e6edf3" font-size="13" text-anchor="middle" font-weight="700">FASTgres</text>
+      <text x="600" y="140" fill="#8b949e" font-size="11" text-anchor="middle">predicted hint set</text>
+
+      <rect x="760" y="90" width="200" height="70" rx="10" fill="rgba(20,20,35,.85)" stroke="#7dd3fc"/>
+      <text x="860" y="118" fill="#e6edf3" font-size="13" text-anchor="middle" font-weight="700">Unmodified</text>
+      <text x="860" y="138" fill="#e6edf3" font-size="13" text-anchor="middle" font-weight="700">Optimizer + Engine</text>
+
+      <line x1="170" y1="125" x2="218" y2="110" stroke="#7dd3fc" stroke-width="2" marker-end="url(#aF)"/>
+      <line x1="170" y1="125" x2="218" y2="145" stroke="#7dd3fc" stroke-width="2" marker-end="url(#aF)"/>
+      <line x1="440" y1="110" x2="498" y2="125" stroke="#7dd3fc" stroke-width="2" marker-end="url(#aF)"/>
+      <line x1="440" y1="145" x2="498" y2="125" stroke="#7dd3fc" stroke-width="2" marker-end="url(#aF)"/>
+      <line x1="700" y1="125" x2="758" y2="125" stroke="#7dd3fc" stroke-width="2" marker-end="url(#aF)"/>
+    </svg>
+    <div class="fc">图 7（对应论文 Figure 7）：FASTgres 系统模型。查询进入后被映射到某上下文，对应 GB 模型预测 hint set，再连同查询交给黑盒优化器执行。</div>
+  </div>
+
+  <div class="grid-2">
+    <div class="arch-card">
+      <h4>核心思想</h4>
+      <p>FASTgres <b>不学一个全局模型</b>，而是为<b>每个明确定义的上下文</b>学一个独立模型。因为「一组被连接的表」构成一个自包含上下文——同上下文的查询在连接上相当同质、只差过滤谓词。上下文感知模型能区分细粒度的 hint 组合差异（否则会被完全不同上下文的查询淹没）。</p>
+    </div>
+    <div class="arch-card">
+      <h4>附加优势</h4>
+      <p>① 可用更简单的模型；② 每个上下文训练代价更小；③ 每个上下文的运行时维护代价低——尤其第③点使<b>在线模型更新</b>变得可行。</p>
+    </div>
+  </div>
+
+  <div class="info-box">
+    <b>假设与局限</b>：FASTgres 不限定具体 DBS，只要优化器能被有限布尔 hint 引导启用/禁用物理算子（PG 即满足）；hint 需能在单查询粒度产生语义等价的 QEP。为利用全部潜力，hint 搜索空间不可被限制，故 k 个 hint 需考察全部 2ᵏ 种——因此 FASTgres 采用监督学习，并假设有「一组代表性负载查询」可用于显式训练。训练可能昂贵，但<b>运行时应用快几个数量级</b>，仅增少量开销。
+  </div>
+</div>
+
+<!-- ========== SEC 3 ========== -->
+<div class="section" id="sec-3">
+  <h2 class="section-title"><span class="num">3</span>分而治之：上下文与三种粒度</h2>
+  <p class="section-desc">FASTgres 用分而治之解决「SQL 查询 → hint set」的映射。核心洞察：负载中查询结构多样性有限（都跑在同一库的有限表上），因此可按「多路连接组（multi-way join group）」把负载划分成查询组。</p>
+
+  <div class="module-card">
+    <h3>3.1 什么是上下文（Context）？</h3>
+    <p><b>多路连接组</b> = 含<b>相同连接表集合 + 相同连接谓词</b>的一组负载查询。不同组由不同连接表/谓词区分（组间可能重叠或包含，但不会有两组恰好含完全相同的连接表+谓词）。组内的查询<b>只差过滤谓词</b>。</p>
+    <p>一个代表某个多路连接组的负载分区即一个<b>上下文</b>。论文分析显示：① 同一多路连接组内的查询也用各种不同的最优 hint set；② 不同多路连接组间的最优 hint set 分布不同。因此 FASTgres 用两阶段集成：阶段一按多路连接组划上下文，阶段二为每个上下文学独立模型。</p>
+    <div class="formula-box">∀ 多路连接组 : 过滤谓词 → hint set</div>
+    <p>即把连接建模在学习部分之外（用简单模型即可），每个上下文模型只需聚焦「基于过滤谓词的细粒度特征」。这就是「上下文感知」。</p>
+  </div>
+
+  <div class="module-card">
+    <h3>3.2 三种粒度（Granularity）</h3>
+    <p>为获得不同层次的上下文感知，FASTgres 提供三级粒度：</p>
+    <p>• <b>FASTgres<sub>coarse</sub></b>（最粗）：完全不分而治之，只建一个上下文覆盖所有多路连接组；</p>
+    <p>• <b>FASTgres<sub>fine</sub></b>（最细）：把负载按每个多路连接组拆分，<b>即便重叠也拆分</b>（例如 A⋈B 用 A.x=B.y 与用 A.x=B.z 是不同上下文）——但可能导致上下文数量过多不可行；</p>
+    <p>• <b>FASTgres<sub>table</sub></b>（折中，论文实际采用）：按「连接的表集合」拆分、<b>忽略连接谓词</b>。例如所有连接 A、B、C 的查询同属一个上下文，无视用的是哪条连接谓词；而连接 A、B 的属另一上下文。</p>
+    <p>对 Stack/JOB/TPC-H，fine 与 table 两级重合（没有「同表集不同谓词」的情况），故二者等价、无需区分。</p>
+  </div>
+
+  <div class="insight-box">
+    <h4>为什么分而治之有好处？</h4>
+    <p>把连接建模在模型之外，使得每个上下文模型只需在「过滤谓词 → hint set」上学习，可用更简单的模型，且细粒度差异不会被其它上下文淹没。但注意：当某负载上下文过多、每上下文查询过少时（如 JOB 33 上下文、TPC-H 18 上下文，每上下文查询极少），单一全局模型反而更好（GB 能在更多样数据上泛化）。</p>
+  </div>
+</div>
+
+<!-- ========== SEC 4 ========== -->
+<div class="section" id="sec-4">
+  <h2 class="section-title"><span class="num">4</span>Hint 集多分类 + 谓词特征化 + 梯度提升</h2>
+  <p class="section-desc">阶段二是核心：每个上下文有自己的局部模型，学习「过滤谓词 → 最优 hint set」的映射，并直接以整数形式预测整个 hint set（作为一个类）。</p>
+
+  <div class="svg-container">
+    <svg viewBox="0 0 960 280" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif">
+      <defs><marker id="aG" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#7dd3fc"/></marker></defs>
+      <rect x="20" y="30" width="240" height="70" rx="10" fill="rgba(20,20,35,.85)" stroke="#0ea5e9"/>
+      <text x="140" y="58" fill="#e6edf3" font-size="13" text-anchor="middle" font-weight="700">SQL 查询</text>
+      <text x="140" y="78" fill="#8b949e" font-size="11" text-anchor="middle">过滤谓词 + 算子</text>
+
+      <rect x="20" y="140" width="240" height="90" rx="10" fill="rgba(14,165,233,.08)" stroke="#0ea5e9"/>
+      <text x="140" y="162" fill="#7dd3fc" font-size="12" text-anchor="middle" font-weight="700">Featurization（图 8）</text>
+      <text x="140" y="182" fill="#c9d1d9" font-size="11" text-anchor="middle">算子 → lookup one-hot</text>
+      <text x="140" y="200" fill="#c9d1d9" font-size="11" text-anchor="middle">数值 → 列统计 min-max</text>
+      <text x="140" y="218" fill="#c9d1d9" font-size="11" text-anchor="middle">字符串 → 按基数 rank 归一</text>
+
+      <rect x="360" y="90" width="240" height="80" rx="10" fill="rgba(20,20,35,.85)" stroke="#0ea5e9"/>
+      <text x="480" y="118" fill="#e6edf3" font-size="13" text-anchor="middle" font-weight="700">Context 模型 (GB)</text>
+      <text x="480" y="140" fill="#8b949e" font-size="11" text-anchor="middle">100 棵决策树</text>
+
+      <rect x="700" y="90" width="240" height="80" rx="10" fill="rgba(20,20,35,.85)" stroke="#7dd3fc"/>
+      <text x="820" y="118" fill="#e6edf3" font-size="13" text-anchor="middle" font-weight="700">hint set (整数类)</text>
+      <text x="820" y="140" fill="#8b949e" font-size="11" text-anchor="middle">如 43 = 101011₂</text>
+
+      <line x1="260" y1="70" x2="358" y2="120" stroke="#7dd3fc" stroke-width="2" marker-end="url(#aG)"/>
+      <line x1="260" y1="170" x2="358" y2="140" stroke="#7dd3fc" stroke-width="2" marker-end="url(#aG)"/>
+      <line x1="600" y1="130" x2="698" y2="130" stroke="#7dd3fc" stroke-width="2" marker-end="url(#aG)"/>
+    </svg>
+    <div class="fc">图 8（对应论文 Figure 8）：查询特征化。收集过滤谓词与算子，算子查表 one-hot，数值按列统计 min-max 归一，字符串按谓词基数 rank 归一，复合（IN）取平均；特征化在每个上下文内自适应。</div>
+  </div>
+
+  <div class="grid-2">
+    <div class="arch-card">
+      <h4>为什么多分类（multi-class）而非多标签（multi-label）？</h4>
+      <p>多标签会把每个 hint 分开预测，忽略 hint 之间的复杂相关性；但论文图 3 显示 hint 间存在复杂共现关系。多分类则<b>把整个 hint set 一次性作为一个类预测</b>，从而恰当处理这些共依赖。标签即 hint set 的整数表示（如 43）。</p>
+    </div>
+    <div class="arch-card">
+      <h4>模型：梯度提升（Gradient Boosting, GB）</h4>
+      <p>GB 用若干弱学习器（决策树）预测之和：hs(q) = Σₚ λₚ·Fₚ(q) + c。它训练快、内存占用小，且相关研究表明多个 GB 模型比单个大神经网络更快、质量更好。论文也试过随机森林与神经网络，GB 在简单性、表达力、训练速度上最佳。超参：决策树数固定 100；最大深度设为无限（深层前缀树足以刻画谓词及其对物理算子的影响）。</p>
+    </div>
+  </div>
+
+  <div class="highlight-box">
+    <b>特征化的关键</b>：只纳入<b>过滤谓词信息</b>（而非连接信息），以降低稀疏性。数值用列统计做 min-max 归一；字符串用「按基础表上所有谓词的基数排序得到的归一 rank」；复合值（如 IN）取所有字符串编码的平均。这种谓词级编码在每个上下文内自然自适应。虽然也可加入连接信息，但会让表示更稀疏、可能降低质量。
+  </div>
+</div>
+
+<!-- ========== SEC 5 ========== -->
+<div class="section" id="sec-5">
+  <h2 class="section-title"><span class="num">5</span>训练：智能标注与分层采样</h2>
+  <p class="section-desc">监督学习需要显式训练阶段（耗时但可与运行时预测解耦，且不像 BAO 的强化学习那样有运行时灾难性遗忘）。训练含「标注」与「训练」两步，FASTgres 都做了优化。</p>
+
+  <div class="step-flow">
+    <h4>智能标注（Smart Labeling）</h4>
+    <p>标注需获得每个训练查询的「最优 hint set + 最优响应时间」。朴素做法是对每个查询穷举 64 种 hint 集、取最快的——极其耗时且压垮数据库。</p>
+    <p><b>核心思想：每查询设一个超时，超过即中止该 hint set（它肯定不是最优）。</b>流程：先用 PG 默认 hint 执行当前查询，把其响应时间设为超时；随后对每个 hint set 评估时，若响应时间低于当前超时，就用新时间替换超时，并把该 hint set 记为（当前）最优。随着找到更优 hint set，超时不断下降，标注整体随时间加速。最终得到完整的最优 hint set 标签，且即便大数据集也只需合理耗时。</p>
+    <div class="formula-box">t_best = q with PostgreSQL_Y[q] = PostgreSQL_timeout = t_best</div>
+  </div>
+
+  <div class="module-card">
+    <h3>分层采样（Stratified Sampling）</h3>
+    <p>多数 ML 方法从负载中随机采样训练查询，但 FASTgres 需要<b>每个上下文都有代表性查询</b>才能训出有表达力的上下文模型。故采用分层采样：按拆分比例从每个上下文分别采样（如 80-20 即从每上下文采 80% 作训练、余 20% 作测试）。对小的训练拆分尤其公平。标注+采样后，用各上下文的标注数据训练 GB 模型，GB 的简单结构使训练很快。</p>
+    <div class="info-box" style="margin-top:14px;">论文表 2 显示 Stack 上智能标注平均 44s/查询即知最优 hint set；其中最大四个上下文（C0-C3）标注时间仍在秒级，仅 C9/C10（本身响应时间就高）达分钟级。动态超时带来 1.1–6.4× 的标注加速。</div>
+  </div>
+</div>
+
+<!-- ========== SEC 6 ========== -->
+<div class="section" id="sec-6">
+  <h2 class="section-title"><span class="num">6</span>运行时维护：基于主动学习的重训</h2>
+  <p class="section-desc">监督模型训练后每个上下文模型是固定的，可能因数据/负载漂移而预测不佳。朴素做法（每查询都重训）不现实——重训还要用全部 2ᵏ hint set 标注最优，给 DBS 带来高负载。FASTgres 用<b>主动学习</b>只在「必要」时触发重训。</p>
+
+  <div class="module-card">
+    <h3>6.1 基于上下文的超时检测</h3>
+    <p>查询以预测 hint set 执行时，同时给查询编译器设一个<b>每上下文超时</b>，以检测异常长查询。该超时由标注阶段收集的每个查询最佳时间计算：</p>
+    <div class="formula-box">f(times_c, t_p, t_a) := max( t_a , percentile(times_c, t_p) )</div>
+    <p>其中 t_p 是百分位数（如 99%），t_a 是绝对阈值（如 0.1s）。小 t_p → 更易超时 → 重训率更高；大 t_p → 只在超过所有历史见过的响应时间时才重训。t_a 保证最小超时（对全由快查询组成、响应低于 t_a 的上下文有用）。被超时捕获的「关键查询（critical queries）」用于重训。</p>
+  </div>
+
+  <div class="grid-2">
+    <div class="comp-card">
+      <h4>异步重训策略</h4>
+      <p>检测到的关键查询被中止，并触发一个<b>异步进程</b>：并行地确定其最优 hint set 并调整对应模型。期间新来的查询仍由<b>未修改的原模型</b>继续处理；模型重训完成后替换旧模型，关键查询再次执行。这种策略把开销降到最低。</p>
+    </div>
+    <div class="comp-card">
+      <h4>新上下文的运行时创建</h4>
+      <p>若负载/模式变化导致出现新上下文，可异步地用新查询标注并训练一个新模型；在模型就绪前，FASTgres 对该上下文预测<b>默认 hint set</b>（不加速、也不人为变慢）。不再需要的上下文可删模型。由于每上下文独立模型，这些操作都无负担。</p>
+    </div>
+  </div>
+
+  <div class="insight-box">
+    <h4>主动学习带来的运行时自适应</h4>
+    <p>超时不是静态的：每次重训后，把新标注查询的最优 hint set 时间加入该上下文的经验时间 times_c，相应超时随之更新。这让监督分类方法在应用运行时更灵活、更精准。</p>
+  </div>
+</div>
+
+<!-- ========== SEC 7 ========== -->
+<div class="section" id="sec-7">
+  <h2 class="section-title"><span class="num">7</span>实验：潜力挖掘、训练集大小、粒度、重训、漂移</h2>
+  <p class="section-desc">在 Stack、JOB、TPC-H 上，用 PG v12.4 / v14.6 作为黑盒。环境：Skylake（Xeon Gold 6216/12 核/92GB/1.8TB HDD），并在 Coffee Lake（Xeon E-2186M/6 核/64GB/NVMe）上复现。</p>
+
+  <div class="module-card">
+    <h3>7.1 潜力挖掘（论文 Table 3）</h3>
+    <p>train-to-represent（用全部查询训练再预测全部）下，FASTgres 逼近最优 hint set 性能，而 BAO 远未达潜力：</p>
+    <table class="data-table">
+      <thead><tr><th>基准 / 版本</th><th>最优 hint（加速）</th><th>BAO（加速）</th><th>FASTgres（加速）</th></tr></thead>
+      <tbody>
+        <tr><td>Stack / 12.4</td><td>2.6×</td><td>1.29×</td><td><b>2.5×</b></td></tr>
+        <tr><td>Stack / 14.6</td><td>2.5×</td><td>n/a</td><td><b>2.49×</b></td></tr>
+        <tr><td>JOB / 12.4</td><td>2.3×</td><td>0.84×</td><td><b>2.3×</b></td></tr>
+        <tr><td>TPC-H / 12.4</td><td>3.7×</td><td>1.15×</td><td><b>3.25×</b></td></tr>
+      </tbody>
+    </table>
+    <p>FASTgres 某些情况未完全达潜在上限（查询数不足以训好模型、或特征化碰撞——两查询映射到同一特征但最优 hint 不同），但已非常接近。端到端把基准运行时间降低最高 <b>3.25×</b>。</p>
+  </div>
+
+  <div class="grid-2">
+    <div class="comp-card">
+      <h4>训练集大小（图 9）与尾延迟</h4>
+      <p>即使只训练负载的子集，FASTgres 也能显著且稳健地加速（10 次随机拆分的均值与标准差都很稳健）。<b>尾延迟查询加速尤其高</b>（图 10a）。关键在于用<b>分层采样</b>而非完全随机：图 10b 显示分层采样（Context Random）随训练比例稳定增益，而完全随机（Fully Random）则不然。</p>
+    </div>
+    <div class="comp-card">
+      <h4>粒度影响（表 4）与重训</h4>
+      <p>Stack 上分而治之始终有益：10-90 拆分下，有上下文比无上下文快 10%。但 JOB/TPC-H 因上下文过多、每上下文查询极少，<b>单一全局模型反而更好</b>（GB 能在更多样数据上泛化）。重训（图 9 蓝线 FG w/ Retraining）带来显著额外加速，关键查询数随训练比例增大而减少。</p>
+    </div>
+  </div>
+
+  <div class="module-card">
+    <h3>7.2 Hint 集数量与数据/负载漂移</h3>
+    <p><b>Hint 数量（图 11）</b>：三个连接 hint（hash/merge/nested loop）对加速贡献最大；但每加一个扫描 hint 也有正贡献，只是标注代价剧增。论文实验表明<b>只用 3 个连接 hint</b> 即可，标注时间比 6 个 hint 减少 <b>75%</b>（搜索空间指数下降）——这是一个有趣的研究方向。</p>
+    <p><b>数据漂移（图 12a/b）</b>：Stack 数据跨 2008–2019，构造逐年缩短的数据版本。FASTgres 在完整数据上表现好，训练数据少时性能自然下降（不可避免），但<b>即便只用两年数据也始终优于 PG 默认</b>。FASTgres 在陈旧数据上表现稳健。</p>
+    <p><b>负载漂移（图 12c）</b>：未见查询落入新上下文时，实验显示<b>每个新上下文只需 2 条查询</b>就能获得超越 PG 默认的加速；少量训练数据时加速虽有波动但可行。FASTgres 对数据与负载漂移均稳健。</p>
+  </div>
+</div>
+
+<!-- ========== SEC 8 ========== -->
+<div class="section" id="sec-8">
+  <h2 class="section-title"><span class="num">8</span>代码使用与实战（GitHub / 安装 / 复现）</h2>
+  <div class="kv-row"><span class="kv-key">代码仓库</span><span class="kv-val"><a href="https://github.com/db-tu-dresden/FASTgres-PVLDBv16" style="color:#0ea5e9;">https://github.com/db-tu-dresden/FASTgres-PVLDBv16</a></span></div>
+  <div class="kv-row"><span class="kv-key">环境</span><span class="kv-val">Python 实现；PostgreSQL v12.4 / v14.6（黑盒，启用 6 个 Boolean hint）；Skylake/Coffee Lake 均可</span></div>
+  <div class="kv-row"><span class="kv-key">关键参数</span><span class="kv-val">6 个 Boolean hint（可减到 3 个连接 hint 以省 75% 标注）；GB 决策树数=100、最大深度=无限；分层采样（每上下文按比例）；重训超时 t_a=0.1s、t_p 默认 99%</span></div>
+  <div class="kv-row"><span class="kv-key">数据集</span><span class="kv-val">Stack（6191 查询/11 上下文）、JOB（113 查询/33 上下文）、TPC-H（22 查询/18 上下文）；每实验多次随机查询序取均值</span></div>
+
+  <div class="code-block">
+    <pre><span class="cg"># 1) 准备 PostgreSQL 并启用 6 个 Boolean hint（默认全开）</span>
+sudo apt install postgresql-12
+<span class="cg"># 2) 拉取 FASTgres（Python 实现）</span>
+git clone https://github.com/db-tu-dresden/FASTgres-PVLDBv16
+cd FASTgres-PVLDBv16
+pip install -r requirements.txt
+
+<span class="cg"># 3) 阶段一：按 multi-way join group 划分上下文（FASTgres_table 粒度）</span>
+<span class="cg"># 4) 智能标注：每查询设动态超时，穷举/并行评估 hint set 取最快</span>
+<span class="cg"># 5) 分层采样（每上下文 80% 训练）+ 训练每上下文的 GB 多分类模型</span>
+python train.py --hints 6 --trees 100 --split 80
+<span class="cg"># 6) 运行时：查询 → 映射上下文 → GB 预测 hint set → 交 PG 执行</span>
+<span class="cg"># 7) 可选：开启主动学习重训（每上下文超时检测关键查询，异步重训）</span></pre>
+  </div>
+  <div class="info-box">
+    <b>复现要点</b>：① 把优化器当黑盒，只通过 hint 引导，<b>不要改 PG 内部</b>；② 用 <b>FASTgres_table</b> 粒度划分上下文最实用；③ 标注务必用<b>智能动态超时</b>，否则 64 种 hint 穷举会极慢；④ 训练用<b>分层采样</b>保证每上下文都有代表；⑤ 若每上下文查询极少（如 JOB/TPC-H），改用单一全局模型更好；⑥ 为了省标注，可只用 3 个连接 hint（标注时间 -75%）。
+  </div>
+</div>
+
+<!-- ========== SEC 9 ========== -->
+<div class="section" id="sec-9">
+  <h2 class="section-title"><span class="num">9</span>总结与核心问答</h2>
+  <div class="qa-card">
+    <div class="qa-q">Q1：FASTgres 要解决的根本问题？</div>
+    <div class="qa-a">传统代价优化器不总选最优计划。PG 等提供 6 个布尔物理算子 hint（2⁶=64 种组合），正确引导即可把基准运行时间加速 1.3×–3.7×，且尾延迟查询受益最大。但最优 hint set 分布随负载/版本/硬件而变、无通用模式，BAO 等只用少量硬编码 hint 集远未达潜力。FASTgres 主张直接为每个查询预测合适 hint 集，并把优化器当黑盒。</div>
+  </div>
+  <div class="qa-card">
+    <div class="qa-q">Q2：分而治之（上下文）如何工作？</div>
+    <div class="qa-a">按「多路连接组」（相同连接表+连接谓词）把负载划分为上下文，每个上下文学一个独立监督多分类模型，只学「过滤谓词 → hint set」。三级粒度：coarse（单上下文）、fine（每多路连接组拆分）、table（按连接表集拆分、忽略谓词，论文实际采用）。这让简单模型也能捕捉细粒度 hint 差异。</div>
+  </div>
+  <div class="qa-card">
+    <div class="qa-q">Q3：为什么用多分类而非多标签？</div>
+    <div class="qa-a">多标签分别预测每个 hint，会忽略 hint 间的复杂相关性（图 3 显示 hint 强共现）。多分类把整个 hint set 作为一个整数类一次性预测，恰当处理了这些共依赖。标签即 hint set 的二进制整数（如 43=101011₂）。</div>
+  </div>
+  <div class="qa-card">
+    <div class="qa-q">Q4：训练与运行时维护怎么降本？</div>
+    <div class="qa-a">标注用「智能动态超时」——每查询设超时，找到更优 hint set 就下调超时，避免穷举 64 种全跑完（Stack 平均 44s/查询）。训练用「分层采样」保证每上下文有代表。运行时用「基于上下文超时 + 主动学习」只在关键查询出现时异步重训，且新上下文只需 2 条查询即可超越 PG 默认。</div>
+  </div>
+  <div class="qa-card">
+    <div class="qa-q">Q5：最终收益与局限？</div>
+    <div class="qa-a">端到端降低基准运行时间最高 3.25×（TPC-H），Stack/JOB 约 2.3–2.5×，逼近最优 hint set 且远优于 BAO。局限：JOB/TPC-H 每上下文查询过少时单一全局模型更好；标注空间 2ᵏ 指数级，建议只用 3 个连接 hint（标注 -75%）；特征化碰撞与训练数据不足时会略低于理论上限。</div>
+  </div>
+</div>
+
+<!-- ========== SEC 10 ========== -->
+<div class="section translation" id="sec-10">
+  <h2 class="section-title"><span class="num">10</span>全文中文翻译（对应嵌入图片）</h2>
+  <p class="section-desc">以下为《FASTgres: Making Learned Query Optimizer Hinting Effective》的忠实中文翻译，保留原意与术语，并在关键处嵌入对应图示。</p>
+
+  <h3>摘要</h3>
+  <p>传统且成熟的基于代价的查询优化器会为每个查询枚举不同执行计划、用代价评估每个计划、选代价最低者。但最优计划并非总被选中。为把优化器引向正确方向，许多优化器提供称为「查询优化器 hint」的配置参数，可逐查询单独设定。为展示 hint 对分析查询优化的巨大潜力，我们用三个基准与两个 PostgreSQL 版本做了深入评估，并指出 hint 指导是<b>非平凡挑战</b>。为此我们提出 <b>FASTgres</b>——一种基于学习的、上下文感知的 hint 集预测分类策略。相比相关工作，FASTgres 提供透明、直接的 hint 集预测与一致的性能提升。端到端评估显示，仅通过引导代价优化器，FASTgres 把基准运行时间最高降低 <b>3.25×</b>。</p>
+
+  <div class="fig-note">📌 <b>图 7（系统模型）</b>：FASTgres 是独立学习组件，为每个进入的分析查询预测最优 hint set，再把「查询+预测 hint」交给未修改的优化器与执行引擎（见上文 Figure 7 SVG）。</div>
+
+  <h3>1. 引言</h3>
+  <p>随着数据量增长，高效分析查询处理仍是关键挑战。每个 DBS 的查询编译器把 SQL 转为查询执行计划（QEP），其中查询优化器负责确定最高效 QEP。尽管数十年研究，优化仍远未解决，最高效计划并非总被执行。分析查询（复杂连接+过滤谓词）最棘手的是：① 找合适连接顺序，② 为每个连接选最合适的物理实现。传统优化器用三组件：枚举器（展开搜索空间）、代价模型、基数估计器。</p>
+  <p>有趣的是，PG/MySQL/Oracle/SQL Server 等都提供丰富配置参数（hint）影响 QEP。例如在 PG 中可启用/禁用 hash-join 计划类型；对单查询设 hint 即可从外部引导优化器。尽管已有工作显示 hint 可用于两系统优化，但对 hint 潜力的清晰深入理解仍缺。因此我们沿用近期工作，用 PG 做深入分析，聚焦 6 个布尔 hint（扫描：seq/index/index-only；连接：hash/merge/nested-loop），并用 Stack、JOB、TPC-H（SF=10）在两个 PG 版本（v12.4、v14.6，二者差异大到像两个不同系统）上评估。</p>
+  <p><b>潜力分析（表 1、图 1）</b>：逐步执行——(i) 默认配置响应时间；(ii) 对每查询穷举 64 种 hint 组合；(iii) 提取每查询最快的 hint 组合。整体基准响应时间加速 1.3×–3.7×（未改优化器内部，只正确引导）。图 1 显示几乎所有查询都能被适当 hint 加速；尾延迟查询（默认下最慢的）平均受益最高。图 2/3 显示最优 hint set 分布无通用模式、且随负载与版本而变（如 Stack 在 12.4 最频繁是 43、14.6 是 47）。图 4/5 显示即便按连接表分组（C0–C10），组内 hint 分布仍差异大，且还依赖硬件（Coffee Lake 上分布又不同）。结论：hint 潜力巨大，但是依赖查询、PG 版本、硬件的非平凡挑战。</p>
+  <p><b>相关工作 BAO（2.2）</b>：BAO 是唯一用 hint 优化的工作，用相同 6 个布尔 hint，但只硬编码 5 个 hint 集（35/43/47/55/63）。我们把它接入评估，即便改成 Stack 上最常见的 5 个集（12/14/43/46/63），仍远未达潜力（图 6）——再次印证 hint 非平凡。</p>
+  <p><b>经验教训（2.3）</b>：hint 可把优化器当黑盒引导，但分布随负载/硬件/优化器而异，即便按表集分组也如此；BAO 无法充分利用潜力。因此需要一个<b>直接为每个查询预测合适 hint 集</b>、并随负载与硬件分别学习的方法。</p>
+
+  <h3>3. FASTgres 总体设计</h3>
+  <p>FASTgres 是轻量、基于学习、上下文感知的 hint 集预测分类模型（图 7）。设计四概念：① 分而治之把问题空间划为子问题（上下文）；② 每上下文学独立监督多分类模型；③ 提供上下文感知、针对挑战的训练阶段降开销；④ 必要时运行时重训个别上下文模型。假设：不限定具体 DBS，只要优化器能被有限布尔 hint 引导；hint 在单查询粒度产生语义等价 QEP；为利用全部潜力，k 个 hint 需考察全部 2ᵏ 种，故采用监督学习并假设有代表性负载查询可用于显式训练；训练可能贵但运行时应用快几个数量级；用运行时维护组件避免模型陈旧。</p>
+
+  <h3>4. FASTgres 中的监督学习</h3>
+  <p>高层挑战是学一个从 SQL 查询直接映射到最优 hint set 的函数：SQL query → hint set。需先把 SQL 转为数值特征向量（查询特征化）。聚焦分析查询，关注表、连接谓词、过滤谓词，故可具体化为：<b>表 × 连接谓词 × 过滤谓词 → hint set</b>。</p>
+  <p><b>4.1 分而治之</b>。负载查询结构的多样性有限（同库有限表），故可划为查询组。一个多路连接组 = 含相同连接表集合+相同连接谓词的一组查询（组间可能重叠/包含，但不会有两组恰好相同）。单分区即一个上下文。分析显示同组内也用多种最优 hint set、不同组间分布不同。两阶段集成：阶段一按多路连接组划上下文（上下文数=负载中不同多路连接组数）；阶段二每上下文学独立模型。这把连接建模在学习之外，使模型更简单，且每模型专注基于过滤谓词的细粒度特征。公式化为：∀ 多路连接组 : 过滤谓词 → hint set。三种粒度：coarse（单上下文）、fine（每多路连接组拆分，即便重叠）、table（按连接表集拆分、忽略连接谓词，论文实用选择）。</p>
+  <p><b>4.2 Hint 集分类</b>。每上下文有独立局部模型学「过滤谓词 → 最优 hint set」。用<b>多分类</b>而非多标签：多标签分开预测每个 hint，忽略复杂相关性；而图 3 显示 hint 间有复杂相关性，多分类把整个 hint set 作为一个类一次预测，从而恰当处理共依赖。数值表示用谓词级编码（图 8）：收集过滤谓词与算子，算子查表 one-hot，数值按列统计 min-max 归一，字符串按基础表上所有谓词的基数排序 rank 归一，复合（IN）取平均；特征化每上下文内自适应（加连接信息会更稀疏、降质量）。建模用<b>梯度提升（GB）</b>：hs(q)=Σₚ λₚFₚ(q)+c，训练快、内存小；相比单大神经网络，多个 GB 更快更好。GB 超参：决策树数=100，最大深度=无限（深层前缀树足以刻画谓词对物理算子的影响）。</p>
+  <p><b>4.3 训练</b>。监督需要显式训练阶段（可分、无运行时灾难性遗忘）。标注需每查询最优 hint set+时间：朴素穷举 64 种极慢且压垮库；故提出<b>智能标注</b>——每查询设超时，超时就中止该 hint set（必非最优），初始超时=默认 hint 响应时间，找到更优就下调超时并记录，随时间加速。训练用<b>分层采样</b>：从每上下文按比例分别采样（如 80-20），保证每上下文有代表，优于随机采样。</p>
+
+  <h3>5. 运行时维护</h3>
+  <p>模型训练后固定，可能因数据/负载漂移预测不佳。朴素每查询重训不现实（重训还要用全部 2ᵏ hint 标注、给 DBS 高负载）。FASTgres 用<b>主动学习</b>只在必要时重训。做法：查询以预测 hint 执行时，同时给编译器设<b>每上下文超时</b>检测异常长查询，超时由标注阶段收集的最佳时间计算：f(times_c, t_p, t_a) = max(t_a, percentile(times_c, t_p))。小 t_p 重训率高，大 t_p 只在超历史所有时间时重训；t_a 保证最小超时（对全快查询上下文有用）。被超时捕获的关键查询用于重训。异步策略：关键查询中止并触发异步进程并行确定最优 hint set、调整模型；期间新查询仍由原模型处理；重训后替换并再次执行关键查询——开销最低。超时非静态，重训后更新 times_c 与超时。负载/模式变化时，新上下文可异步建模型（就绪前预测默认 hint，不加速也不变慢），无用上下文可删。</p>
+
+  <h3>6. 评估</h3>
+  <p>用 Stack/JOB/TPC-H 与 PG v12.4/v14.6（黑盒）。Stack 6191 查询分 11 上下文（C0–C10，表数 3–8，查询数 100–2009）；JOB 113 查询/33 上下文；TPC-H 22 查询/18 上下文（每上下文查询极少，fine 与 table 重合）。</p>
+  <p><b>6.1 潜力挖掘（表 3）</b>。train-to-represent 下 FASTgres 逼近最优 hint set（Stack 2.5×/2.49×、JOB 2.3×/1.94×、TPC-H 3.25×/1.13×），而 BAO 远未达（Stack 仅 1.29×、JOB 0.84× 即更慢、TPC-H 1.15×）。FASTgres 偶有未完全达上限（查询数不足或特征化碰撞），但在两版本两硬件上均稳健。</p>
+  <p><b>6.2 训练集大小（图 9）</b>。真实场景只用子集训练。即便小子集也显著稳健加速（10 次随机拆分标准差小）。尾延迟查询加速尤其高（图 10a）。分层采样（图 10b）随训练比例稳定增益，优于完全随机。JOB/TPC-H 因上下文多、每上下文查询少，随机采样不足以代表，故未达完全潜力——分层采样可缓解。</p>
+  <p><b>6.3 粒度（表 4）</b>。Stack 上分而治之始终有益（10-90 拆分有上下文比无上下文快 10%）；但 JOB/TPC-H 因每上下文查询过少，单模型更好（GB 能在更多样数据上泛化）。</p>
+  <p><b>6.4 重训（图 9/10c）</b>。关键查询（超每上下文超时）触发异步重训，带来显著额外加速，关键查询数随训练比例增大而减。考虑开销（中止重执行+确定最优+调模型）后，加速下降但不剧烈，因重训带来整体增益；95% 百分位（更频繁重训）增益更高。</p>
+  <p><b>6.5 Hint 数量（图 11）</b>。三个连接 hint 贡献最大（与 [8] 一致），但每加扫描 hint 也有正贡献、标注代价却剧增。只用 3 个连接 hint 时，标注时间比 6 个减少 75%（搜索空间指数降），且重训下二者加速差异不大。可行且值得研究。</p>
+  <p><b>6.6 数据与负载漂移（图 12）</b>。数据漂移：Stack 跨 2008–2019，构造逐年缩短版本；FASTgres 在完整数据上好，训练数据少时下降但<b>仅两年数据也始终优于 PG 默认</b>。负载漂移：新查询落入新上下文时，实验显示<b>每新上下文只需 2 条查询</b>即超越 PG 默认，少量数据时有波动但可行。FASTgres 对数据与负载漂移均稳健。</p>
+
+  <h3>7. 相关工作</h3>
+  <p>传统基数估计依赖独立性/均匀性假设；LEO/DB2 用反馈但难捕捉任意连接谓词相关性；采样/草图法需深度集成优化器。FASTgres 把优化器当黑盒、与基数估计解耦。ML 用于基数估计需大量标注且要执行所有查询取基数；RL 方法（BALSA/Neo/BAO）需长训练期。TONIC 用案例推理改物理算子但不变连接顺序（被动），FASTgres 主动且不限连接顺序。Yu 等的混合优化器把 hint 理解为前缀树（部分连接顺序），与 FASTgres 的全局 hint 参数不同——FASTgres 不依赖系统实现、只依赖暴露的 hint。</p>
+
+  <h3>8. 结论</h3>
+  <p>尽管多年研究，布尔物理算子 hint 能在多大程度上优化分析查询仍无定论。我们系统评估了不同 PG 版本，显示 hint 有巨大加速潜力，但它是依赖负载/优化器/硬件、最优 hint 分布各异的非平凡挑战。为此我们提出 FASTgres——一种轻量、基于学习、上下文感知的分类策略，直接为每个查询预测 hint 集，仅通过引导传统代价优化器即显著提升基准响应时间。</p>
+
+  <h3>资源</h3>
+  <p>代码：https://github.com/db-tu-dresden/FASTgres-PVLDBv16 ｜ BAO 扩展：https://github.com/learnedsystems/BaoForPostgreSQL</p>
+</div>
+
+<div class="footer">FASTgres 深度解读 · PVLDB 2023 16(11):3310-3322 · GitHub: db-tu-dresden/FASTgres-PVLDBv16</div>
+
+</div>
+</body>
+</html>

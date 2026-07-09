@@ -1,0 +1,1164 @@
+
+
+=== PAGE 1 ===
+Bao: Learning to Steer Query Optimizers
+Ryan Marcus 12, Parimarjan Negi 1, Hongzi Mao 1,
+Nesime T atbul12, Mohammad Alizadeh 1, Tim Kraska 1
+1MIT CSAIL 2Intel Labs
+{ryanmarcus, pnegi, hongzi, tatbul, alizadeh, kraska}@csail.mit.edu
+ABSTRACT
+Query optimization remains one of the most challenging
+problems in data management systems. Recent eﬀorts to
+apply machine learning techniques to query optimization
+challenges have been promising, but have shown few prac-
+tical gains due to substantive training overhead, inability
+to adapt to changes, and poor tail performance. Motivated
+by these diﬃculties and drawing upon a long history of re-
+search in multi-armed bandits, we introduce Bao (the Bandit
+optimizer). Bao takes advantage of the wisdom built into
+existing query optimizers by providing per-query optimiza-
+tion hints. Bao combines modern tree convolutional neu-
+ral networks with Thompson sampling, a decades-old and
+well-studied reinforcement learning algorithm. As a result,
+Bao automatically learns from its mistakes and adapts to
+changes in query workloads, data, and schema. Experimen-
+tally, we demonstrate that Bao can quickly (an order of mag-
+nitude faster than previous approaches) learn strategies that
+improve end-to-end query execution performance, including
+tail latency. In cloud environments, we show that Bao can
+oﬀer both reduced costs and better performance compared
+with a sophisticated commercial system.
+1. INTRODUCTION
+Query optimization is an important task for database man-
+agement systems. Despite decades of study [59], the most
+important elements of query optimization – cardinality esti-
+mation and cost modeling – have proven diﬃcult to crack [34].
+Several works have applied machine learning techniques
+to these stubborn problems [27, 29, 33, 39, 41, 47, 60, 61, 64].
+While all of these new solutions demonstrate remarkable re-
+sults, they suﬀer from fundamental limitations that prevent
+them from being integrated into a real-world DBMS. Most
+notably, these techniques (including those coming from au-
+thors of this paper) suﬀer from three main drawbacks:
+1. Sample eﬃciency. Most proposed machine learning tech-
+niques require an impractical amount of training data before
+they have a positive impact on query performance. For ex-
+ample, ML-powered cardinality estimators require gather-
+ing precise cardinalities from the underlying data, a pro-
+hibitively expensive operation in practice (this is why we
+wish to estimate cardinalities in the ﬁrst place). Reinforce-
+ment learning techniques must process thousands of queries
+before outperforming traditional optimizers, which (when
+accounting for data collection and model training) can take
+on the order of days [29,39].
+16b 24b
+JOB Query
+0
+20
+40
+60Query latency (seconds)
+60.2s
+0.4s
+21.2s 19.7s
+PostgreSQL
+PostgreSQL (no loop join)
+Figure 1: Disabling the loop join operator in PostgreSQL
+can improve (16b) or harm (24b) a particular query’s per-
+formance. These example queries are from the Join Order
+Benchmark (JOB) [30].
+2. Brittleness. While performing expensive training oper-
+ations once may already be impractical, changes in query
+workload, data, or schema can make matters worse. Learned
+cardinality estimators must be retrained when data changes,
+or risk becoming stale. Several proposed reinforcement learn-
+ing techniques assume that both the data and the schema
+remain constant, and require complete retraining when this
+is not the case [29,39,41,47].
+3. Tail catastrophe. Recent work has shown that learning
+techniques can outperform traditional optimizers on aver-
+age, but often perform catastrophically (e.g., 100x regres-
+sion in query performance) in the tail [39, 41, 48]. This is
+especially true when training data is sparse. While some
+approaches oﬀer statistical guarantees of their dominance in
+the average case [64], such failures, even if rare, are unac-
+ceptable in many real world applications.
+Bao Bao (Bandit optimizer), our prototype optimizer, can
+outperform traditional query optimizers, both open-source
+and commercial , with minimal training time ( ≈ 1 hour).
+Bao can maintain this advantage even in the presence of
+workload, data, and schema changes, all while rarely, if ever,
+incurring a catastrophic execution. While previous learned
+approaches either did not improve or did not evaluate tail
+performance, we show that Bao is capable of improving tail
+performance by orders of magnitude after a few hours of
+training. Finally, we demonstrate that Bao is capable of
+reducing costs and increasing performance on modern cloud
+platforms in realistic, warm-cache scenarios.
+1
+arXiv:2004.03814v1  [cs.DB]  8 Apr 2020
+
+=== PAGE 2 ===
+Our fundamental observation is that previous learned ap-
+proaches to query optimization [29, 39, 41, 64], which at-
+tempted to replace either the entire query optimizer or large
+portions of it with learned components, may have thrown the
+baby out with the bathwater. Instead of discarding tradi-
+tional query optimizers in favor of a fully-learned approach,
+Bao recognizes that traditional query optimizers contain
+decades of meticulously hand-encoded wisdom. For a given
+query, Bao intends only to steer a query optimizer in the
+right direction using coarse-grained hints. In other words,
+Bao seeks to build learned components on top of existing
+query optimizers in order to enhance query optimization,
+rather than replacing or discarding traditional query opti-
+mizers altogether.
+For example, a common observation about PostgreSQL
+is that cardinality under-estimates frequently prompt the
+query optimizer to select loop joins when other methods
+(merge, hash) would be more eﬀective [30, 31]. This occurs
+in query 16b of the Join Order Benchmark (JOB) [30], as
+depicted in Figure 1. Disabling loop joins causes a 3x per-
+formance improvement for this query. However, for query
+24b, disabling loop joins creates a serious regression of al-
+most 50x. Thus, providing the coarse-grained hint “disable
+loop joins” helps some queries, but harms others.
+At a high level, Bao sits on top of an existing query opti-
+mizer and tries to learn a mapping between incoming queries
+and the powerset of such hints. Given an incoming query,
+Bao selects a set of coarse-grained hints that limit the search
+space of the query optimizer (e.g., eliminating plans with
+loop joins from the search space). Bao learns to select dif-
+ferent hints for diﬀerent queries, discovering when the under-
+lying query optimizer needs to be steered away from certain
+areas of the plan space.
+Our approach assumes a ﬁnite set of query hints and treats
+each subset of hints as an arm in a contextual multi-armed
+bandit problem. While in this work we use query hints that
+remove entire operator types from the plan space (e.g., no
+hash joins), in practice there is no restriction that these
+hints are so broad: one could use much more speciﬁc hints.
+Our system learns a model that predicts which set of hints
+will lead to good performance for a particular query. When a
+query arrives, our system selects hints, executes the resulting
+query plan, and observes a reward. Over time, our system
+reﬁnes its model to more accurately predict which hints will
+most beneﬁt an incoming query. For example, for a highly
+selective query, our system can steer an optimizer towards
+a left-deep loop join plan (by restricting the optimizer from
+using hash or merge joins), and to disable loop joins for less
+selective queries. This learning is automatic.
+By formulating the problem as a contextual multi-armed
+bandit, Bao can take advantage of sample eﬃcient and well-
+studied algorithms [12]. Because Bao takes advantage of an
+underlying query optimizer, Bao has cost and cardinality
+estimates available, allowing Bao to use a more ﬂexible rep-
+resentation that can adapt to new data and schema changes
+just as well as the underlying query optimizer. Finally, while
+other learned query optimization methods have to relearn
+what traditional query optimizers already know, Bao can
+immediately start learning to improve the underlying opti-
+mizer, and is able to reduce tail latency even compared to
+traditional query optimizers.
+Interestingly, it is easy to integrate information about the
+DBMS cache into our approach. Doing so allows Bao to
+use information about what is held in memory when choos-
+ing between diﬀerent hints. This is a desirable feature be-
+cause reading data from in-memory cache is signiﬁcantly
+faster than reading information oﬀ of disk, and it is possi-
+ble that the best plan for a query changes based on what is
+cached. While integrating such a feature into a traditional
+cost-based optimizer may require signiﬁcant engineering and
+hand-tuning, making Bao cache-aware is as simple as sur-
+facing a description of the cache state.
+A major concern for optimizer designers is the ability to
+debug and explain decisions, which is itself a subject of
+signiﬁcant research [6, 21, 46, 54]. Black-box deep learning
+approaches make this diﬃcult, although progress is being
+made [7]. Compared to other learned query optimization
+techniques, Bao makes debugging easier. When a query mis-
+behaves, an engineer can examine the query hint chosen by
+Bao. If the underlying optimizer is functioning correctly, but
+Bao made a poor decision, exception rules can be written
+to exclude the selected query hint. While we never needed
+to implement any such exception rules in our experimental
+study, Bao’s architecture makes such exception rules signiﬁ-
+cantly easier to implement than for other black-box learning
+models.
+Bao’s architecture is extensible. Query hints can be added
+or removed over time. Assuming additional hints do not lead
+to query plans containing entirely new physical operators,
+adding a new query hint requires little additional training
+time. This potentially enables quickly testing of new query
+optimizers: a developer can introduce a hint that causes
+the DBMS to use a diﬀerent optimizer, and Bao will au-
+tomatically learn which queries perform well with the new
+optimizer (and which queries perform poorly).
+In short, Bao combines a tree convolution model [44], an
+intuitive neural network operator that can recognize impor-
+tant patterns in query plan trees [39], with Thompson sam-
+pling [62], a technique for solving contextual multi-armed
+bandit problems. This unique combination allows Bao to
+explore and exploit knowledge quickly.
+The contributions of this paper are:
+• We introduce Bao, a learned system for query opti-
+mization that is capable of learning how to apply query
+hints on a case-by-case basis.
+• We introduce a simple predictive model and featuriza-
+tion scheme that is independent of the workload, data,
+and schema.
+• For the ﬁrst time, we demonstrate a learned query op-
+timization system that outperforms both open source
+and commercial systems in cost and latency, all while
+adapting to changes in workload, data, and schema.
+The rest of this paper is organized as follows. In Section 2,
+we introduce the Bao system model and give a high-level
+overview of the learning approach. In Section 3, we formally
+specify Bao’s optimization goal, and describe the predictive
+model and training loop used. We present related works in
+Section 4, experimental analysis in Section 5, and concluding
+remarks in Section 6.
+2. SYSTEM MODEL
+Bao’s system model is shown in Figure 2. When a user
+submits a query, Bao’s goal is to select a set of query hints
+2
+
+=== PAGE 3 ===
+SQLSQLSQL
+Parser
+Query Optimizer
+Hint set 1
+...
+TCNN
+Reward
+Predictions
+Execution Engine
+ExperienceTraining
+User provided
+Query plan
+External component
+Bao
+...
+Hint set 2
+Hint set 3
+Figure 2: Bao system model
+that will give the best performance for the user’s speciﬁc
+query (i.e., Bao chooses diﬀerent query hints for diﬀerent
+queries). To do so, Bao uses the underlying query optimizer
+to produce a set of query plans (one for each set of hints),
+and each query plan is transformed into a vector tree (a tree
+where each node is a feature vector). These vector trees are
+fed into Bao’s predictive model, a tree convolutional neural
+network [44], which predicts the outcome of executing each
+plan (e.g., predicts the wall clock time of each query plan). 1
+Bao chooses which plan to execute using a technique called
+Thompson sampling [62] (see Section 3) to balance the ex-
+ploration of new plans with the exploitation of plans known
+to be fast. The plan selected by Bao is sent to a query ex-
+ecution engine. Once the query execution is complete, the
+combination of the selected query plan and the observed
+performance is added to Bao’s experience. Periodically, this
+experience is used to retrain the predictive model, creating a
+feedback loop. As a result, Bao’s predictive model improves,
+and Bao learns to select better and better query hints.
+Query hints & hint sets Bao requires a set of query opti-
+mizer hints, which we refer to as query hints or hints. A hint
+is generally a ﬂag passed to the query optimizer that alters
+the behavior of the optimizer in some way. For example,
+PostgreSQL [4], MySQL [3], and SQL Server [5] all provide
+a wide range of such hints. While some hints can be applied
+to a single relation or predicate, Bao focuses only on query
+hints that are a boolean ﬂag (e.g., disable loop join, force in-
+dex usage). For each incoming query, Bao selects ahint set, a
+valid set of query hints, to pass to the optimizer. We assume
+that the validity of a hint set is known ahead of time (e.g.,
+for PostgreSQL, one cannot disable loop joins, merge joins,
+and hash joins at once). We assume that all valid hint sets
+cause the optimizer to produce a semantically-valid query
+plan (i.e., a query plan that produces the correct result).
+Model training Bao’s predictive model is responsible for
+estimating the quality of query plans produced by a hint
+set. Learning to predict plan quality requires balancing ex-
+ploration and exploitation: Bao must decide when to explore
+new plans that might lead to improvements, and when to ex-
+ploit existing knowledge and select plans similar to fast plans
+seen in the past. We formulate the problem of choosing be-
+tween query plans as a contextual multi-armed bandit [69]
+problem: each hint set represents an arm, and the query
+plans produced by the optimizer (when given each hint set)
+represent the contextual information. To solve the bandit
+problem, we use Thompson sampling [62], an algorithm with
+1This process can be executed in parallel to maintain rea-
+sonable optimization times, see Section 5.2.
+both theoretical bounds [57] and real-world success [12]. The
+details of our approach are presented in Section 3.
+Mixing query plans Bao selects an query plan produced
+by a single hint set. Bao does not attempt to “stitch to-
+gether” [15] query plans from diﬀerent hint sets. While pos-
+sible, this would increase the Bao’s action space (the number
+of choices Bao has for each query). Letting k be the number
+of hint sets and n be the number of relations in a query,
+by selecting only a single hint set Bao has O(k) choices per
+query. If Bao stitched together query plans, the size of the
+action space would beO(k×2n) (k diﬀerent ways to join each
+subset of n relations, in the case of a fully connected query
+graph). This is a larger action space than used in previous
+reinforcement learning for query optimization works [39,41].
+Since the size of the action space is an important factor for
+determining the convergence time of reinforcement learning
+algorithms [16], we opted for the smaller action space in
+hopes of achieving quick convergence. 2
+3. SELECTING QUERY HINTS
+Here, we discuss Bao’s learning approach. We ﬁrst deﬁne
+Bao’s optimization goal, and formalize it as a contextual
+multi-armed bandit problem. Then, we apply Thompson
+sampling, a classical technique used to solve such problems.
+Bao assumes that each hint set HSeti∈F in the family
+of hint sets F is a function mapping a query q∈ Q to a
+query plan tree t∈T :
+HSeti :Q→T
+This function is realized by passing the query Q and the
+selected hint HSeti to the underlying query optimizer. We
+refer to HSeti as this function for convenience. We assume
+that each query plan tree t∈T is composed of an arbitrary
+number of operators drawn from a known ﬁnite set (i.e.,
+that the trees may be arbitrarily large but all of the distinct
+operator types are known ahead of time).
+Bao also assumes a user-deﬁned performance metric P ,
+which determines the quality of a query plan by executing
+it. For example, P may measure the execution time of a
+query plan, or may measure the number of disk operations
+performed by the plan.
+For a query q, Bao must select a hint set to use. We call
+this selection function B : Q→ F . Bao’s goal is to select
+the best query plan (in terms of the performance metric P )
+produced by a hint set. We formalize the goal as a regret
+minimization problem, where the regret for a query q, Rq,
+is deﬁned as the diﬀerence between the performance of the
+plan produced with the hint set selected by Bao and the
+performance of the plan produced with the ideal hint set:
+Rq =
+(
+P (B(q)(q))− min
+i
+P (HSeti(q))
+)2
+(1)
+Contextual multi-armed bandits (CMABs) The re-
+gret minimization problem in Equation 1 can be thought of
+in terms of a contextual multi-armed bandit [69], a classic
+concept from reinforcement learning. A CMAB is problem
+formulation in which an agent must maximize their reward
+2We experimentally tested the plan stitching approach using
+Bao’s architecture, but we were unable to get the model to
+convergence.
+3
+
+=== PAGE 4 ===
+by repeatedly selecting from a ﬁxed number of arms. The
+agent ﬁrst receives some contextual information ( context),
+and must then select an arm. Each time an arm is selected,
+the agent receives a payout. The payout of each arm is
+assumed to be independent given the contextual informa-
+tion. After receiving the payout, the agent receives a new
+context and must select another arm. Each trial is consid-
+ered independent. The agent can maximize their payouts
+by minimizing their regret: the closer the agent’s actions
+are to optimal, the closer to the maximum possible payout
+the agent gets.
+For Bao, each “arm” is a hint set, and the “context” is
+the set of query plans produced by the underlying optimizer
+given each hint set. Thus, our agent observes the query
+plans produced from each hint set, chooses one of those
+plans, and receives a reward based on the resulting perfor-
+mance. Over time, our agent needs to improve its selection
+and get closer to choosing optimally (i.e., minimize regret).
+Doing so involves balancing exploration and exploitation:
+our agent must not always select a query plan randomly (as
+this would not help to improve performance), nor must our
+agent blindly use the ﬁrst query plan it encounters with good
+performance (as this may leave signiﬁcant improvements on
+the table).
+Thompson sampling A classic algorithm for solving CMAB
+regret minimization problems while balancing exploration
+and exploitation is Thompson sampling [62]. Intuitively,
+Thompson sampling works by slowly building up experience
+(i.e., past observations of performance and query plan tree
+pairs). Periodically, that experience is used to construct
+a predictive model to estimate the performance of a query
+plan. This predictive model is used to select hint sets by
+choosing the hint set that results in the plan with the best
+predicted performance.
+Formally, Bao uses a predictive model Mθ, with model
+parameters (weights) θ, which maps query plan trees to es-
+timated performance, in order to select a hint set. Once a
+query plan is selected, the plan is executed, and the resulting
+pair of a query plan tree and the observed performance met-
+ric, (ti,P (ti)), is added to Bao’s experience E. Whenever
+new information is added to E, Bao updates the predictive
+model Mθ.
+In Thompson sampling, this predictive model is trained
+diﬀerently than a standard machine learning model. Most
+machine learning algorithms train models by searching for a
+set of parameters that are most likely to explain the train-
+ing data. In this sense, the quality of a particular set of
+model parametersθ is measured byP (θ|E): the higher the
+likelihood of your model parameters given the training data,
+the better the ﬁt. Thus, the most likely model parameters
+can be expressed as the expectation (modal parameters) of
+this distribution, which we write as E[P (θ| E)]. However,
+in order to balance exploitation and exploration, we sample
+model parameters from the distribution P (θ| E), whereas
+most machine learning techniques are designed to ﬁnd the
+most likely model given the training data, E[P (θ|E)].
+Intuitively, if one wished to maximize exploration, one
+would choose θ entirely at random. If one wished to maxi-
+mize exploitation, one would choose the modalθ (i.e., E[P (θ|
+E)]). Sampling from P (θ | E) strikes a balance between
+these two goals [8]. To reiterate, sampling from P (θ|E) is
+not the same as training a model over E. We discuss the
+diﬀerences at the end of Section 3.1.2.
+Aggregate
+Seq Scan Idx Scan
+Merge Join
+Loop Join
+Seq ScanSort
+Aggregate
+Seq Scan Idx Scan
+Merge Join
+Loop Join
+Seq ScanSort
+null
+null
+Original Query Plan Binarized Query Plan
+Figure 3: Binarizing a query plan tree
+It is worth noting that selecting a hint set for an incom-
+ing query is not exactly a bandit problem. This is because
+the choice of a hint set, and thus a query plan, will aﬀect
+the cache state when the next query arrives, and thus every
+decision is not entirely independent. For example, choosing
+a plan with index scans will result in an index being cached,
+whereas choosing a plan with only sequential scans may re-
+sult in more of the base relation being cached. However, in
+OLAP environments queries frequently read large amounts
+of data, so the eﬀect of a single query plan on the cache
+tends to be short lived. Regardless, there is substantial ex-
+perimental evidence suggesting that Thompson sampling is
+still a suitable algorithm in these scenarios [12].
+We next explain Bao’s predictive model, a tree convolu-
+tional neural network. Then, in Section 3.2, we discuss how
+Bao eﬀectively applies its predictive model and Thompson
+sampling to query optimization.
+3.1 Predictive model
+The core of Thompson sampling, Bao’s algorithm for se-
+lecting hint sets on a per-query basis, is a predictive model
+that, in our context, estimates the performance of a par-
+ticular query plan. Based on their success in [39], Bao use
+a tree convolutional neural network (TCNN) as its predic-
+tive model. In this section, we describe (1) how query plan
+trees are transformed into trees of vectors, suitable as input
+to a TCNN, (2) the TCNN architecture, and (3) how the
+TCNN can be integrated into a Thompson sampling regime
+(i.e., how to sample model parameters from P (θ | E) as
+discussed in Section 3).
+3.1.1 V ectorizing query plan trees
+Bao transforms query plan trees into trees of vectors by
+binarizing the query plan tree and encoding each query plan
+operator as a vector, optionally augmenting this representa-
+tion with cache information.
+Binarization Previous applications of reinforcement learn-
+ing to query optimization [29,39,41] assumed that all query
+plan trees were strictly binary: every node in a query plan
+tree had either two children (an internal node) or zero chil-
+dren (a leaf). While this is true for a large class of simple
+join queries, most analytic queries involve non-binary op-
+erations like aggregation, sorting, and hashing. However,
+strictly binary query plan trees are convenient for a number
+of reasons, most notably that they greatly simplify tree con-
+volution (explained in the next section). Thus, we propose
+a simple strategy to transform non-binary query plans into
+binary ones. Figure 3 shows an example of this process. The
+original query plan tree (left) is transformed into a binary
+query plan tree (right) by inserting “null” nodes (gray) as
+the right child of any node with a single parent. Nodes with
+4
+
+=== PAGE 5 ===
+Aggregate[1, 0, 0, 0, 0, 0, 0, 10, 0.98]
+Agg
+Merge
+Sort
+Loop
+Seq
+Idx null
+Card.
+Cost
+Merge Join[1, 0, 0, 0, 0, 0, 0, 10, 0.98]
+Agg
+Merge
+Sort
+Loop
+Seq
+Idx null
+Card.
+Cost
+Sort[0, 0, 1, 0, 0, 0, 0, 250, 0.62]
+Agg
+Merge
+Sort
+Loop
+Seq
+Idx null
+Card.
+Cost
+Loop Join[0, 0, 0, 1, 0, 0, 0, 25, 0.53]
+Agg
+Merge
+Sort
+Loop
+Seq
+Idx null
+Card.
+Cost
+Seq Scan[0, 0, 0, 0, 1, 0, 0, 9000, 0.12]
+Agg
+Merge
+Sort
+Loop
+Seq
+Idx null
+Card.
+Cost
+null [0, 0, 0, 0, 0, 0, 1, 0, 0.0]
+Agg
+Merge
+Sort
+Loop
+Seq
+Idx null
+Card.
+Cost
+Seq Scan [0, 0, 0, 0, 1, 0, 0, 100, 0.32]
+Agg
+Merge
+Sort
+Loop
+Seq
+Idx null
+Card.
+Cost
+null [0, 0, 0, 0, 0, 0, 1, 0, 0.0]
+Agg
+Merge
+Sort
+Loop
+Seq
+Idx null
+Card.
+Cost
+Idx Scan [0, 0, 0, 0, 0, 1, 0, 25, 0.08]
+Agg
+Merge
+Sort
+Loop
+Seq
+Idx null
+Card.
+Cost
+Figure 4: Vectorized query plan tree (vector tree)
+more than two children (e.g., multi-unions) are uncommon,
+but can generally be binarized by splitting them up into a
+left-deep tree of binary operations (e.g., a union of 5 children
+is transformed into a left-deep tree with four binary union
+operators).
+V ectorization Bao’s vectorization strategy produces vec-
+tors with few components. Each node in a query plan tree
+is transformed into a vector containing three parts: (1) a one
+hot encoding of the operator type, (2) cardinality and cost
+model information, and optionally (3) cache information.
+The one-hot encoding of each operator type is similar to
+vectorization strategies used by previous approaches [29,39].
+Each vector in Figure 4 begins with the one-hot encoding
+of the operator type (e.g., the second position is used to
+indicate if an operator is a merge join). This simple one-hot
+encoding captures information about structural properties
+of the query plan tree: for example, a merge join with a
+child that is not sort might indicate that more than one
+operator is taking advantage of a sorted order.
+Each vector can also contain information about estimated
+cardinality and cost. Since almost all query optimizers make
+use of such information, surfacing it to the vector represen-
+tation of each query plan tree node is often trivial. For ex-
+ample, in Figure 4, cardinality and cost model information
+is labeled “Card” and “Cost” respectively. This information
+helps encode if an operator is potentially problematic, such
+a loop joins over large relations or repetitive sorting, which
+might be indicative of a poor query plan. While we use only
+two values (one for a cardinality estimate, the other for a
+cost estimate), any number of values can be used. For exam-
+ple, multiple cardinality estimates from diﬀerent estimators
+or predictions from learned cost models may be added.
+Finally, optionally, each vector can be augmented with
+information from the current state of the disk cache. The
+current state of the cache can be retrieved from the database
+buﬀer pool when a new query arrives. In our experiments,
+we augment each scan node with the percentage of the tar-
+geted ﬁle that is cached, although many other schemes can
+be used. This gives Bao the opportunity to pick plans that
+are compatible with information in the cache.
+While simple, Bao’s vectorization scheme has a number of
+advantages. First, the representation is agnostic to the un-
+derlying schema: while prior work [29,39,41] represented ta-
+bles and columns directly in their vectorization scheme, Bao
+omits them so that schema changes do not necessitate start-
+ing over from scratch. Second, Bao’s vectorization scheme
+only represents the underlying data with cardinality esti-
+mates and cost models, as opposed to complex embedding
+models tied to the data [39]. Since maintaining cardinality
+estimates when data changes is well-studied and already im-
+plemented in most DBMSes, changes to the underlying data
+are reﬂected cleanly in Bao’s vectorized representation.
+Vectorized Tree
+Tree Convolution
+1x256 1x128 1x64
+Fully Connected Layer
+1 x 32
+Fully Connected Layer
+1 x 1
+Dynam
+ic Pooling
+1 x 64LayerInput
+Cost Prediction
+Output
+Figure 5: Bao prediction model architecture
+3.1.2 Tree convolutional neural networks
+Tree convolution is a composable and diﬀerentiable neural
+network operator introduced in [44] for supervised program
+analysis and ﬁrst applied to query plan trees in [39]. Here,
+we give an intuitive overview of tree convolution, and re-
+fer readers to [39] for technical details and analysis of tree
+convolution on query plan trees.
+As noted in [39], human experts studying query plans
+learn to recognize good or bad plans by pattern matching: a
+pipeline of merge joins without any intermediate sorts may
+perform well, whereas a merge join on top of a hash join
+may induce a redundant sort or hash. Similarly, a hash join
+which builds a hash table over a very large relation may in-
+cur a spill. While none of this patterns are independently
+enough to decide if a query plan is good or bad, they do serve
+as useful indicators for further analysis; in other words, the
+presence or absence of such a pattern is a useful feature from
+a learning prospective. Tree convolution is precisely suited
+to recognize such patterns, and learns to do soautomatically,
+from the data itself .
+Tree convolution consists of sliding several tree-shaped
+“ﬁlters” over a larger query plan tree (similar to image con-
+volution, where ﬁlters in a ﬁlterbank are convolved with an
+image) to produce a transformed query plan tree of the same
+size. These ﬁlters may look for patterns like pairs of hash
+joins, or an index scan over a very small relation. Tree con-
+volution operators are stacked, resulting in several layers of
+tree convolution. Later layers can learn to recognize more
+complex patterns, like a long chain of merge joins or a bushy
+tree of hash operators. Because of tree convolution’s natu-
+ral ability to represent and learn these patterns, we say that
+tree convolution represents a helpful inductive bias [38, 43]
+for query optimization: that is, the structure of the net-
+work, not just its parameters, are tuned to the underlying
+problem.
+The architecture of Bao’s prediction model (similar to
+Neo’s value prediction model [39]) is shown in Figure 5. The
+vectorized query plan tree is passed through three layers of
+stacked tree convolution. After the last layer of tree con-
+volution, dynamic pooling [44] is used to ﬂatten the tree
+structure into a single vector. Then, two fully connected
+layers are used to map the pooled vector to a performance
+prediction. We use ReLU [18] activation functions and layer
+normalization [10], which are not shown in the ﬁgure.
+Integrating with Thompson sampling Thompson sam-
+pling requires the ability tosample model parametersθ from
+P (θ|E), whereas most machine learning techniques are de-
+signed to ﬁnd the most likely model given the training data,
+E[P (θ| E)]. For neural networks, there are several tech-
+niques available to sample fromP (θ|E), ranging from com-
+5
+
+=== PAGE 6 ===
+plex Bayesian neural networks to simple approaches [56]. By
+far the simplest technique, which has been shown to work
+well in practice [51], is to train the neural network as usual,
+but on a “bootstrap” [11] of the training data: the network
+is trained using|E| random samples drawn with replacement
+from E, inducing the desired sampling properties [51]. We
+selected this bootstrapping technique for its simplicity.
+3.2 Training loop
+In this section, we explain Bao’s training loop, which
+closely follows a classical Thompson sampling regime: when
+a query is received, Bao builds a query plan tree for each
+hint set and then uses the current TCNN predictive model
+to select a query plan tree to execute. After execution, that
+query plan tree and the observed performance are added to
+Bao’s experience. Periodically, Bao retrains its TCNN pre-
+dictive model by sampling model parameters (i.e., neural
+network weights) to balance exploration and exploitation.
+While Bao closely follows a Thompson sampling regime for
+solving a contextual multi-armed bandit, practical concerns
+require a few deviations.
+In classical Thompson sampling [62], the model parame-
+ters θ are resampled after every selection (query). In the
+context of query optimization, this is not practical for two
+reasons. First, sampling θ requires training a neural net-
+work, which is a time consuming process. Second, if the size
+of the experience |E| grows unbounded as queries are pro-
+cessed, the time to train the neural network will also grow
+unbounded, as the time required to perform a training epoch
+is linear in the number of training examples.
+We use two techniques from prior work on using deep
+learning for contextual multi-armed bandit problems [13] to
+solve these issues. First, instead of resampling the model
+parameters (i.e., retraining the neural network) after every
+query, we only resample the parameters every nth query.
+This obviously decreases the training overhead by a factor
+ofn by using the same model parameters for more than one
+query. Second, instead of allowing |E| to grow unbounded,
+we only store thek most recent experiences inE. By tuning
+n and k, the user can control the tradeoﬀ between model
+quality and training overhead to their needs. We evaluate
+this tradeoﬀ in Section 5.2.
+We also introduce a new optimization, speciﬁcally useful
+for query optimization. On modern cloud platforms such
+as [2], GPUs can be attached and detached from a VM with
+per-second billing. Since training a neural network primar-
+ily uses the GPU, whereas query processing primarily uses
+the CPU, disk, and RAM, model training and query execu-
+tion can be overlapped. When new model parameters need
+to be sampled, a GPU can be temporarily provisioned and
+attached. Model training can then be oﬄoaded to the GPU,
+leaving other resources available for query processing. Once
+model training is complete, the new model parameters can
+be swapped in for use when the next query arrives, and the
+GPU can be detached. Of course, users may also choose to
+use a machine with a dedicated GPU, or to oﬄoad model
+training to a diﬀerent machine entirely.
+4. RELA TED WORK
+Recently, there has been a groundswell of research on in-
+tegrating machine learning into query optimization. One
+of the most obvious places in query optimization to apply
+machine learning is cardinality estimation. One of the ear-
+liest approaches was Leo [60], which used successive runs
+of the similar queries to adjust histogram estimators. More
+recent approaches [27, 33, 61, 67] have used deep learning
+to learn cardinality estimations or query costs in a super-
+vised fashion, although these works require extensive train-
+ing data collection and do not adapt to changes in data
+or schema. QuickSel [52] demonstrated that linear mixture
+models could learn reasonable estimates for single tables.
+Naru [68] uses an unsupervised learning approach which
+does not require training and uses Monte Carlo integration
+to produce estimates, again for materialized tables. In [22],
+authors present a scheme called CRN for estimating car-
+dinalities via query containment rates. While all of these
+works demonstrate improved cardinality estimation accu-
+racy, they do not provide evidence that these improvements
+lead to better query performance. In an experimental study,
+Ortiz et al. [48] show that certain learned cardinality estima-
+tion techniques may improve mean performance on certain
+datasets, but tail latency is not evaluated. In [45], Negi et
+al. show how prioritizing training on cardinality estimations
+that have a large impact on query performance can improve
+estimation models.
+Another line of research has examined using reinforcement
+learning to construct query optimizers. Both [29,41] showed
+that, with suﬃcient training, such approaches could ﬁnd
+plans with lower costs according to the PostgreSQL opti-
+mizer and cardinality estimator. [47] showed that the inter-
+nal state learned by reinforcement learning algorithms are
+strongly related to cardinality. Neo [39] showed that deep
+reinforcement learning could be applied directly to query
+latency, and could learn optimization strategies that were
+competitive with commercial systems after 24 hours of train-
+ing. However, none of these techniques are capable of han-
+dling changes in schema, data, or query workload. Further-
+more, while all of these techniques show improvements to
+mean query performance after a long training period, none
+demonstrate improvement in tail performance.
+Works applying reinforcement learning to adaptive query
+processing [24,64,65] have also shown interesting results, but
+are not applicable to non-adaptive systems.
+Thompson sampling has a long history in statistics and de-
+cision making problems and recently it has been used exten-
+sively in the reinforcement learning community as a simple
+yet eﬃcient way to update beliefs given experience [12, 25,
+62]. We use an alternative setup which lets us get the bene-
+ﬁts of Thompson sampling without explicitly deﬁning how to
+update the posterior belief, as described in [51]. Thompson
+sampling has also been applied to cloud workload manage-
+ment [40] and SLA conformance [49].
+Reinforcement learning techniques in general have also
+seen recent adoption [58]. In [28], the authors present a vi-
+sion of an entire database system built from reinforcement
+learning components. More concretely, reinforcement learn-
+ing has been applied to managing elastic clusters [35, 50],
+scheduling [36], and physical design [53].
+Our work is part of a recent trend in seeking to use ma-
+chine learning to build easy to use, adaptive, and inven-
+tive systems, a trend more broadly known as machine pro-
+gramming [19]. A few selected works outside the context
+of data management systems include reinforcement learning
+for job scheduling [37], automatic performance analysis [9],
+loop vectorization [20] and garbage collection [23].
+6
+
+=== PAGE 7 ===
+n1-2 n1-4 n1-8 n1-16
+Machine Type
+0
+100
+200
+300
+400
+500Cost (cents)
+n1-2 n1-4 n1-8 n1-16
+Machine Type
+0
+100
+200
+300
+400
+500
+600Time (m)
+Bao
+PostgreSQL
+(a) Across four diﬀerent VM types, Bao on the PostgreSQL engine
+vs. PostgreSQL optimizer on the PostgreSQL engine.
+n1-2 n1-4 n1-8 n1-16
+Machine Type
+0
+100
+200
+300
+400
+500Cost (cents)
+n1-2 n1-4 n1-8 n1-16
+Machine Type
+0
+100
+200
+300
+400
+500
+600Time (m)
+Bao
+ComSys
+(b) Across four diﬀerent VM types, Bao on the ComSys engine
+vs. ComSys optimizer on the ComSys engine.
+Figure 6: Cost (left) and workload latency (right) for Bao
+and two traditional query optimizers across four diﬀerent
+Google Cloud Platform VM sizes for the IMDb workload.
+Corp IMDb Stack
+Dataset
+0
+200
+400
+600
+800
+1000Cost (cents)
+Corp IMDb Stack
+Dataset
+0
+200
+400
+600
+800
+1000Time (m)
+Bao
+PostgreSQL
+(a) Across our three evaluation datasets, Bao on the PostgreSQL
+engine vs. PostgreSQL optimizer on the PostgreSQL engine.
+Corp IMDb Stack
+Dataset
+0
+200
+400
+600
+800
+1000Cost (cents)
+Corp IMDb Stack
+Dataset
+0
+200
+400
+600
+800
+1000Time (m)
+Bao
+ComSys
+(b) Across our three evaluation datasets, Bao on the ComSys en-
+gine vs. ComSys optimizer on the ComSys engine.
+Figure 7: Cost (left) and workload latency (right) for Bao
+and two traditional query optimizers across three diﬀerent
+workloads on a N1-16 Google Cloud VM.
+Size Queries WL Data Schema
+IMDb 7.2 GB 5000 Dynamic Static Static
+Stack 100 GB 5000 Dynamic Dynamic Static
+Corp 1 TB 2000 Dynamic Static a Dynamic
+Table 1: Evaluation dataset sizes, query counts, and
+whether or not the workload (WL), data, and schema are
+static or dynamic.
+5. EXPERIMENTS
+The key question we pose in our evaluation is whether
+or not Bao could have a positive, practical impact on real-
+world database workloads that include changes in workload,
+data, and/or schema. To answer this, we focus on quantify-
+ing not only query performance, but also on the dollar-cost
+of executing a workload (including the training overhead in-
+troduced by Bao) on cloud infrastructure.
+Our experimental study is divided into three parts. In
+Section 5.1, we explain our experimental setup. Section 5.2
+is designed to evaluate Bao’s real-world applicability, and
+compares Bao’s performance against both PostgreSQL and
+a commercial database system [55] on real-world workloads
+executed on Google Cloud Platform with caching enabled.
+Speciﬁcally, we examine:
+• workload performance, tail latency, and total costs for
+executing workloads with Bao, the PostgreSQL opti-
+mizer, and a commercial system with dynamic work-
+loads, data, and schema,
+• Bao’s resiliency to hints that induce consistent or sud-
+den poor performance,
+• quantitative and qualitative diﬀerences between Bao
+and previous learned query optimization approaches.
+Section 5.3 is designed to evaluate Bao’s optimality in
+terms of regret, the diﬀerence between Bao’s decisions and
+the optimal choice. Experiments in these sections are nec-
+essarily conducted on a private, isolated server, and each
+query is executed with a cold cache. This section evaluates:
+• Bao’s ability to adapt to diﬀerent optimization goals
+(e.g., disk IOs),
+• the median and tail latency achieved by Bao relative to
+an optimal choice and an open source query optimizer,
+• Bao’s query-by-query performance on the join order
+benchmark [30].
+5.1 Setup
+We evaluated Bao using the datasets listed in Table 1.
+• The IMDb dataset is an augmentation of the Join Or-
+der Benchmark [30]: we added thousands of queries
+to the original 113 queries, 3 and we vary the query
+workload over time by introducing new templates pe-
+riodically. The data and schema remain static.
+3https://rm.cab/imdb
+7
+
+=== PAGE 8 ===
+• The Stack dataset is a new dataset introduced by this
+work and available publicly. 4 The Stack dataset con-
+tains over 18 million questions and answers from 170
+diﬀerent StackExchange websites (such as StackOver-
+ﬂow.com) between July 2008 and September 2019. We
+emulate data drift by initially loading all data up to
+September 2018, and then incrementally inserting the
+data from September 2018 to September 2019. We
+have produced 5000 queries from 25 diﬀerent templates,
+and we vary the query workload by introducing new
+templates periodically. The schema remains static.
+• The Corp dataset is a dashboard analytics workload
+executed over one month donated by an anonymous
+corporation. The Corp dataset contains 2000 unique
+queries issued by analysts. Half way through the month,
+the corporation normalized a large fact table, result-
+ing in a signiﬁcant schema change. We emulate this
+schema change by introducing the normalization after
+the execution of the 1000th query (queries after the
+1000th expect the new normalized schema). The data
+remains static.
+For the Stack and IMDb workloads, we vary the workload
+over time by introducing new query templates periodically.
+We choose the query sequence by randomly assigning each
+query template to two of eight groups (every query template
+is in exactly two groups). We then build 8 corresponding
+groups of query instances, placing one half of all instances
+of a query template into the corresponding query template
+group. We then randomly order the query instances within
+each group, and concatenate the groups together to deter-
+mine the order of the queries in the workload. This ensures
+that a wide variety of template combinations and shifts are
+present. Note that for the Corp workload, the queries are
+replayed in the same order as analysts issues them.
+Unless otherwise noted, we use a “time series split” strat-
+egy for training and testing Bao. Bao is always evaluated
+on the next, never-before-seen queryqt+1. When Bao makes
+a decision for query qt+1, Bao is only trained on data from
+earlier queries. Once Bao makes a decision for query qt+1,
+the observed reward for that decision – and only that deci-
+sion – is added to Bao’s experience set. This strategy diﬀers
+from previous evaluations in [29, 39, 41, 47] because Bao is
+never allowed to learn from two diﬀerent decisions about
+the same query. 5 Whereas in the prior works mentioned,
+a reinforcement learning algorithm could investigate many
+possible decisions about the same query, our technique is a
+more realistic: once a query is executed using a particular
+plan, Bao does not get any information about alternative
+plans for the same query.
+Bao’s prediction model uses three layers of tree convolu-
+tion, with output dimensions (256, 128, 64), followed by a
+dynamic pooling [44] layer and two linear layers with output
+dimensions (32, 1). We use ReLU activation functions [18]
+and layer normalization [10] between each layer. Training is
+performed with Adam [26] using a batch size of 16, and is
+ran until either 100 epochs elapsed or convergence is reached
+(as measured by a decrease in training loss of less than 1%
+over 10 epochs).
+4https://rm.cab/stack
+5In OLAP workloads where nearly-identical queries are fre-
+quently repeated (e.g., dashboards), this may be an over-
+cautious procedure.
+Experiments in Section 5.2 are performed on Google Cloud
+Platform, using a N1-4 VM type unless otherwise noted.
+NVIDIA Tesla T4 GPUs are attached to VMs when needed.
+Cost and time measurements include query optimization,
+model training (including GPU time), and query execution.
+Costs are reported as billed by Google, and include startup
+times and minimum usage thresholds. Experiments in Sec-
+tion 5.3 are performed on a virtual machine with 4 CPU
+cores and 15 GB of RAM (to match the N1-4 VMs) on pri-
+vate server with two Intel(R) Xeon(R) Gold 6230 CPUs run-
+ning at 2.1 Ghz, an NVIDIA Tesla T4 GPU, and 256GB of
+system (bare metal) RAM.
+We compare Bao against the open source PostgreSQL
+database and a commercial database system (ComSys) we
+are not permitted to name [55]. Both systems are conﬁg-
+ured and tuned according to their respective documentation
+and best practices guide. A consultant from the company
+that produces the commercial system under test veriﬁed our
+conﬁguration with a small performance test. Bao’s chosen
+execution plan is always executed on the system being com-
+pared against: for example, when comparing against the
+PostgreSQL optimizer, Bao’s execution plans are always ex-
+ecuted on the PostgreSQL engine.
+Unless otherwise noted, we use a family of 48 hint sets,
+which each use some subset of the join operators{hash join,
+merge join, loop join} and some subset of the scan operators
+{sequential, index, index only}. For a detailed description,
+see the online appendix [1]. We found that setting the look-
+back window size to k = 2000 and retraining every n = 100
+queries provided a good tradeoﬀ between GPU time and
+query performance.
+5.2 Real-world performance
+In this section, we evaluate Bao’s performance in a real-
+istic warm-cache scenario. In these experiments, we aug-
+ment each leaf node vector with caching information as de-
+scribed in Section 3.1.1. For caching information, we queried
+the commercial system’s internal system tables to determine
+what percentage of each ﬁle was cached. We used a similar
+strategy for PostgreSQL, using the built-in pg buffercache
+extension in the contrib folder.
+Cost and performance in the cloud To evaluate Bao’s
+potential impact on both query performance and cost, we
+begin by evaluating Bao on the Google Cloud Platform [2].
+Figure 6a shows the cost (left) and time required (right) to
+execute the IMDb workload on various VM sizes when us-
+ing Bao and when using the PostgreSQL optimizer on the
+PostgreSQL engine. Generally, Bao achieves both a lower
+cost and a lower workload latency. For example, on a N1-16
+VM, Bao reduces costs by over 50% (from $4.60 to $2.20)
+while also reducing the total workload time from over six
+hours to just over three hours. The Bao costs do include
+the additional fee for renting a GPU: the increased query
+performance more than makes up for the cost incurred from
+attaching a GPU for training. The diﬀerence in both cost
+and performance is most signiﬁcant with larger VM types
+(e.g., N1-16 vs. N1-8), suggesting the Bao is better capable
+of tuning itself towards the changing hardware than Post-
+greSQL. We note that we did re-tune PostgreSQL for each
+hardware platform.
+Figure 6b shows the same comparison against the com-
+mercial database system. Again, Bao is capable of achieving
+lower cost and lower workload latency on all four tested ma-
+8
+
+=== PAGE 9 ===
+N1-2 N1-4 N1-8 N1-16
+PostgreSQL
+50% 95% 99% 99.5%
+Percentile
+0
+50
+100
+150Wall time (s)
+Bao
+PostgreSQL
+50% 95% 99% 99.5%
+Percentile
+0
+50
+100
+150Wall time (s)
+Bao
+PostgreSQL
+50% 95% 99% 99.5%
+Percentile
+0
+50
+100
+150Wall time (s)
+Bao
+PostgreSQL
+50% 95% 99% 99.5%
+Percentile
+0
+50
+100
+150Wall time (s)
+Bao
+PostgreSQLComSys
+50% 95% 99% 99.5%
+Percentile
+0
+50
+100
+150Wall time (s)
+Bao
+ComSys
+50% 95% 99% 99.5%
+Percentile
+0
+50
+100
+150Wall time (s)
+Bao
+ComSys
+50% 95% 99% 99.5%
+Percentile
+0
+50
+100
+150Wall time (s)
+Bao
+ComSys
+50% 95% 99% 99.5%
+Percentile
+0
+50
+100
+150Wall time (s)
+Bao
+ComSys
+Figure 8: Percentile latency for queries, IMDb workload. Each column represents a VM type, from smallest to largest. The
+top row compares Bao against the PostgreSQL optimizer on the PostgreSQL engine. The bottom row compares Bao against
+a commercial database system on the commercial system’s engine. Measured across the entire (dynamic) IMDb workload.
+chine types. However, the diﬀerence is less signiﬁcant, and
+the overall costs are much lower, suggesting the commercial
+system is a stronger baseline than PostgreSQL. For exam-
+ple, while Bao achieved almost a 50% cost and latency re-
+duction on the N1-16 machine compared to the PostgreSQL
+optimizer, Bao achieves only a 20% reduction compared to
+the commercial system. We also note that the improve-
+ments from Bao are no longer more signiﬁcant with larger
+VM types, indicating that the commercial system is more
+capable of adjusting to diﬀerent hardware. Note that these
+costs do not include the licensing fees for the commercial
+system, which were waived for the purposes of this research.
+Changing schema, workload, and data In Figure 7, we
+ﬁx the VM type to N1-16 and evaluate Bao on diﬀerent
+workloads. Bao shows signiﬁcant improvements over Post-
+greSQL, and marginal improvements against the commercial
+system. Th

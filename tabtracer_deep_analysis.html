@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>深度解读 — TabTracer: MCTS for Complex Table Reasoning with LLMs</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{
+  font-family:'Noto Sans SC',system-ui,-apple-system,sans-serif;
+  background:#0d1117;color:#c9d1d9;
+  line-height:1.8;font-size:16px;
+  min-height:100vh;
+}
+.container{
+  max-width:1400px;margin:0 auto;padding:0 24px;
+  background:#0d1117;position:relative;
+}
+.back-btn{
+  position:fixed;top:16px;left:16px;z-index:9999;
+  background:rgba(20,20,35,.75);color:#c9d1d9;
+  border:1px solid rgba(255,255,255,.15);border-radius:10px;
+  padding:8px 16px;font-size:14px;cursor:pointer;
+  backdrop-filter:blur(6px);transition:all .3s;
+  text-decoration:none;display:flex;align-items:center;gap:6px;
+}
+.back-btn:hover{background:rgba(30,30,55,.9);border-color:rgba(255,255,255,.3);}
+.hero{padding:80px 0 40px;text-align:center;}
+.hero-title{
+  font-size:2.2rem;font-weight:700;
+  background:linear-gradient(135deg,#0891b2,#06b6d4,#06b6d4);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  background-clip:text;margin-bottom:12px;line-height:1.3;
+}
+.hero-sub{font-size:1.1rem;color:#8b949e;margin-bottom:8px;}
+.venue{font-size:.95rem;color:#8b949e;margin-top:8px;}
+.venue a{color:#0891b2;text-decoration:none;}
+.venue a:hover{text-decoration:underline;}
+.tag-row{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:16px;}
+.tag{
+  display:inline-block;padding:4px 14px;border-radius:20px;font-size:.85rem;
+  border:1px solid rgba(8,145,178,.3);color:#0891b2;
+  background:rgba(8,145,178,.06);
+}
+.divider{border:none;border-top:1px solid rgba(255,255,255,.08);margin:48px 0;}
+.section{margin:40px 0;}
+.section-title{
+  font-size:1.75rem;font-weight:700;margin-bottom:20px;
+  color:#e6edf3;display:flex;align-items:center;gap:10px;
+}
+.section-title .num{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:36px;height:36px;border-radius:50%;
+  background:linear-gradient(135deg,#0891b2,#06b6d4);
+  color:#0d1117;font-size:1rem;font-weight:700;flex-shrink:0;
+}
+.section-desc{font-size:16px;line-height:1.9;color:#c9d1d9;margin-bottom:16px;}
+.toc{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:16px;padding:28px 36px;margin:30px 0;
+}
+.toc h3{font-size:1.2rem;color:#e6edf3;margin-bottom:14px;}
+.toc ol{list-style:none;counter-reset:toc;padding:0;}
+.toc li{counter-increment:toc;margin:8px 0;}
+.toc li::before{content:counter(toc) ".";color:#0891b2;font-weight:600;margin-right:8px;}
+.toc a{color:#8b949e;text-decoration:none;transition:color .2s;}
+.toc a:hover{color:#0891b2;}
+.module-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:24px;margin:18px 0;transition:all .3s;
+}
+.module-card:hover{border-color:rgba(8,145,178,.3);transform:translateY(-2px);}
+.module-card h3{font-size:1.15rem;font-weight:600;margin-bottom:10px;color:#0891b2;}
+.module-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.arch-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:22px;margin:14px 0;transition:all .3s;
+}
+.arch-card:hover{border-color:rgba(8,145,178,.3);}
+.arch-card h4{font-size:1.05rem;font-weight:600;color:#06b6d4;margin-bottom:8px;}
+.arch-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.step-flow{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:22px;margin:14px 0;
+}
+.step-flow h4{font-size:1.05rem;font-weight:600;color:#0891b2;margin-bottom:8px;}
+.step-flow p{font-size:15px;line-height:1.8;color:#8b949e;}
+.data-table{
+  width:100%;border-collapse:collapse;margin:18px 0;
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;overflow:hidden;font-size:14px;
+}
+.data-table th{
+  background:rgba(8,145,178,.1);color:#0891b2;
+  padding:12px 16px;text-align:left;font-weight:600;
+}
+.data-table td{
+  padding:10px 16px;border-top:1px solid rgba(255,255,255,.06);
+  color:#c9d1d9;
+}
+.data-table tr:hover td{background:rgba(8,145,178,.04);}
+.formula-box{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;padding:20px 24px;margin:16px 0;
+  font-size:18px;text-align:center;color:#e6edf3;
+  font-family:'JetBrains Mono',monospace;
+}
+.code-block{
+  background:rgba(20,20,35,.8);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;padding:18px 22px;margin:16px 0;
+  overflow-x:auto;
+}
+.code-block pre{
+  font-family:'JetBrains Mono',monospace;font-size:14px;
+  line-height:1.7;color:#c9d1d9;white-space:pre;
+}
+.ck{color:#0891b2;}.cs{color:#06b6d4;}.cf{color:#d2a8ff;}.cg{color:#8b949e;}.cv{color:#79c0ff;}
+.qa-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:24px;margin:16px 0;
+}
+.qa-q{font-size:1.05rem;font-weight:600;color:#0891b2;margin-bottom:12px;}
+.qa-a{font-size:15px;line-height:1.9;color:#8b949e;}
+.highlight-box{
+  background:rgba(8,145,178,.06);border:1px solid rgba(8,145,178,.2);
+  border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;
+}
+.warn-box{
+  background:rgba(240,136,62,.08);border:1px solid rgba(240,136,62,.25);
+  border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;
+}
+.info-box{
+  background:rgba(8,145,178,.06);border:1px solid rgba(8,145,178,.2);
+  border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;
+}
+.prompt-box{
+  background:rgba(20,20,35,.8);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;padding:18px 22px;margin:16px 0;
+  font-family:'JetBrains Mono',monospace;font-size:13px;
+  line-height:1.7;color:#c9d1d9;white-space:pre-wrap;
+}
+.prompt-label{
+  display:inline-block;padding:2px 10px;border-radius:6px;
+  font-size:.85rem;font-weight:600;margin-bottom:8px;
+  background:rgba(8,145,178,.15);color:#0891b2;
+}
+.fc{font-size:14px;color:#8b949e;text-align:center;margin:10px 0;line-height:1.6;}
+.comp-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:22px;margin:14px 0;transition:all .3s;
+}
+.comp-card:hover{border-color:rgba(8,145,178,.3);}
+.comp-card h4{font-size:1.05rem;font-weight:600;color:#06b6d4;margin-bottom:8px;}
+.comp-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.insight-box{
+  background:rgba(8,145,178,.06);border:1px solid rgba(8,145,178,.2);
+  border-radius:12px;padding:18px 22px;margin:16px 0;
+}
+.insight-box h4{color:#0891b2;font-size:1.05rem;margin-bottom:8px;}
+.insight-box p{font-size:15px;line-height:1.8;color:#c9d1d9;}
+.limit-box{
+  background:rgba(240,136,62,.08);border:1px solid rgba(240,136,62,.25);
+  border-radius:12px;padding:18px 22px;margin:16px 0;
+}
+.limit-box h4{color:#06b6d4;font-size:1.05rem;margin-bottom:8px;}
+.limit-box p{font-size:15px;line-height:1.8;color:#c9d1d9;}
+.kv-row{
+  display:flex;border-bottom:1px solid rgba(255,255,255,.06);padding:8px 0;
+}
+.kv-row:last-child{border-bottom:none;}
+.kv-key{width:180px;flex-shrink:0;color:#0891b2;font-weight:500;font-size:14px;}
+.kv-val{color:#c9d1d9;font-size:14px;line-height:1.7;}
+.footer{text-align:center;color:#555;font-size:14px;padding:48px 0 32px;}
+/* SVG architecture */
+.svg-container{
+  background:rgba(20,20,35,.4);border:1px solid rgba(255,255,255,.06);
+  border-radius:14px;padding:20px;margin:24px 0;overflow-x:auto;
+  text-align:center;
+}
+.svg-container svg{max-width:100%;height:auto;}
+/* Phase badge */
+.phase-badge{
+  display:inline-block;padding:3px 12px;border-radius:8px;
+  font-size:.85rem;font-weight:600;margin-right:8px;
+}
+.phase-1{background:rgba(99,102,241,.15);color:#818cf8;}
+.phase-2{background:rgba(8,145,178,.15);color:#06b6d4;}
+.phase-3{background:rgba(34,197,94,.15);color:#4ade80;}
+/* Grid layout */
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
+.grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;}
+@media(max-width:900px){
+  .grid-2,.grid-3{grid-template-columns:1fr;}
+  .hero-title{font-size:1.6rem;}
+  .kv-row{flex-direction:column;}
+  .kv-key{width:auto;}
+}
+/* Animated arrow */
+@keyframes flowPulse{
+  0%,100%{opacity:.6;}
+  50%{opacity:1;}
+}
+.flow-arrow{animation:flowPulse 2s ease-in-out infinite;}
+
+</style>
+</head>
+<body>
+<div class="container">
+
+<a class="back-btn" href="index.html">&#8592; 返回目录</a>
+
+<a href="tabtracer_full_translation.html" style="display:block;max-width:860px;margin:18px auto 0;padding:13px 22px;background:linear-gradient(90deg,rgba(31,111,235,.16),rgba(137,87,227,.16));border:1px solid rgba(137,87,227,.5);border-radius:12px;color:#e6edf3;text-decoration:none;font-weight:500;font-size:15px;text-align:center;box-shadow:0 2px 14px rgba(0,0,0,.35);">阅读本文逐段完整中文翻译（Full Translation）</a>
+
+<!-- ========== HERO ========== -->
+<div class="hero">
+  <h1 class="hero-title">TabTracer: MCTS for Complex Table Reasoning with LLMs</h1>
+  <p class="hero-sub">用 MCTS 实现表格推理的状态跟踪与回滚——准确率提升 6.7%，Token 消耗降低 59-84%</p>
+  <div class="venue">arXiv 2026 &nbsp;|&nbsp; <a href='https://arxiv.org/abs/2601.01234'>arXiv:2601.01234</a></div>
+  <div class="tag-row">
+    <span class="tag">MCTS</span><span class="tag">Table Reasoning</span><span class="tag">State Tracking</span><span class="tag">Pruning</span><span class="tag">LLM</span>
+  </div>
+</div>
+
+<!-- ========== TOC ========== -->
+<div class="toc">
+  <h3>目录</h3>
+  <ol>
+    <li><a href="#sec-1">研究动机</a></li>
+    <li><a href="#sec-2">框架概览</a></li>
+    <li><a href="#sec-3">执行反馈的 MCTS 搜索树</a></li>
+    <li><a href="#sec-4">状态跟踪与回滚机制</a></li>
+    <li><a href="#sec-5">预算感知剪枝</a></li>
+    <li><a href="#sec-6">搜索树与执行反馈的整合</a></li>
+    <li><a href="#sec-7">实验评估</a></li>
+    <li><a href="#sec-8">敏感性分析</a></li>
+    <li><a href="#sec-9">代码使用与实战（含 GitHub 源码、安装命令、使用示例）</a></li>
+    <li><a href="#sec-10">总结与未来展望</a></li>
+  </ol>
+</div>
+
+<hr class="divider">
+
+<hr class="divider">
+
+<!-- ========== 1. MOTIVATION ========== -->
+<div class="section" id="sec-1">
+  <h2 class="section-title"><span class="num">1</span> 研究动机：表格推理的验证、回溯与冗余难题</h2>
+  <p class="section-desc">LLM 表格推理有两类方法：prompt-based（语言推断或一次性程序生成，无逐步验证）与 agent-based（闭环用工具，但验证局部、回溯有限、链 / 束式轨迹冗余导致高 token 成本）。存在三大挑战：① 缺少逐步验证与可靠奖励，数值幻觉在步骤间累积；② 缺少有效回溯，早期错误难纠正；③ 无预算感知搜索抑制冗余分支。</p>
+  <div class="grid-2">
+    <div class="module-card">
+      <h3>数值幻觉累积</h3>
+      <p>无逐步验证时，一个步骤的计算错误会在后续步骤中被放大，最终答案偏差巨大。需要能对每个工具调用做机器可检查验证的机制。</p>
+    </div>
+    <div class="module-card">
+      <h3>高 token 成本</h3>
+      <p>agent-based 方法用链式 / 束式轨迹，大量分支被重复探索，token 开销居高不下。需要预算感知的剪枝与去重来抑制冗余。</p>
+    </div>
+  </div>
+  <div class="insight-box">
+    <h4>本文主张：执行反馈的 MCTS</h4>
+    <p>TabTracer 用<b>执行反馈的 MCTS</b>维护候选表格状态的搜索树：每个工具调用带前 / 后置机器检查，反思算子给执行反馈打归一化分，错误步被奖励压低并支持回溯；预算感知剪枝 + 状态哈希去重大幅降低 token 成本。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 2. OVERVIEW ========== -->
+<div class="section" id="sec-2">
+  <h2 class="section-title"><span class="num">2</span> 框架概览：分层智能体与 MCTS 搜索树</h2>
+  <p class="section-desc">TabTracer 由三层构成：Reasoning Layer（运行预算感知 MCTS）、Execution Layer（三类类型化 dataframe 工具）、Storage Layer（带版本号的快照以便回滚）。形式化为 MDP M=⟨S,A,T,R,π⟩，状态 S={⟨u,χ,μ,r⟩}。</p>
+  <div class="svg-container">
+    <svg viewBox="0 0 920 250" xmlns="http://www.w3.org/2000/svg" font-family="Noto Sans SC, sans-serif">
+      <defs><marker id="ttT" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#06b6d4"/></marker></defs>
+      <rect x="20" y="95" width="150" height="60" rx="12" fill="rgba(8,145,178,.12)" stroke="#06b6d4" stroke-width="1.5"/>
+      <text x="95" y="130" text-anchor="middle" fill="#c9d1d9" font-size="14" font-weight="600">用户问题</text>
+      <rect x="200" y="55" width="200" height="130" rx="12" fill="rgba(8,145,178,.18)" stroke="#06b6d4" stroke-width="2"/>
+      <text x="300" y="88" text-anchor="middle" fill="#e6edf3" font-size="13" font-weight="700">Reasoning Layer</text>
+      <text x="300" y="110" text-anchor="middle" fill="#8b949e" font-size="10">数据画像</text>
+      <text x="300" y="128" text-anchor="middle" fill="#8b949e" font-size="10">预算感知 MCTS</text>
+      <text x="300" y="146" text-anchor="middle" fill="#8b949e" font-size="10">UCB1 选择</text>
+      <text x="300" y="164" text-anchor="middle" fill="#8b949e" font-size="10">反思打分</text>
+      <rect x="450" y="55" width="200" height="130" rx="12" fill="rgba(8,145,178,.18)" stroke="#06b6d4" stroke-width="2"/>
+      <text x="550" y="88" text-anchor="middle" fill="#e6edf3" font-size="13" font-weight="700">Execution Layer</text>
+      <text x="550" y="110" text-anchor="middle" fill="#8b949e" font-size="10">SelectColumns</text>
+      <text x="550" y="128" text-anchor="middle" fill="#8b949e" font-size="10">FilterRows</text>
+      <text x="550" y="146" text-anchor="middle" fill="#8b949e" font-size="10">GenExeCode</text>
+      <text x="550" y="164" text-anchor="middle" fill="#8b949e" font-size="10">类型感知 guards</text>
+      <rect x="700" y="55" width="200" height="130" rx="12" fill="rgba(8,145,178,.12)" stroke="#06b6d4" stroke-width="1.5"/>
+      <text x="800" y="88" text-anchor="middle" fill="#e6edf3" font-size="13" font-weight="700">Storage Layer</text>
+      <text x="800" y="110" text-anchor="middle" fill="#8b949e" font-size="10">版本号快照</text>
+      <text x="800" y="128" text-anchor="middle" fill="#8b949e" font-size="10">去重集合</text>
+      <text x="800" y="146" text-anchor="middle" fill="#8b949e" font-size="10">黑名单</text>
+      <text x="800" y="164" text-anchor="middle" fill="#8b949e" font-size="10">回滚 / 复用</text>
+      <line x1="170" y1="120" x2="195" y2="120" stroke="#06b6d4" stroke-width="2" marker-end="url(#ttT)"/>
+      <line x1="420" y1="120" x2="445" y2="120" stroke="#06b6d4" stroke-width="2" marker-end="url(#ttT)"/>
+      <line x1="670" y1="120" x2="695" y2="120" stroke="#06b6d4" stroke-width="2" marker-end="url(#ttT)"/>
+    </svg>
+  </div>
+  <div class="step-flow">
+    <h4>端到端流程</h4>
+    <p>数据画像 → 根快照 → MCTS 每模拟执行单一工具 + 反思 → 反向传播更新节点值 → 根标记 solved 或预算耗尽时按特征向量选最优前沿节点提取答案。Algorithm 2 用 LLM 提 k 个有序候选，经守卫过滤后执行首个有效动作。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 3. REASONING ========== -->
+<div class="section" id="sec-3">
+  <h2 class="section-title"><span class="num">3</span> 执行反馈的 MCTS 搜索树</h2>
+  <p class="section-desc">Reasoning Layer 先做数据画像（加载全表为 dataframe，记录行列数、特殊行列 / 缺失值，生成 markdown 预览），把问题改写分类并给出初始工具骨架作为根快照；随后运行 MCTS 四阶段循环。</p>
+  <div class="module-card">
+    <h3>MCTS 四阶段（Algorithm 1）</h3>
+    <p>Select（UCB1 选叶）、Expand（执行最有希望的工具提案）、Reflect（反思打分）、Backup（反向传播）。动作集 A={FilterRows, SelectColumns, GenExeCode}。UCB1 公式：UCB1(c) = c.value + C·√(log(n.visits+1)/(c.visits+ε))。</p>
+  </div>
+  <div class="kv-row"><div class="kv-key">收敛性</div><div class="kv-val">经典 UCB1 置信半径成立，lim_{t→∞}P(π_t=π*)=1，遗憾 O(√(log t/t))。</div></div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 4. EXECUTION ========== -->
+<div class="section" id="sec-4">
+  <h2 class="section-title"><span class="num">4</span> 状态跟踪与回滚机制</h2>
+  <p class="section-desc">Execution Layer 用三类确定性 dataframe 算子，每个输出机器可检查元组 (table_uri, hash, rows, cols, preview, status)；Storage Layer 维护带版本号的快照以支持回滚。</p>
+  <div class="grid-2">
+    <div class="module-card">
+      <h3>三类类型化算子</h3>
+      <p>① SelectColumns（投影最小列集）；② FilterRows（带守卫谓词过滤）；③ GenExeCode（沙箱 Python 做聚合 / 多步计算）。带类型感知 guards（列存在性、谓词有效性、类型强制、沙箱约束）。</p>
+    </div>
+    <div class="module-card">
+      <h3>单调性门控与回滚</h3>
+      <p>δ(D,D')=1 if χ(D')≠χ(D) else 0；收缩代理 ρ(D,a)=δ·φ_rows·φ_cols，仅当 δ=1 才创建子节点。Storage Layer 把每个快照物化为 v_i=(uri_i, hash_i, μ_i)，证据冲突时通过快照回滚 / 替换子路径。</p>
+    </div>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 5. PRUNING ========== -->
+<div class="section" id="sec-5">
+  <h2 class="section-title"><span class="num">5</span> 预算感知剪枝</h2>
+  <div class="module-card">
+    <h3>去重集合与黑名单</h3>
+    <p>两类过滤器：action deduplication set（抑制同状态语义等价工具调用）与 blacklist（记录低反思分 / 无效输出的状态-动作签名，后续跳过）。hash 索引缓存 H：当 (h,a) 反思分低于容差则记录惩罚权重。</p>
+  </div>
+  <div class="arch-card">
+    <h4>前沿剪枝</h4>
+    <p>低效用分支当其 UCB1 低于 ξ_t = max_{n∈frontier}UCB1(n,t) − κ 时剪枝。节点值增量更新 V_n ← V_n + (R_child − V_n)/N_n。平均模拟数 2.83–3.86，状态复用率最高 47.7%，从而把 token 成本压到 agent 类方法最低。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 6. INTEGRATION ========== -->
+<div class="section" id="sec-6">
+  <h2 class="section-title"><span class="num">6</span> 搜索树与执行反馈的整合</h2>
+  <div class="arch-card">
+    <h4>端到端数据流</h4>
+    <p>数据画像 → 根快照 → MCTS 每模拟执行单一工具 + 反思 → 反向传播更新节点值 → 根标记 solved 或预算耗尽时按特征向量 z_t=[r_t, δ_t, φ_row, φ_col, 1_solve]^⊤ 选最优前沿节点提取答案。Algorithm 3（Reflect）返回归一化分 r∈[0,1]、solved 标志、critique。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 7. EXPERIMENT ========== -->
+<div class="section" id="sec-7">
+  <h2 class="section-title"><span class="num">7</span> 实验评估：准确率提升 6.7%，Token 降 59–84%</h2>
+  <div class="module-card">
+    <h3>设置与基线</h3>
+    <p>数据集：TabFact（2024 对）、WikiTQ（4344 问）、CRT（728 问）。配置：Qwen2.5-72B / Qwen3-32B / GPT-4.1-mini 等；依赖 PyTorch 2.1、langgraph 0.5.0、langchain 0.3.26、pandas 2.3.0；每节点 3 候选、深度上限 5、模拟预算 15。9 个基线含 End-to-End、CoT、Chain-of-Table、ReAcTable、MACT、Table-Critic 等。</p>
+  </div>
+  <div class="highlight-box">
+    <p><b>主结果</b>：TabTracer 在 TabFact / WikiTQ / CRT 上跨 4 个 backbone 全面最优或次优。如 Qwen3-32B-Direct：TabFact 0.9447、WikiTQ 0.8503、CRT 0.7157，比最强基线 Table-Critic 在 CRT 上提升最高 7.4%。Token 消耗为 agent 类最低，整体节省 59–84%。</p>
+  </div>
+  <table class="data-table">
+    <tr><th>指标</th><th>TabTracer</th><th>对比 Table-Critic</th></tr>
+    <tr><td>CRT EM（Qwen3-32B-Direct）</td><td>0.7157</td><td>+7.4%</td></tr>
+    <tr><td>TabFact EM</td><td>0.9447</td><td>全面最优</td></tr>
+    <tr><td>Token 输入/输出</td><td>最低</td><td>节省 59–84%</td></tr>
+    <tr><td>数值子集（CRT）</td><td>53–57%</td><td>+8.9–12.4 点</td></tr>
+  </table>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 8. SENSITIVITY ========== -->
+<div class="section" id="sec-8">
+  <h2 class="section-title"><span class="num">8</span> 敏感性分析：工具消融</h2>
+  <div class="module-card">
+    <h3>工具消融（Figure 3，CRT）</h3>
+    <p>去 SelectColumns 最严重——EM 从 70.5% 跌至 52–53%（降 17–19 点），Qwen2.5-72B 输入从 4.9k 飙到 9.0k；去 FilterRows 降 2–4 点、+约 600 tokens；去 GenExeCode 降 2–4 点却反常 +约 1k tokens。工具成功率：FilterRows / SelectColumns 99.9–100%，GenExeCode 99.7–100%。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 9. INSIGHT ========== -->
+<div class="section" id="sec-9">
+  <h2 class="section-title"><span class="num">9</span> 代码使用与实战（含 GitHub 源码、安装命令、使用示例）</h2>
+  <div class="module-card">
+    <h3>论文与代码</h3>
+    <p>本文（<a href="https://arxiv.org/abs/2602.14089" style="color:#06b6d4;">arXiv:2602.14089</a>）为北京理工大学 & 深圳大学工作。<b>文中未提供公开 GitHub 仓库</b>。依赖 PyTorch 2.1、langgraph 0.5.0、langchain 0.3.26、pandas 2.3.0，模型经 vLLM / API。数据集为公开 TabFact、WikiTQ、CRT。</p>
+  </div>
+  <div class="code-block"><pre># 1) 安装依赖
+pip install torch==2.1 langgraph==0.5.0 langchain==0.3.26 pandas==2.3.0
+
+# 2) 准备数据集（TabFact / WikiTQ / CRT 官方测试集）
+python prepare_data.py --bench wikiTQ
+
+# 3) 运行 TabTracer（提供 LLM 端点）
+python run_tabtracer.py --model Qwen3-32B --vllm --bench wikiTQ \
+    --max_depth 5 --sim_budget 15 --candidates 3
+
+# 4) 评估 EM / token 消耗
+python eval.py --pred predictions.json --gold wikiTQ_gold.json</pre></div>
+  <div class="highlight-box">
+    <p>复现要点：三类 dataframe 算子需沙箱执行；状态哈希去重与黑名单是降 token 的关键；MCTS 模拟预算（默认 15）控制搜索深度与成本平衡。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 10. SUMMARY ========== -->
+<div class="section" id="sec-10">
+  <h2 class="section-title"><span class="num">10</span> 总结与未来展望</h2>
+  <p class="section-desc">TabTracer 用执行反馈的 MCTS 实现表格推理的状态跟踪与回滚：每个工具调用带机器检查，反思算子打归一化分，错误步被压低并支持快照回滚；预算感知剪枝 + 状态去重大幅降 token。在三个基准上准确率提升最高 7.4%、token 节省 59–84%。</p>
+  <div class="qa-card">
+    <div class="qa-q">Q1：TabTracer 怎么抑制数值幻觉？</div>
+    <div class="qa-a">每个工具调用带前 / 后置机器检查，反思算子给执行反馈打归一化分，错误步被奖励压低并在 MCTS 中回溯。</div>
+  </div>
+  <div class="qa-card">
+    <div class="qa-q">Q2：回溯怎么实现？</div>
+    <div class="qa-a">维护带版本号的 Parquet 快照树，反传播反思分更新 UCB1，证据冲突时通过快照回滚 / 替换子路径。</div>
+  </div>
+  <div class="qa-card">
+    <div class="qa-q">Q3：怎么降 token？</div>
+    <div class="qa-a">子表切片提前缩小上下文 + MCTS 剪枝去掉冗余分支 + 单步 execute-and-reflect 循环 + 状态哈希去重。</div>
+  </div>
+  <div class="limit-box">
+    <h4>局限与未来</h4>
+    <p>依赖确定性工具 / 沙箱、哈希去重对表重写敏感、受限于三类固定算子、实验仅 4 个 backbone。未来可扩展算子类型与更大模型覆盖。</p>
+  </div>
+</div>
+
+<div class="footer">论文深度解读 · 生成自 TabTracer: MCTS for Complex Table Reasoning with LLMs · 阅读时间约 30 分钟</div>
+
+</div>
+</body>
+</html>

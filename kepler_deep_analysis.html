@@ -1,0 +1,773 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>深度解读 — Kepler: 鲁棒学习的参数化查询优化</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{font-family:'Noto Sans SC',system-ui,-apple-system,sans-serif;background:#0d1117;color:#c9d1d9;line-height:1.8;font-size:16px;min-height:100vh;}
+.container{max-width:1400px;margin:0 auto;padding:0 24px;background:#0d1117;position:relative;}
+.back-btn{position:fixed;top:16px;left:16px;z-index:9999;background:rgba(20,20,35,.75);color:#c9d1d9;border:1px solid rgba(255,255,255,.15);border-radius:10px;padding:8px 16px;font-size:14px;cursor:pointer;backdrop-filter:blur(6px);transition:all .3s;text-decoration:none;display:flex;align-items:center;gap:6px;}
+.back-btn:hover{background:rgba(30,30,55,.9);border-color:rgba(255,255,255,.3);}
+.hero{padding:80px 0 40px;text-align:center;}
+.hero-title{font-size:2.2rem;font-weight:700;background:linear-gradient(135deg,#818cf8,#6366f1,#a5b4fc);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:12px;line-height:1.3;}
+.hero-sub{font-size:1.1rem;color:#8b949e;margin-bottom:8px;}
+.venue{font-size:.95rem;color:#8b949e;margin-top:8px;}
+.venue a{color:#818cf8;text-decoration:none;}
+.venue a:hover{text-decoration:underline;}
+.tag-row{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:16px;}
+.tag{display:inline-block;padding:4px 14px;border-radius:20px;font-size:.85rem;border:1px solid rgba(129,140,248,.3);color:#818cf8;background:rgba(129,140,248,.06);}
+.divider{border:none;border-top:1px solid rgba(255,255,255,.08);margin:48px 0;}
+.section{margin:40px 0;}
+.section-title{font-size:1.75rem;font-weight:700;margin-bottom:20px;color:#e6edf3;display:flex;align-items:center;gap:10px;}
+.section-title .num{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#818cf8,#6366f1);color:#0d1117;font-size:1rem;font-weight:700;flex-shrink:0;}
+.section-desc{font-size:16px;line-height:1.9;color:#c9d1d9;margin-bottom:16px;}
+.toc{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:28px 36px;margin:30px 0;}
+.toc h3{font-size:1.2rem;color:#e6edf3;margin-bottom:14px;}
+.toc ol{list-style:none;counter-reset:toc;padding:0;}
+.toc li{counter-increment:toc;margin:8px 0;}
+.toc li::before{content:counter(toc) ".";color:#818cf8;font-weight:600;margin-right:8px;}
+.toc a{color:#8b949e;text-decoration:none;transition:color .2s;}
+.toc a:hover{color:#818cf8;}
+.module-card{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:24px;margin:18px 0;transition:all .3s;}
+.module-card:hover{border-color:rgba(129,140,248,.3);transform:translateY(-2px);}
+.module-card h3{font-size:1.15rem;font-weight:600;margin-bottom:10px;color:#818cf8;}
+.module-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.arch-card{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:22px;margin:14px 0;transition:all .3s;}
+.arch-card:hover{border-color:rgba(129,140,248,.3);}
+.arch-card h4{font-size:1.05rem;font-weight:600;color:#a5b4fc;margin-bottom:8px;}
+.arch-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.step-flow{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:22px;margin:14px 0;}
+.step-flow h4{font-size:1.05rem;font-weight:600;color:#818cf8;margin-bottom:8px;}
+.step-flow p{font-size:15px;line-height:1.8;color:#8b949e;}
+.data-table{width:100%;border-collapse:collapse;margin:18px 0;background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:12px;overflow:hidden;font-size:14px;}
+.data-table th{background:rgba(129,140,248,.1);color:#818cf8;padding:12px 16px;text-align:left;font-weight:600;}
+.data-table td{padding:10px 16px;border-top:1px solid rgba(255,255,255,.06);color:#c9d1d9;}
+.data-table tr:hover td{background:rgba(129,140,248,.04);}
+.formula-box{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:20px 24px;margin:16px 0;font-size:18px;text-align:center;color:#e6edf3;font-family:'JetBrains Mono',monospace;}
+.code-block{background:rgba(20,20,35,.8);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:18px 22px;margin:16px 0;overflow-x:auto;}
+.code-block pre{font-family:'JetBrains Mono',monospace;font-size:14px;line-height:1.7;color:#c9d1d9;white-space:pre;}
+.ck{color:#818cf8;}.cs{color:#a5b4fc;}.cf{color:#d2a8ff;}.cg{color:#8b949e;}.cv{color:#79c0ff;}
+.qa-card{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:24px;margin:16px 0;}
+.qa-q{font-size:1.05rem;font-weight:600;color:#818cf8;margin-bottom:12px;}
+.qa-a{font-size:15px;line-height:1.9;color:#8b949e;}
+.highlight-box{background:rgba(129,140,248,.06);border:1px solid rgba(129,140,248,.2);border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;}
+.warn-box{background:rgba(165,180,252,.08);border:1px solid rgba(165,180,252,.25);border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;}
+.info-box{background:rgba(129,140,248,.06);border:1px solid rgba(129,140,248,.2);border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;}
+.prompt-box{background:rgba(20,20,35,.8);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:18px 22px;margin:16px 0;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.7;color:#c9d1d9;white-space:pre-wrap;}
+.prompt-label{display:inline-block;padding:2px 10px;border-radius:6px;font-size:.85rem;font-weight:600;margin-bottom:8px;background:rgba(129,140,248,.15);color:#818cf8;}
+.fc{font-size:14px;color:#8b949e;text-align:center;margin:10px 0;line-height:1.6;}
+.comp-card{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:22px;margin:14px 0;transition:all .3s;}
+.comp-card:hover{border-color:rgba(129,140,248,.3);}
+.comp-card h4{font-size:1.05rem;font-weight:600;color:#a5b4fc;margin-bottom:8px;}
+.comp-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.insight-box{background:rgba(129,140,248,.06);border:1px solid rgba(129,140,248,.2);border-radius:12px;padding:18px 22px;margin:16px 0;}
+.insight-box h4{color:#818cf8;font-size:1.05rem;margin-bottom:8px;}
+.insight-box p{font-size:15px;line-height:1.8;color:#c9d1d9;}
+.limit-box{background:rgba(165,180,252,.08);border:1px solid rgba(165,180,252,.25);border-radius:12px;padding:18px 22px;margin:16px 0;}
+.limit-box h4{color:#a5b4fc;font-size:1.05rem;margin-bottom:8px;}
+.limit-box p{font-size:15px;line-height:1.8;color:#c9d1d9;}
+.kv-row{display:flex;border-bottom:1px solid rgba(255,255,255,.06);padding:8px 0;}
+.kv-row:last-child{border-bottom:none;}
+.kv-key{width:180px;flex-shrink:0;color:#818cf8;font-weight:500;font-size:14px;}
+.kv-val{color:#c9d1d9;font-size:14px;line-height:1.7;}
+.footer{text-align:center;color:#555;font-size:14px;padding:48px 0 32px;}
+.svg-container{background:rgba(20,20,35,.4);border:1px solid rgba(255,255,255,.06);border-radius:14px;padding:20px;margin:24px 0;overflow-x:auto;text-align:center;}
+.svg-container svg{max-width:100%;height:auto;}
+.phase-badge{display:inline-block;padding:3px 12px;border-radius:8px;font-size:.85rem;font-weight:600;margin-right:8px;}
+.phase-1{background:rgba(129,140,248,.15);color:#a5b4fc;}
+.phase-2{background:rgba(165,180,252,.15);color:#c7d2fe;}
+.phase-3{background:rgba(120,180,80,.15);color:#90d27d;}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
+.grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;}
+.fig-img{background:rgba(20,20,35,.4);border:1px solid rgba(255,255,255,.06);border-radius:14px;padding:16px;margin:24px 0;text-align:center;}
+.fig-img img{max-width:100%;height:auto;border-radius:8px;}
+@media(max-width:900px){
+  .grid-2,.grid-3{grid-template-columns:1fr;}
+  .hero-title{font-size:1.6rem;}
+  .kv-row{flex-direction:column;}
+  .kv-key{width:auto;}
+}
+@keyframes flowPulse{0%,100%{opacity:.6;}50%{opacity:1;}}
+.flow-arrow{animation:flowPulse 2s ease-in-out infinite;}
+.translation h3{font-size:1.3rem;color:#a5b4fc;margin:26px 0 12px;font-weight:700;}
+.translation h4{font-size:1.1rem;color:#818cf8;margin:18px 0 8px;font-weight:600;}
+.translation p{font-size:15.5px;line-height:1.95;color:#c9d1d9;margin-bottom:12px;}
+.fig-note{background:rgba(129,140,248,.07);border-left:3px solid #818cf8;border-radius:8px;padding:12px 18px;margin:14px 0;font-size:14.5px;color:#aeb8f7;line-height:1.8;}
+.fig-note b{color:#a5b4fc;}
+</style>
+</head>
+<body>
+<div class="container">
+
+<a class="back-btn" href="index.html">&#8592; 返回目录</a>
+
+<a href="kepler_full_translation.html" style="display:block;max-width:860px;margin:18px auto 0;padding:13px 22px;background:linear-gradient(90deg,rgba(31,111,235,.16),rgba(137,87,227,.16));border:1px solid rgba(137,87,227,.5);border-radius:12px;color:#e6edf3;text-decoration:none;font-weight:500;font-size:15px;text-align:center;box-shadow:0 2px 14px rgba(0,0,0,.35);">阅读本文逐段完整中文翻译（Full Translation）</a>
+
+<!-- ========== HERO ========== -->
+<div class="hero">
+  <h1 class="hero-title">Kepler: 鲁棒学习的参数化查询优化</h1>
+  <p class="hero-sub">用「行数演化（RCE）生成候选计划 + 真实执行数据训练 + 鲁棒 SNGP 模型兜底」让参数化查询在 PostgreSQL 上稳定提速</p>
+  <div class="venue">
+    SIGMOD/PACMMOD 2023 (Proc. ACM Manag. Data 1(1), Article 109) &nbsp;|&nbsp;
+    <a href="https://arxiv.org/abs/2306.06798">arXiv: 2306.06798</a> &nbsp;|&nbsp;
+    <a href="https://github.com/google/kepler">GitHub: google/kepler</a>
+  </div>
+  <div class="tag-row">
+    <span class="tag">Parametric Query Optimization</span>
+    <span class="tag">Row Count Evolution</span>
+    <span class="tag">SNGP</span>
+    <span class="tag">Uncertainty</span>
+    <span class="tag">PostgreSQL</span>
+    <span class="tag">Robustness</span>
+  </div>
+</div>
+
+<!-- ========== TOC ========== -->
+<div class="toc">
+  <h3>目录</h3>
+  <ol>
+    <li><a href="#sec-1">研究动机：为何参数化查询优化需要「鲁棒」</a></li>
+    <li><a href="#sec-2">框架概览：解耦生成与预测 + Trainer/Client 架构</a></li>
+    <li><a href="#sec-3">问题定义：候选集、最优加速比与尾延迟</a></li>
+    <li><a href="#sec-4">核心算法 Row Count Evolution（RCE）与实例</a></li>
+    <li><a href="#sec-5">训练数据采集：自适应超时与计划覆盖剪枝</a></li>
+    <li><a href="#sec-6">鲁棒最优计划预测：特征、多标签损失与 SNGP 兜底</a></li>
+    <li><a href="#sec-7">实验评估：Stack / TPC-H 上的加速与回归</a></li>
+    <li><a href="#sec-8">敏感性分析：代数 G、置信阈值与训练数据量</a></li>
+    <li><a href="#sec-9">代码使用与实战（GitHub / 安装 / 复现）</a></li>
+    <li><a href="#sec-10">总结、局限与未来工作</a></li>
+    <li><a href="#sec-11">全文中文翻译（对应嵌入图片）</a></li>
+  </ol>
+</div>
+
+<!-- ========== SEC 1 ========== -->
+<div class="section" id="sec-1">
+  <h2 class="section-title"><span class="num">1</span>研究动机：为何参数化查询优化需要「鲁棒」</h2>
+  <p class="section-desc">参数化查询（parametric query）是指 SQL 结构完全相同、仅绑定的参数值不同的查询，例如同一模板的不同用户 ID。它们在生产中高频重复执行，是数据库优化的「低垂果实」。Kepler 的核心主张是：把优化问题限定在参数化查询这一更可控的设定下，可以用「学习」的方式稳定地超过传统优化器，同时把性能回退（regression）降到最低。</p>
+
+  <div class="module-card">
+    <h3>传统学习型优化器（LQO）的四类通病</h3>
+    <p><b>① 推理开销高：</b>许多学习型方法推理时间比传统方法还慢，难以放进查询关键路径。</p>
+    <p><b>② 跨数据分布不稳定：</b>在不同规模、不同分布的数据集上表现忽好忽坏，缺乏一致性。</p>
+    <p><b>③ 收益不清晰：</b>很多系统究竟把端到端延迟改善了多少，说不清楚。</p>
+    <p><b>④ 缺乏鲁棒性（最关键）：</b>在生产中，任何一次「比原有优化器更慢」的回退都是不可接受的，而学习方法通常<strong>无法保证</strong>自己的每一次预测都更快。</p>
+  </div>
+
+  <div class="highlight-box">
+    <b>Kepler 的三个关键差异（相对此前工作 [34] 的 decouple 思路）：</b><br>
+    1. <strong>更好的候选生成</strong>：提出 Row Count Evolution（RCE），通过扰动优化器的基数（cardinality）估计来高效生成候选计划，往往能找到比内置优化器快得多的计划——甚至比「精确基数（exact cardinality）」计划还快。<br>
+    2. <strong>用真实执行数据训练</strong>：不再依赖容易失准的代价模型（cost model），而是真正执行候选计划、用实际延迟做监督信号，规避了「代价估计 ≠ 实际延迟」的经典错位。<br>
+    3. <strong>鲁棒模型兜底</strong>：用 Spectral-normalized Neural Gaussian Processes（SNGP）量化预测置信度，不确信时直接回退到数据库自带优化器，大幅减少尾延迟与回退频率。
+  </div>
+
+  <div class="insight-box">
+    <h4>一句话总结贡献</h4>
+    <p>Kepler 首次给出「针对参数化查询、能稳定超过经典优化器」的实用范式；提出 RCE 候选生成算法；证明鲁棒 ML 能在捕获大部分加速的同时极大降低回退风险；端到端集成到 PostgreSQL 且推理开销可忽略；并开源了约 <strong>14.2 CPU 年</strong>的查询执行数据集（首个面向 PQO 的基准）。</p>
+  </div>
+</div>
+
+<!-- ========== SEC 2 ========== -->
+<div class="section" id="sec-2">
+  <h2 class="section-title"><span class="num">2</span>框架概览：解耦生成与预测 + Trainer/Client 架构</h2>
+  <p class="section-desc">Kepler 沿用了 [34] 的「解耦」思想：把问题拆成两个独立的子问题——(1) 候选生成（candidate generation）为模板 𝑄 生成一组候选计划；(2) 最优计划预测（best-plan prediction）学习一个从查询实例到计划的映射 𝑀。与 [34] 想「匹配内置优化器」不同，Kepler 的目标是<strong>尽可能超过</strong>内置优化器。</p>
+
+  <div class="arch-card">
+    <h4>2.1 问题设定（3.1）</h4>
+    <p>模板 𝑄 含 𝑚 个参数化谓词 𝑥₀…𝑥ₘ₋₁。一个查询实例 𝑞 是 𝑄 绑定了具体参数值后的实例。计划 𝑝 描述如何执行任意 𝑞∼𝑄。子计划（sub-plan）是 𝑄 只保留部分表的结果，其输出行数称为<strong>子计划基数</strong>。默认计划 𝑝_default(𝑞) 是内置优化器为 𝑞 选的计划。</p>
+  </div>
+
+  <div class="svg-container">
+    <svg viewBox="0 0 960 320" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif">
+      <defs>
+        <marker id="ar2" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#a5b4fc"/></marker>
+      </defs>
+      <rect x="10" y="10" width="940" height="44" rx="10" fill="rgba(129,140,248,.08)" stroke="rgba(129,140,248,.3)"/>
+      <text x="30" y="38" fill="#a5b4fc" font-size="15" font-weight="700">Kepler Trainer（离线训练侧 · 每个模板独立）</text>
+
+      <rect x="20" y="74" width="160" height="64" rx="10" fill="rgba(20,20,35,.8)" stroke="#818cf8"/>
+      <text x="100" y="100" fill="#e6edf3" font-size="13" text-anchor="middle" font-weight="700">生产 DBMS</text>
+      <text x="100" y="120" fill="#8b949e" font-size="12" text-anchor="middle">查询日志</text>
+
+      <rect x="230" y="74" width="180" height="64" rx="10" fill="rgba(20,20,35,.8)" stroke="#818cf8"/>
+      <text x="320" y="100" fill="#e6edf3" font-size="13" text-anchor="middle" font-weight="700">聚合为模板 𝑄ᵢ</text>
+      <text x="320" y="120" fill="#8b949e" font-size="12" text-anchor="middle">按模板分组</text>
+
+      <rect x="450" y="74" width="190" height="64" rx="10" fill="rgba(20,20,35,.8)" stroke="#818cf8"/>
+      <text x="545" y="100" fill="#e6edf3" font-size="13" text-anchor="middle" font-weight="700">RCE 候选生成</text>
+      <text x="545" y="120" fill="#8b949e" font-size="12" text-anchor="middle">扰动基数 → 计划集</text>
+
+      <rect x="680" y="74" width="160" height="64" rx="10" fill="rgba(20,20,35,.8)" stroke="#818cf8"/>
+      <text x="760" y="100" fill="#e6edf3" font-size="13" text-anchor="middle" font-weight="700">执行收集</text>
+      <text x="760" y="120" fill="#8b949e" font-size="12" text-anchor="middle">统计延迟</text>
+
+      <rect x="870" y="74" width="80" height="64" rx="10" fill="rgba(20,20,35,.8)" stroke="#a5b4fc"/>
+      <text x="910" y="100" fill="#e6edf3" font-size="12" text-anchor="middle" font-weight="700">训练</text>
+      <text x="910" y="120" fill="#8b949e" font-size="11" text-anchor="middle">ML 模型</text>
+
+      <line x1="180" y1="106" x2="228" y2="106" stroke="#a5b4fc" stroke-width="2" marker-end="url(#ar2)"/>
+      <line x1="410" y1="106" x2="448" y2="106" stroke="#a5b4fc" stroke-width="2" marker-end="url(#ar2)"/>
+      <line x1="640" y1="106" x2="678" y2="106" stroke="#a5b4fc" stroke-width="2" marker-end="url(#ar2)"/>
+      <line x1="840" y1="106" x2="868" y2="106" stroke="#a5b4fc" stroke-width="2" marker-end="url(#ar2)"/>
+
+      <rect x="10" y="170" width="940" height="44" rx="10" fill="rgba(120,180,80,.08)" stroke="rgba(120,180,80,.3)"/>
+      <text x="30" y="198" fill="#90d27d" font-size="15" font-weight="700">Kepler Client（在线推理侧 · 部署到生产 DBMS）</text>
+
+      <rect x="20" y="234" width="200" height="64" rx="10" fill="rgba(20,20,35,.8)" stroke="#a5b4fc"/>
+      <text x="120" y="260" fill="#e6edf3" font-size="13" text-anchor="middle" font-weight="700">收到查询实例 𝑞</text>
+      <text x="120" y="280" fill="#8b949e" font-size="12" text-anchor="middle">查模板→模型</text>
+
+      <rect x="260" y="234" width="220" height="64" rx="10" fill="rgba(20,20,35,.8)" stroke="#a5b4fc"/>
+      <text x="370" y="260" fill="#e6edf3" font-size="13" text-anchor="middle" font-weight="700">模型推理</text>
+      <text x="370" y="280" fill="#8b949e" font-size="12" text-anchor="middle">预测 plan + 置信度</text>
+
+      <rect x="510" y="234" width="240" height="64" rx="10" fill="rgba(20,20,35,.8)" stroke="#a5b4fc"/>
+      <text x="630" y="260" fill="#e6edf3" font-size="13" text-anchor="middle" font-weight="700">置信度 &gt; 阈值?</text>
+      <text x="630" y="280" fill="#8b949e" font-size="12" text-anchor="middle">是→plan hints；否→优化器</text>
+
+      <rect x="770" y="234" width="180" height="64" rx="10" fill="rgba(20,20,35,.8)" stroke="#90d27d"/>
+      <text x="860" y="260" fill="#e6edf3" font-size="13" text-anchor="middle" font-weight="700">执行查询</text>
+      <text x="860" y="280" fill="#8b949e" font-size="12" text-anchor="middle">用 hint / 默认</text>
+
+      <line x1="220" y1="266" x2="258" y2="266" stroke="#a5b4fc" stroke-width="2" marker-end="url(#ar2)"/>
+      <line x1="480" y1="266" x2="508" y2="266" stroke="#a5b4fc" stroke-width="2" marker-end="url(#ar2)"/>
+      <line x1="750" y1="266" x2="768" y2="266" stroke="#a5b4fc" stroke-width="2" marker-end="url(#ar2)"/>
+    </svg>
+    <p class="fc">图 2（Kepler 架构）：左侧 Trainer 从生产日志聚合模板、用 RCE 生成候选、执行收集延迟、训练模型并部署；右侧 Client 在收到查询时做推理，仅当置信度高于阈值才下发 plan hints，否则回退优化器。</p>
+  </div>
+
+  <div class="grid-2">
+    <div class="arch-card">
+      <h4>2.2 Trainer 职责</h4>
+      <p>从生产 DBMS 的查询日志中聚合出查询模板；对每个模板 𝑄ᵢ 用 RCE 生成候选计划 𝑝_k 并执行、收集执行统计；用真实延迟训练一个「参数值 → 最优计划」的模型；把训练好的模型部署回生产库。</p>
+    </div>
+    <div class="arch-card">
+      <h4>2.3 Client 职责与兜底</h4>
+      <p>维护「模板 → 模型」映射。收到 𝑞 时先做模型推理预测最佳 plan hints，<strong>仅当置信度分数高于阈值时才把 hints 交给优化器</strong>；否则回退到内置优化器。这样即便模型不在分布内（OOD），也不会产生灾难性回退。</p>
+    </div>
+  </div>
+
+  <div class="limit-box">
+    <h4>2.4 关键设计选择（3.3）</h4>
+    <p><b>用真实执行延迟：</b>目标就是端到端延迟，因此必须在真实库上执行以获得真值；可用临时（ephemeral）实例隔离训练负载。<br>
+    <b>减少对代价模型的依赖：</b>图 3 显示 PostgreSQL 估计基数中 64% 都估成 1（独立性假设所致），因此 Kepler 不靠代价估计评判计划好坏。<br>
+    <b>回退优化器：</b>不确信时就回退，推理开销极低，整体几乎总是低于「永远优化（Opt-Always）」。<br>
+    <b>模板独立：</b>每个模板各自生成候选、收集数据、训练专属模型，避免互相拖累、便于隔离回退。</p>
+  </div>
+</div>
+
+<!-- ========== SEC 3 ========== -->
+<div class="section" id="sec-3">
+  <h2 class="section-title"><span class="num">3</span>问题定义：候选集、最优加速比与尾延迟</h2>
+  <p class="section-desc">Kepler 把参数化查询优化形式化为两个可度量的子问题，并定义了用来评估「生成」与「预测」各自贡献的指标。</p>
+
+  <div class="module-card">
+    <h3>3.1 两个子问题</h3>
+    <p><b>(1) 候选生成：</b>从指数级大的所有可能计划空间 𝒫 中，为模板 𝑄 生成候选集 {𝑝₀,…,𝑝_{𝑘−1}}（对应 [34] 的 populateCache）。</p>
+    <p><b>(2) 最优计划预测：</b>学习映射 𝑀:𝒲→𝒫，最小化执行延迟类目标（对应 [34] 的 getPlan）。</p>
+  </div>
+
+  <div class="formula-box">
+    Sₒₚₜ(𝒫,𝒲) = Σ_{𝑞∈𝒲} ExecTime(p_default, 𝑞) / Σ_{𝑞∈𝒲} ExecTime(p*ₒₚₜ, 𝑞) &nbsp;—&nbsp; 公式(1) 神谕加速比
+  </div>
+  <p class="section-desc">其中 p*ₒₚₜ 是候选集 𝒫 上的最优计划（实际执行时间最小）。该比值即「若有神谕告知每实例最优计划，总执行时间可缩小的倍数」。由于可把默认计划并入 𝒫，该比值下界为 1。</p>
+
+  <div class="formula-box">
+    S_model(𝒲) = Σ_{𝑞∈𝒲} ExecTime(p_default, 𝑞) / Σ_{𝑞∈𝒲} ExecTime(p_model, 𝑞) &nbsp;—&nbsp; 公式(2) 模型加速比
+  </div>
+  <p class="section-desc">模型加速比衡量「模型执行整个 workload 比默认优化器快多少」。它<strong>上界是 Sₒₚₜ</strong>，但<strong>下界不是 1</strong>——模型完全可能选到比默认还差的计划。二者的关系为 S_model = p · S_RCE，其中 0≤p≤1 是模型捕获到的加速比例。</p>
+
+  <div class="grid-3">
+    <div class="comp-card">
+      <h4>端到端指标</h4>
+      <p>S_model：模型最终带来的整体加速。</p>
+    </div>
+    <div class="comp-card">
+      <h4>生成指标</h4>
+      <p>S_RCE：候选集本身包含多快计划（神谕上限）。</p>
+    </div>
+    <div class="comp-card">
+      <h4>模型指标</h4>
+      <p>p（捕获比例）与 P_reg（回退频率，模型比默认慢 ≥10% 的比例）。</p>
+    </div>
+  </div>
+
+  <div class="info-box">
+    <b>尾延迟目标：</b>Kepler 还额外关注 workload 的<strong>尾延迟</strong>。论文定义 99 分位加速比 P99_method(𝒲) = p99({ExecTime(p_default,𝑞)}) / p99({ExecTime(p_method,𝑞)})，对「要求更均匀运行时间」的场景很重要。
+  </div>
+</div>
+
+<!-- ========== SEC 4 ========== -->
+<div class="section" id="sec-4">
+  <h2 class="section-title"><span class="num">4</span>核心算法 Row Count Evolution（RCE）与实例</h2>
+  <p class="section-desc">候选生成的目标是在「包含近最优计划」与「候选集足够小以便训练执行」之间取得平衡。RCE 的核心洞见是：<strong>基数误估计是优化器次优的根本原因</strong>。因此 RCE 不去直接找单个好计划，而是去「覆盖」一个含近最优计划的集合——它通过随机扰动优化器的子计划基数估计，让优化器重新规划，从而产生多样化候选。</p>
+
+  <div class="step-flow">
+    <h4>4.1 RCE 算法（Algorithm 1）直觉</h4>
+    <p>RCE 是一种进化式（evolutionary）算法：维护若干「代（generation）」计划。第 0 代只有优化器原本的计划。对后续每一代：先从父代均匀采样若干 base 计划，对每个 base 计划只扰动<strong>它实际出现的那些子计划</strong>的 join 基数（乘以指数间距的因子），把扰动后的基数喂回优化器得到子代计划；只保留「从未出现过的」计划进入下一代。如此迭代 𝐺 代。</p>
+  </div>
+
+  <div class="svg-container">
+    <svg viewBox="0 0 960 280" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif">
+      <defs><marker id="ar4" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#a5b4fc"/></marker></defs>
+      <rect x="20" y="20" width="240" height="70" rx="10" fill="rgba(20,20,35,.8)" stroke="#818cf8"/>
+      <text x="140" y="48" fill="#e6edf3" font-size="13" text-anchor="middle" font-weight="700">Base plan (Gen 0)</text>
+      <text x="140" y="70" fill="#8b949e" font-size="12" text-anchor="middle">|A⋈B|=40, |C⋈D|=17</text>
+
+      <text x="320" y="30" fill="#a5b4fc" font-size="12">② 采样 S 个 base</text>
+      <text x="320" y="50" fill="#a5b4fc" font-size="12">③ 扰动 |⋈| ×N</text>
+
+      <rect x="360" y="20" width="260" height="70" rx="10" fill="rgba(20,20,35,.8)" stroke="#818cf8"/>
+      <text x="490" y="46" fill="#e6edf3" font-size="13" text-anchor="middle" font-weight="700">Gen 1 候选行数</text>
+      <text x="490" y="68" fill="#8b949e" font-size="11" text-anchor="middle">A⋈B∈[4,40,400], C⋈D∈[1,17,170]</text>
+
+      <rect x="660" y="20" width="280" height="70" rx="10" fill="rgba(20,20,35,.8)" stroke="#a5b4fc"/>
+      <text x="800" y="46" fill="#e6edf3" font-size="13" text-anchor="middle" font-weight="700">Gen 1 计划 C₁</text>
+      <text x="800" y="68" fill="#8b949e" font-size="11" text-anchor="middle">如 400×17 → Plan-1</text>
+
+      <line x1="260" y1="55" x2="358" y2="55" stroke="#a5b4fc" stroke-width="2" marker-end="url(#ar4)"/>
+      <line x1="620" y1="55" x2="658" y2="55" stroke="#a5b4fc" stroke-width="2" marker-end="url(#ar4)"/>
+
+      <rect x="20" y="150" width="240" height="70" rx="10" fill="rgba(20,20,35,.8)" stroke="#818cf8"/>
+      <text x="140" y="178" fill="#e6edf3" font-size="13" text-anchor="middle" font-weight="700">Gen 1 去重后采样 S</text>
+      <text x="140" y="200" fill="#8b949e" font-size="11" text-anchor="middle">再扰动 N 次</text>
+
+      <rect x="360" y="150" width="260" height="70" rx="10" fill="rgba(20,20,35,.8)" stroke="#818cf8"/>
+      <text x="490" y="178" fill="#e6edf3" font-size="13" text-anchor="middle" font-weight="700">Gen 2 候选行数</text>
+      <text x="490" y="200" fill="#8b949e" font-size="11" text-anchor="middle">更多组合</text>
+
+      <rect x="660" y="150" width="280" height="70" rx="10" fill="rgba(20,20,35,.8)" stroke="#a5b4fc"/>
+      <text x="800" y="178" fill="#e6edf3" font-size="13" text-anchor="middle" font-weight="700">Gen 2 计划 C₂ (≤S·N)</text>
+      <text x="800" y="200" fill="#8b949e" font-size="11" text-anchor="middle">合并 C₀∪C₁∪…∪C_G</text>
+
+      <line x1="260" y1="185" x2="358" y2="185" stroke="#a5b4fc" stroke-width="2" marker-end="url(#ar4)"/>
+      <line x1="620" y1="185" x2="658" y2="185" stroke="#a5b4fc" stroke-width="2" marker-end="url(#ar4)"/>
+      <text x="490" y="135" fill="#8b949e" font-size="11" text-anchor="middle">① 仅扰动父计划中实际出现的子计划基数</text>
+    </svg>
+    <p class="fc">图 4（论文 Figure 4 示意）：RCE 用指数间距的基数扰动（base=10, range=1 → [4,40,400] 与 [1,17,170]）喂给优化器，逐代演化出 C₁、C₂ 计划集。</p>
+  </div>
+
+  <div class="module-card">
+    <h3>4.2 论文给出的具体例子（第 9–10 页）</h3>
+    <p>某查询实例有两个 join：<strong>A⋈B 估计基数 40，C⋈D 估计基数 17</strong>。RCE 用 base=10、range=1 构造候选行数集合：A⋈B → [4, 40, 400]，C⋈D → [1, 17, 170]。</p>
+    <p>① RCE 从这些集合中均匀采样新 join 基数；例如一次采样为 400 和 17，就「诱导」优化器产生一个新计划 Plan-1（Gen 1）。重复 N 次得到 C₁ 个 Gen-1 计划。</p>
+    <p>② 接着从 Gen-1 去重后的计划里采样 S 个，对每个再随机扰动 N 次，生成 Gen-2 的 C₂ 个计划。</p>
+    <p>③ 最终候选集 = C₀ ∪ C₁ ∪ … ∪ C_G。</p>
+  </div>
+
+  <div class="grid-2">
+    <div class="arch-card">
+      <h4>4.3 RCE 的几种解读</h4>
+      <p><b>精确基数匹配：</b>RCE 高效构造了一个「覆盖多种精确基数」的计划集合；扰动足够多时，任一实例的精确基数大概率是其中某个扰动点的近邻，对应计划也相近。</p>
+      <p><b>乘法扰动：</b>符合基数估计的 Q-error 度量；指数间距的扰动集与优化器 Q-error 分布有相似支撑。</p>
+      <p><b>局部搜索：</b>RCE 本质是在「子计划基数」这个低维子空间里做随机游走，起点是优化器估计（虽不准但比随机更有信息）。</p>
+    </div>
+    <div class="arch-card">
+      <h4>4.4 为什么只扰动「相关」子计划</h4>
+      <p>一个 n 表 join 共有 2ⁿ−1 个子计划，但 RCE 只扰动<strong>采样计划中实际出现的 n−1 个子计划</strong>的基数。这极大提升效率、仅损失很小 generality：因为扰动在代际间继承，只有「基数被严重高估」的子计划才永不被扰动——而优化器因独立性假设往往<strong>低估</strong>而非高估，故该情况罕见。</p>
+    </div>
+  </div>
+
+  <div class="data-table">
+    <table>
+      <thead><tr><th>记号</th><th>含义</th></tr></thead>
+      <tbody>
+        <tr><td>𝐺</td><td>演化代数（generations）</td></tr>
+        <tr><td>𝑏</td><td>基数扰动的指数底（base）</td></tr>
+        <tr><td>𝑚</td><td>基数扰动的指数范围（range）</td></tr>
+        <tr><td>𝑆</td><td>每代从父代采样的计划数</td></tr>
+        <tr><td>𝑁</td><td>对每个候选计划的扰动次数</td></tr>
+      </tbody>
+    </table>
+    <p class="fc">表 1（RCE 超参数）：控制「生成计划数 ↔ 潜在加速」的权衡。</p>
+  </div>
+
+  <div class="insight-box">
+    <h4>超参数直觉</h4>
+    <p>增加代数 𝐺 会增加计划数、更可能找到好计划，但越后面的代偏离原计划越远、相关性可能下降；每代固定采样 𝑆 个、各扰动 𝑁 次以控制每代耗时恒定。论文默认 𝐺=3, 𝑏=10, 𝑚=2, 𝑁=20, 𝑆=20。</p>
+  </div>
+</div>
+
+<!-- ========== SEC 5 ========== -->
+<div class="section" id="sec-5">
+  <h2 class="section-title"><span class="num">5</span>训练数据采集：自适应超时与计划覆盖剪枝</h2>
+  <p class="section-desc">生成候选集 𝒫 后，需要在训练 workload 上执行每个计划，得到「实际执行延迟」数据集，用于监督式最优计划预测。Kepler 用两个关键技术降低昂贵的执行成本。</p>
+
+  <div class="module-card">
+    <h3>5.1 执行机制</h3>
+    <p>通过 hint 强制优化器产出指定 join/scan 方法与 join 顺序的计划；在多个库中并行执行查询实例与其候选计划；为模拟 warm buffer cache，每个计划执行多次取<strong>最小值</strong>作为估计延迟。重复执行也降低了测量噪声。</p>
+  </div>
+
+  <div class="step-flow">
+    <h4>5.2 自适应超时 + 计划重排</h4>
+    <p>借鉴 [37] 的超时策略并做两处改进：① <strong>总是先执行默认计划</strong>，再按「历史执行延迟升序」重排其余计划——这样超时阈值能尽快收紧，把资源留给可能更快的计划；② 每个计划的<strong>第一次</strong>执行不适用收紧后的超时，以保证 warm-cache 模拟。</p>
+  </div>
+
+  <div class="step-flow">
+    <h4>5.3 在线计划覆盖剪枝（Plan Cover Pruning, PCP）</h4>
+    <p>先用前 N 个查询实例执行<strong>全部</strong>计划，再用<strong>集合覆盖（Set Cover）</strong>把一个模板的数百个候选剪枝到最小的「计划覆盖集」：</p>
+    <p>· 若某计划对实例 𝑞 的执行时间落在「目前所见最快时间的 1+ε 倍以内」，称其为该实例的<strong>近最优计划</strong>；每个计划对应一组它近最优的实例。</p>
+    <p>· 计划覆盖集 = 能覆盖每个实例至少一个近最优计划的<strong>最小计划集合</strong>。用标准贪心近似：每轮选「能覆盖最多剩余实例」的计划。</p>
+    <p>· 放宽到只需覆盖 1−δ 比例的实例，在「覆盖集大小」与「可达加速」间权衡。模型之后只从这少数计划里预测。</p>
+  </div>
+
+  <div class="info-box">
+    <b>尾延迟重排：</b>很多模板默认延迟呈重尾分布，尾部的参数往往更次优、对总加速影响更大。Kepler 先评估这些尾部实例，使覆盖计算包含它们——这一重排在整个 Stack 数据集上带来 <strong>7–8 倍</strong>的总执行时间与计划数减少。
+  </div>
+</div>
+
+<!-- ========== SEC 6 ========== -->
+<div class="section" id="sec-6">
+  <h2 class="section-title"><span class="num">6</span>鲁棒最优计划预测：特征、多标签损失与 SNGP 兜底</h2>
+  <p class="section-desc">收集到延迟数据集后，Kepler 为每个模板训练一个模型，目标是最大化加速比同时最小化回退；并在置信度低时回退到优化器。本节拆解特征、训练目标与模型三类设计。</p>
+
+  <div class="arch-card">
+    <h4>6.1 特征：只用原始参数值</h4>
+    <p>Kepler 仅用模板的 𝑚 个参数值作为输入特征（数值归一化到 N(0,1)、字符串做 embedding、日期转数值），<strong>不转换成基表选择性（selectivity）</strong>。原因：① 选择性是信息有损表示，两个不同值可能有相同选择性；② 当优化器基数估计次优时，选择性更差（见图 3）。</p>
+    <p><b>字符串词表选择：</b>为每个字符串列建固定大小词表（one-hot + embedding，含 OOV 桶）。词表用<strong>最大边际改进（max marginal improvement）</strong>策略选取——优先纳入「能带来最大总改进」的 top-k 值：</p>
+  </div>
+
+  <div class="formula-box">
+    m(v, i) = Σ_{𝑞∈𝒲, 𝑥ᵢ=v} [ ExecTime(p_default, 𝑞) − ExecTime(p*ₒₚₜ, 𝑞) ] &nbsp;—&nbsp; 公式(3)
+  </div>
+
+  <div class="arch-card">
+    <h4>6.2 训练目标：多标签分类 + 样例依赖损失</h4>
+    <p><b>多标签分类：</b>把最优计划预测建模为多标签分类——<strong>每个近最优计划都给正标签</strong>（而非只标唯一最优）。这提供了更丰富的监督信号，改善中间表示质量。用「单标签化」的二分类交叉熵训练每个候选计划的近最优概率。</p>
+    <p><b>近最优定义：</b>计划 𝑝 近最优当且仅当 (ℓ_d − ℓ_p)(1+τ) ≥ (ℓ_d − ℓ_o)，其中 ℓ_d 为默认计划延迟、ℓ_p 为 𝑝 的延迟、ℓ_o 为最优延迟，τ&gt;0。</p>
+    <p><b>为何不用回归/多类：</b>回归跨大范围不稳定、且被超时掩盖了次优计划的真实延迟，还要求了不必要细粒度；单标签多类在「多个计划都近最优、延迟有噪声」时表现差（两个计划概率相等→低置信）。</p>
+    <p><b>样例依赖损失：</b>不同实例对总体目标的贡献不同，用样本加权：比默认差的计划权重 ×C；近最优计划按改进量软加权 1 + D·log(ℓ_d − ℓ_p)。</p>
+  </div>
+
+  <div class="svg-container">
+    <svg viewBox="0 0 960 240" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif">
+      <defs><marker id="ar6" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#a5b4fc"/></marker></defs>
+      <rect x="20" y="80" width="180" height="70" rx="10" fill="rgba(20,20,35,.8)" stroke="#818cf8"/>
+      <text x="110" y="108" fill="#e6edf3" font-size="13" text-anchor="middle" font-weight="700">参数值 𝑥</text>
+      <text x="110" y="128" fill="#8b949e" font-size="11" text-anchor="middle">数值/串/日期</text>
+
+      <rect x="250" y="80" width="200" height="70" rx="10" fill="rgba(20,20,35,.8)" stroke="#818cf8"/>
+      <text x="350" y="106" fill="#e6edf3" font-size="13" text-anchor="middle" font-weight="700">共享表示 FFNN</text>
+      <text x="350" y="128" fill="#8b949e" font-size="11" text-anchor="middle">3×64 + ReLU</text>
+
+      <rect x="500" y="30" width="180" height="56" rx="10" fill="rgba(20,20,35,.8)" stroke="#a5b4fc"/>
+      <text x="590" y="54" fill="#e6edf3" font-size="12" text-anchor="middle" font-weight="700">head₁ → SNGP</text>
+      <text x="590" y="74" fill="#8b949e" font-size="11" text-anchor="middle">p(near-opt₁)</text>
+      <rect x="500" y="100" width="180" height="56" rx="10" fill="rgba(20,20,35,.8)" stroke="#a5b4fc"/>
+      <text x="590" y="124" fill="#e6edf3" font-size="12" text-anchor="middle" font-weight="700">head₂ → SNGP</text>
+      <text x="590" y="144" fill="#8b949e" font-size="11" text-anchor="middle">p(near-opt₂)</text>
+      <rect x="500" y="170" width="180" height="50" rx="10" fill="rgba(20,20,35,.8)" stroke="#a5b4fc"/>
+      <text x="590" y="196" fill="#e6edf3" font-size="12" text-anchor="middle" font-weight="700">head_k → SNGP</text>
+
+      <rect x="740" y="90" width="200" height="60" rx="10" fill="rgba(20,20,35,.8)" stroke="#90d27d"/>
+      <text x="840" y="116" fill="#e6edf3" font-size="12" text-anchor="middle" font-weight="700">置信度 &gt; 0.9?</text>
+      <text x="840" y="136" fill="#8b949e" font-size="11" text-anchor="middle">是→预测 plan / 否→回退</text>
+
+      <line x1="200" y1="115" x2="248" y2="115" stroke="#a5b4fc" stroke-width="2" marker-end="url(#ar6)"/>
+      <line x1="690" y1="60" x2="738" y2="105" stroke="#a5b4fc" stroke-width="2" marker-end="url(#ar6)"/>
+      <line x1="690" y1="128" x2="738" y2="120" stroke="#a5b4fc" stroke-width="2" marker-end="url(#ar6)"/>
+      <line x1="690" y1="195" x2="738" y2="135" stroke="#a5b4fc" stroke-width="2" marker-end="url(#ar6)"/>
+    </svg>
+    <p class="fc">图 6（模型结构）：共享表示 + 每计划一个输出头（提升推理速度、缩小模型），头接 SNGP 给出校准概率与不确定性，低置信时回退优化器。</p>
+  </div>
+
+  <div class="module-card">
+    <h3>6.3 模型与不确定性（SNGP）</h3>
+    <p>基础模型用简单前馈神经网络（3 层 64 隐单元，Adam lr=3e-4，ReLU）。为推理效率，采用「一个共享表示 + 每计划一个输出头」的结构，优于「每计划一个独立模型」。</p>
+    <p><b>不确定性：</b>Kepler 需要校准的预测与不确定性估计以避免选到明显次优计划。两种主流方案：集成（ensemble，成本线性 ×M）与 SNGP。Kepler 选 <strong>SNGP</strong>——对所有层做谱归一化（提供 bi-Lipschitz 保证），并用高斯过程输出层高效估计不确定性，开销更低。</p>
+    <p><b>兜底：</b>预测置信度低于阈值（默认 0.9）时回退到默认计划。</p>
+  </div>
+</div>
+
+<!-- ========== SEC 7 ========== -->
+<div class="section" id="sec-7">
+  <h2 class="section-title"><span class="num">7</span>实验评估：Stack / TPC-H 上的加速与回归</h2>
+  <p class="section-desc">论文在 PostgreSQL 13.5（GCP n1-highmem-16：16 核 / 108GB / 2TB SSD，shared_buffers=75GB）上评测 Kepler，数据集为 Stack（87 个参数化查询，真实 StackExchange 数据）与 TPC-H（22 个查询，含 uniform 与 Zipf=1 偏斜）。默认 RCE 超参 𝐺=3, 𝑏=10, 𝑚=2, 𝑁=20, 𝑆=20（未针对各基准调参）。</p>
+
+  <div class="data-table">
+    <table>
+      <thead><tr><th>指标</th><th>Stack 结果</th></tr></thead>
+      <tbody>
+        <tr><td>模型加速 &gt; 1.2×</td><td>64.4% 的查询</td></tr>
+        <tr><td>模型加速 &gt; 2×</td><td>32.2% 的查询</td></tr>
+        <tr><td>模型加速 &gt; 10×</td><td>14.9% 的查询</td></tr>
+        <tr><td>模型加速 &gt; 20×</td><td>4.6% 的查询</td></tr>
+        <tr><td>整体几何均值加速（图 1）</td><td><b>2.41×</b>（RCE + SNGP + 快推理三部分合力）</td></tr>
+      </tbody>
+    </table>
+    <p class="fc">表 5a 摘要：Kepler 在 Stack 上对任意非空查询实例均匀采样，并非刻意刁难优化器，仍取得显著整体加速。</p>
+  </div>
+
+  <div class="grid-2">
+    <div class="arch-card">
+      <h4>7.1 端到端集成</h4>
+      <p>在服务端加载 TensorFlow Lite 模型做 CPU 推理，用 pg_hint_plan 扩展通过 hint 强制计划；在 SQL 注释里带 query id 即触发 Kepler 预测。图 5b 显示部署后加速与离线预期几乎一致（hint 开销低）；图 5c 显示模型推理时间大多 &lt; PostgreSQL 规划时间的 5%、至多 30%。</p>
+    </div>
+    <div class="arch-card">
+      <h4>7.2 RCE 加速与 ML 捕获</h4>
+      <p>图 6：RCE 在 Stack 上 78/87 查询超过 1.2×、32/87 超过 2×；TPC-H uniform 6/22、skewed 9/22 有改善（偏斜分布下提升更大）。图 8：模型在 80%+ 的 Stack 查询上捕获了 80%+ 的 S_RCE，可靠预测近最优计划。</p>
+    </div>
+  </div>
+
+  <div class="data-table">
+    <table>
+      <thead><tr><th>查询</th><th>Bao 加速</th><th>Kepler 加速</th></tr></thead>
+      <tbody>
+        <tr><td>q11_0</td><td>1.201</td><td>1.651</td></tr>
+        <tr><td>q12_0</td><td>1.238</td><td>1.271</td></tr>
+        <tr><td>q13_0</td><td>1.408</td><td>1.566</td></tr>
+        <tr><td>q14_0</td><td>1.848</td><td>1.619</td></tr>
+        <tr><td>q15_0</td><td>1.157</td><td><b>7.727</b></td></tr>
+        <tr><td>q16_0</td><td>1.168</td><td><b>9.250</b></td></tr>
+      </tbody>
+    </table>
+    <p class="fc">表 2：Kepler 在 6 个代表模板上 5/6 胜过 Bao，q15_0、q16_0 上远超 Bao——因为 Bao 的候选生成严重次优。</p>
+  </div>
+
+  <div class="data-table">
+    <table>
+      <thead><tr><th>算法</th><th>加速 S</th><th>尾加速 P99</th><th>% 改善</th></tr></thead>
+      <tbody>
+        <tr><td>RCE</td><td>3.14</td><td>3.65</td><td>89.0%</td></tr>
+        <tr><td>RCE + PCP (ours)</td><td>3.11</td><td>3.63</td><td>87.9%</td></tr>
+        <tr><td>RCE + CBP</td><td>1.37</td><td>1.77</td><td>50.5%</td></tr>
+        <tr><td>PG</td><td>2.0</td><td>2.07</td><td>49.4%</td></tr>
+        <tr><td>PG + CBP [34]</td><td>1.96</td><td>2.02</td><td>49.4%</td></tr>
+      </tbody>
+    </table>
+    <p class="fc">图 10b：RCE 显著优于 PG（89% vs 49.4% 查询 &gt;1.2×）；基于实际执行的 PCP 几乎不损失加速，而基于代价估计的 CBP 用在 RCE 上损失巨大——说明代价估计不可靠评判 RCE 计划。</p>
+  </div>
+
+  <div class="data-table">
+    <table>
+      <thead><tr><th>代数 𝐺</th><th>计划总数</th><th>覆盖集大小</th><th>S_RCE</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>9</td><td>6</td><td>1.369</td></tr>
+        <tr><td>2</td><td>29</td><td>7</td><td>2.185</td></tr>
+        <tr><td>3</td><td>62</td><td>9</td><td>2.235</td></tr>
+        <tr><td>4</td><td>99</td><td>8</td><td>2.166</td></tr>
+      </tbody>
+    </table>
+    <p class="fc">表 3：q11_0 上代数 𝐺 的影响——计划数与覆盖集到第 3 代稳步增长，但大部分加速在 2 代内已捕获；第 4 代无额外收益。</p>
+  </div>
+
+  <div class="data-table">
+    <table>
+      <thead><tr><th>索引配置</th><th>S_RCE 几何均值</th></tr></thead>
+      <tbody>
+        <tr><td>PK only</td><td>1.888</td></tr>
+        <tr><td>PK+FK</td><td>2.41</td></tr>
+        <tr><td>+Predicates</td><td>5.286</td></tr>
+        <tr><td>+DBA indexes</td><td>5.284</td></tr>
+      </tbody>
+    </table>
+    <p class="fc">表 4：RCE 在不同索引配置下都找到更快计划，索引越多加速越大（与 [22] 一致）。</p>
+  </div>
+
+  <div class="data-table">
+    <table>
+      <thead><tr><th>查询</th><th>RCE 计划</th><th>精确基数计划</th><th>查询优化器</th></tr></thead>
+      <tbody>
+        <tr><td>q11_0</td><td><b>0.045</b></td><td>0.167</td><td>0.180</td></tr>
+        <tr><td>q12_2</td><td><b>0.350</b></td><td>0.768</td><td>0.954</td></tr>
+        <tr><td>q14_10</td><td>2.503</td><td><b>2.107</b></td><td>5.732</td></tr>
+        <tr><td>q16_1</td><td><b>1.136</b></td><td>2.174</td><td>8.575</td></tr>
+        <tr><td>q20_0</td><td><b>0.012</b></td><td>0.046</td><td>0.232</td></tr>
+        <tr><td>q33_0</td><td><b>0.519</b></td><td>2.920</td><td>3.377</td></tr>
+      </tbody>
+    </table>
+    <p class="fc">表 5：RCE 计划在 6 个查询中 5 个比「精确基数（EC）计划」更快——说明即便基数估计准确，代价模型的其他缺陷仍会导致次优计划。</p>
+  </div>
+
+  <div class="insight-box">
+    <h4>7.3 数据集贡献</h4>
+    <p>论文发布的数据集包含约 <strong>14.2 CPU 年</strong>、跨 131 个模板的 2 亿次查询执行。它让后续研究无需再执行任何查询即可做建模/效率实验（例如模拟主动学习、开发更好模型或损失函数）。作者认为：用该数据集发展出的技术（而非具体训练出的模型）可直接迁移到其他参数化查询场景。</p>
+  </div>
+</div>
+
+<!-- ========== SEC 8 ========== -->
+<div class="section" id="sec-8">
+  <h2 class="section-title"><span class="num">8</span>敏感性分析：代数 G、置信阈值与训练数据量</h2>
+  <p class="section-desc">本节汇总论文对各超参与设计的消融，解释 Kepler 为何鲁棒。</p>
+
+  <div class="grid-2">
+    <div class="arch-card">
+      <h4>8.1 代数 𝐺 与扰动范围 𝑏,𝑚</h4>
+      <p>表 3 显示 𝐺=3 为 sweet spot，𝐺=4 无边际收益。扰动范围选 𝑏=10, 𝑚=2：论文用二分搜索度量「在哪个因子下子计划基数扰动会诱导计划改变」，发现虽然个别需 10⁶，绝大多数因子 &lt; 10²。</p>
+    </div>
+    <div class="arch-card">
+      <h4>8.2 参数敏感性</h4>
+      <p>Stack 上除 4 个模板外，覆盖集大小均 &gt;1（图 11a），且单计划 suboptimality 比 &lt;1 普遍（图 11b）——说明必须多计划才能捕获完整加速。TPC-H 设计上不参数敏感（覆盖集大小=1），故建模结果聚焦 Stack。</p>
+    </div>
+  </div>
+
+  <div class="data-table">
+    <table>
+      <thead><tr><th>配置</th><th>S_RCE</th><th>S_model</th><th>P_reg</th></tr></thead>
+      <tbody>
+        <tr><td>No fallback（站点）</td><td>1.044</td><td>0.781</td><td>23.8%</td></tr>
+        <tr><td>Fallback（站点）</td><td>1.044</td><td>0.997</td><td>0.2%</td></tr>
+        <tr><td>No fallback（日期）</td><td>2.027</td><td>1.866</td><td>3.3%</td></tr>
+        <tr><td>Fallback（日期）</td><td>2.027</td><td>1.822</td><td>0.1%</td></tr>
+      </tbody>
+    </table>
+    <p class="fc">图 14/表：OOD 实验——把 20% 的训练分布切片（站点 / 日期）留作测试。无兜底时回退频率高达 3.3%~23.8%；开启兜底后降到 0.1%~0.2%，且仍保留大部分加速，证明 SNGP 的 OOD 检测有效。</p>
+  </div>
+
+  <div class="module-card">
+    <h3>8.3 损失 / 模型 / 特征消融</h3>
+    <p><b>损失（图 12）：</b>「多标签 + SNGP」在各查询上取得与其它方法相似或更好的加速，且回退频率最低。</p>
+    <p><b>置信阈值权衡（图 13）：</b>随阈值从 0（不兜底）升到 1（总兜底），捕获的加速与回退频率都平滑下降，用户可据此设定对回退的容忍度。<strong>兜底机制能在仅牺牲少量加速的前提下大幅降低回退。</strong></p>
+    <p><b>原始参数 vs 选择性（图 15a）：</b>选择性特征因 PostgreSQL 基数估计差而远差于原始参数。</p>
+    <p><b>词表策略（图 15b）：</b>最大边际改进法优于「PostgreSQL 直方图最常见值」。</p>
+    <p><b>训练数据量（图 16）：</b>加速随数据增多而提升、回退率维持 &lt;0.2%；仅用 5% 数据（200 个训练实例）也能稳健捕获大量加速。</p>
+  </div>
+</div>
+
+<!-- ========== SEC 9 ========== -->
+<div class="section" id="sec-9">
+  <h2 class="section-title"><span class="num">9</span>代码使用与实战（GitHub / 安装 / 复现）</h2>
+  <p class="section-desc">Kepler 已开源：系统实现（PostgreSQL 集成）与查询执行数据集均公开。下面给出最小复现路径。</p>
+
+  <div class="kv-row"><span class="kv-key">仓库地址</span><span class="kv-val"><a href="https://github.com/google/kepler" style="color:#818cf8">https://github.com/google/kepler</a></span></div>
+  <div class="kv-row"><span class="kv-key">论文</span><span class="kv-val">Doshi et al., PACMMOD 2023, arXiv:2306.06798</span></div>
+  <div class="kv-row"><span class="kv-key">数据库</span><span class="kv-val">PostgreSQL 13.5 + pg_hint_plan 扩展</span></div>
+  <div class="kv-row"><span class="kv-key">模型</span><span class="kv-val">TensorFlow / TFLite；SNGP（谱归一化 + Random Fourier Feature GP 输出层，128 特征）</span></div>
+  <div class="kv-row"><span class="kv-key">默认 RCE 超参</span><span class="kv-val">G=3, b=10, m=2, N=20, S=20</span></div>
+
+  <div class="code-block">
+    <pre># 1) 克隆仓库
+git clone https://github.com/google/kepler.git
+cd kepler
+
+# 2) 准备 PostgreSQL 13.5，并安装 pg_hint_plan 扩展
+#    （用于通过 hint 强制指定 join 顺序 / 扫描方式）
+
+# 3) 候选生成：对一个参数化查询模板运行 Row Count Evolution
+#    RCE 通过 pg_hint_plan 的 row count hint 扰动子计划基数，
+#    调用优化器重新规划，收集去重后的候选计划集
+python kepler/candidate_generation.py \
+    --query-template "SELECT ... WHERE col = $1 ..." \
+    --generations 3 --base 10 --range 2 --perturbations 20 --samples 20
+
+# 4) 训练数据采集：执行每个候选计划，取多次最小延迟作为真值
+#    使用自适应超时 + 在线计划覆盖剪枝 (PCP) 降低成本
+python kepler/collect_execution_stats.py --workload queries.csv --timeout adaptive
+
+# 5) 训练最优计划预测模型（多标签 + SNGP）
+python kepler/train.py --model sngp --hidden 64 --layers 3 --lr 3e-4
+
+# 6) 部署：将 TFLite 模型载入服务端，SQL 注释带 query id 即触发预测
+#    置信度 < 0.9 时回退到内置优化器</pre>
+  </div>
+
+  <div class="warn-box">
+    <b>成本提示：</b>论文中每个查询模板平均消耗约 <strong>39 CPU 天</strong>的查询执行时间来收集训练数据。因此 Kepler 最适用于「模板被极高频率执行」的 workload。论文也指出可通过主动学习等手段大幅降低该成本（图 16 显示 5% 数据即可捕获大量加速）。
+  </div>
+</div>
+
+<!-- ========== SEC 10 ========== -->
+<div class="section" id="sec-10">
+  <h2 class="section-title"><span class="num">10</span>总结、局限与未来工作</h2>
+  <p class="section-desc">Kepler 用「RCE 生成更好候选 + 真实执行数据训练 + 鲁棒 SNGP 兜底」三件套，在 PostgreSQL 上稳定、显著地超过内置优化器，且把回退降到可忽略。它首次证明：在参数化查询这一可控设定下，学习型优化器可以既快又稳。</p>
+
+  <div class="highlight-box">
+    <b>核心结论：</b>① RCE 候选生成能带来显著执行加速，且常优于「精确基数」计划；② 鲁棒 ML 模型能在捕获大部分加速的同时极大降低回退；③ 端到端 PostgreSQL 集成推理开销可忽略；④ 发布的 14.2 CPU 年数据集可推动后续 PQO 研究。
+  </div>
+
+  <div class="limit-box">
+    <h4>局限</h4>
+    <p>Kepler 面向「执行频繁到足以摊薄训练采集成本」的参数化查询；当前假设系统状态（配置、优化器、数据分布）相对固定，变化缓慢时可周期性重采重训；训练数据采集本身较昂贵（虽可大幅优化）。</p>
+  </div>
+
+  <div class="insight-box">
+    <h4>未来方向</h4>
+    <p>· 用生成式基数分布（如 NeuroCard）做更高概率的扰动采样，而非均匀扰动；<br>
+    · 把查询计划树与选择性估计作为模型额外特征，让模型自行判断基数何时可靠；<br>
+    · 在模板间共享结构信息而不增加回退风险；<br>
+    · 用主动学习降低训练数据采集成本；<br>
+    · 扩展到 PostgreSQL 之外的 DBMS（论文认为其经验式本质可跨库发现收益）。</p>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-q">Q1：Kepler 和经典 PQO（如 [34]）最大的区别是什么？</div>
+    <div class="qa-a">[34] 的 PQO 目标偏「减少规划次数、匹配内置优化器」；Kepler 目标偏「尽可能超过内置优化器」并强调鲁棒性。它因此用 RCE 主动找更快计划、用真实执行数据而非代价模型、用 SNGP 兜底避免回退。</div>
+  </div>
+  <div class="qa-card">
+    <div class="qa-q">Q2：为什么 RCE 比「精确基数（EC）计划」还好？</div>
+    <div class="qa-a">EC 计划只保证基数精确，但代价模型还有独立性假设、启发式等其他缺陷，仍可能选次优计划。RCE 直接在「实际延迟」空间探索，绕过了代价模型的整套假设。</div>
+  </div>
+  <div class="qa-card">
+    <div class="qa-q">Q3：SNGP 的「兜底」到底解决什么问题？</div>
+    <div class="qa-a">在生产中，任何一次比默认优化器更慢的预测都不可接受。SNGP 给出校准的不确定性；当模型对输入不确信（如 OOD）时回退到优化器，把回退频率从最高 23.8% 降到 0.1%~0.2%，且仅牺牲少量加速。</div>
+  </div>
+  <div class="qa-card">
+    <div class="qa-q">Q4：Kepler 适合我的业务吗？</div>
+    <div class="qa-a">如果你的查询是参数化、且同一模板被高频重复执行（如多租户 SaaS 的固定报表查询），Kepler 的「训练采集成本」能被充分摊薄，收益显著；若查询一次性、低频，则成本不划算。</div>
+  </div>
+</div>
+
+<!-- ========== SEC 11 ========== -->
+<div class="section translation" id="sec-11">
+  <h2 class="section-title"><span class="num">11</span>全文中文翻译（对应嵌入图片）</h2>
+  <p class="section-desc">以下为 Kepler 论文核心内容的中文翻译，关键段落对应嵌入论文原图（来自 <code>images/Kepler Robust Learning for Faster Parametric Query Optimization/</code>），以 📌 标记。</p>
+
+  <h3>标题与摘要</h3>
+  <p>Kepler：面向更快参数化查询优化的鲁棒学习。大多数既有参数化查询优化（PQO）技术依赖传统查询优化器的代价模型，而这些模型常常不准，导致次优的查询性能。我们提出 Kepler，一种端到端、基于学习的 PQO 方法，相比传统查询优化器在查询延迟上取得了显著加速。我们方法的核心是<strong>行数演化（Row Count Evolution, RCE）</strong>——一种基于子计划基数空间扰动的新型计划生成算法。先前的方法需要准确的代价模型，而我们通过「用真实执行数据评估候选计划、训练一个 ML 模型来预测给定参数绑定下最快的计划」绕过了这一要求。我们的模型利用神经网络不确定性领域的最新进展，鲁棒地预测更快计划，同时避免查询性能的回退。实验上，我们展示 Kepler 在多个 PostgreSQL 数据集上取得了查询运行时间的显著改进。</p>
+
+  <div class="fig-note">📌 <b>图 1（论文原图）：</b>Kepler 在 Stack 上取得整体 <b>2.41×</b> 加速，来自三部分的合力：① 通过 RCE 发现更好的计划；② 用 SNGP 模型捕获大部分加速同时最小化回退；③ 模型推理时间极快。
+    <div class="fig-img"><img src="images/Kepler%20Robust%20Learning%20for%20Faster%20Parametric%20Query%20Optimization/Kepler%20Robust%20Learning%20for%20Faster%20Parametric%20Query%20Optimization_p6_fig1.png" alt="Kepler 2.41x 加速总览图"></div>
+  </div>
+
+  <h3>1 引言</h3>
+  <p>参数化查询优化（PQO）旨在优化参数化查询，即 SQL 结构相同、仅绑定参数值不同的查询。这类查询在现代数据库使用中无处不在，并且因为被反复执行，存在巨大的性能提升机会。然而，PQO 主要从「减少规划时间、尽量避免重新优化」的角度被研究，这类方法隐式受限于系统查询优化器的性能，从而继承了传统优化器所有被充分研究的次优性。理想的参数化查询系统不仅应通过 PQO 最小化规划时间，还应通过查询优化（QO）优化执行性能。</p>
+  <p>多种方法尝试用机器学习改进查询优化，但不幸的是，大多数学习型技术至少有四个缺陷：(1) 推理时间高于传统方法；(2) 在不同数据集规模与分布上表现不一致；(3) 查询性能改进往往不清晰；(4) 缺乏鲁棒性——在生产中，性能回退是不可接受的，而这对学习方法尤其困难。</p>
+  <p>我们提出，把查询优化问题限定在参数化查询设定下，是一个更可学习的、因而能被更鲁棒地解决的问题。为此我们提出 <strong>Kepler（K-plan Evolution for Parametric Query Optimization: Learned, Empirical, Robust）</strong>，一种面向参数化查询的端到端学习方法。它建立在 PQO 既有工作 [34] 之上，沿用「解耦的计划生成 + 基于学习的计划预测」架构，但有三点关键差异：第一，Kepler 提出 RCE，通过扰动优化器的基数估计高效生成候选计划，仅需任意标准代价优化器的简单接口；第二，Kepler 用真实查询执行数据构建训练数据集，规避了代价模型与实际延迟之间的错位；第三，Kepler 用鲁棒的神经网络预测技术（SNGP）降低尾延迟与查询回退，不确信时回退到数据库优化器。</p>
+
+  <div class="fig-note">📌 <b>图 2（论文原图）：</b>Kepler 架构，分为 Trainer（从生产日志聚合模板、RCE 生成候选、执行收集统计、训练并部署模型）与 Client（收到查询实例时做推理，仅当置信度高于阈值才下发 plan hints，否则回退优化器）。
+    <div class="fig-img"><img src="images/Kepler%20Robust%20Learning%20for%20Faster%20Parametric%20Query%20Optimization/Kepler%20Robust%20Learning%20for%20Faster%20Parametric%20Query%20Optimization_p6_fig2.png" alt="Kepler 系统架构图"></div>
+  </div>
+
+  <h3>3 概览（节选）</h3>
+  <p>Kepler 的问题设定：模板 𝑄 含 𝑚 个参数化谓词；查询实例 𝑞 是绑定了具体值的实例；子计划是 𝑄 只保留部分表的结果，其输出行数称为子计划基数；默认计划 p_default(𝑞) 是优化器为 𝑞 选的计划。Kepler 把问题解耦为：(1) 候选生成——为 𝑄 从指数级大的计划空间生成候选集；(2) 最优计划预测——学习映射 𝑀:𝒲→𝒫 最小化执行延迟。</p>
+  <p>我们定义神谕加速比 Sₒₚₜ(𝒫,𝒲)（公式 1）为默认计划总执行时间除以候选集上最优计划总执行时间，它等价于 [34] 中执行代价次优性的定义，重命名为「加速比」以强调目标差异。模型加速比 S_model(𝒲)（公式 2）衡量模型执行 workload 比默认快多少，其上界为 Sₒₚₜ、但下界不是 1。二者的关系为 S_model = p·S_RCE。</p>
+
+  <div class="fig-note">📌 <b>图 3（论文原图）：</b>Stack q12_2 实例上「预测基数 vs 精确基数」的散点图（虚线 y=x 为理想线）。可见约 64% 的点估计基数为 1，暴露了 PostgreSQL 独立性假设导致的严重基数误估计。
+    <div class="fig-img"><img src="images/Kepler%20Robust%20Learning%20for%20Faster%20Parametric%20Query%20Optimization/Kepler%20Robust%20Learning%20for%20Faster%20Parametric%20Query%20Optimization_p7_fig1.png" alt="预测 vs 精确基数散点图"></div>
+  </div>
+
+  <h3>4 行数演化（RCE）</h3>
+  <p>RCE 的核心想法是：基数误估计是优化器次优的根本原因；而候选生成阶段只需要「生成一个包含（近）最优计划的集合」，而非直接识别单个好计划。RCE 以进化式算法实现：维护若干代计划，第 0 代只有优化器原本的计划；对后续每代，从父代均匀采样 base 计划，对每个只扰动其实际出现的子计划 join 基数（乘以指数间距的因子），把扰动后的基数喂回优化器得到子代，只保留未出现过的计划进入下一代。RCE 仅扰动采样计划中实际出现的 n−1 个子计划（而非全部 2ⁿ−1 个），大幅提效且损失很小。</p>
+  <p>论文举例：某实例 A⋈B 估计基数 40、C⋈D 估计基数 17；用 base=10、range=1 构造候选行数集合 A⋈B→[4,40,400]、C⋈D→[1,17,170]。一次采样（400, 17）诱导优化器产生 Gen-1 的 Plan-1；重复 N 次得 C₁；再从 C₁ 去重采样 S 个、各扰动 N 次得 C₂。最终候选集 = C₀∪C₁∪…∪C_G。</p>
+
+  <h3>5 训练数据采集</h3>
+  <p>生成候选集后，在每个计划上执行以收集实际延迟。Kepler 用 hint 强制计划、并行执行、取多次最小延迟作为真值；用自适应超时（先执行默认计划、按历史延迟升序重排其余计划以尽快收紧超时）与在线计划覆盖剪枝（PCP，用贪心集合覆盖把数百候选剪到最小覆盖集，仅需覆盖 1−δ 比例实例）降低成本。尾延迟重排使 Stack 上总执行时间与计划数减少 7–8×。</p>
+
+  <h3>6 鲁棒最优计划预测</h3>
+  <p>特征上仅用原始参数值（不转选择性），字符串列用最大边际改进策略选词表（公式 3）。训练目标为多标签分类（每个近最优计划都标正），并用量例依赖损失加权。模型用前馈神经网络 + 每计划一个输出头；不确定性用 SNGP（谱归一化 + 高斯过程输出层），置信度低于 0.9 时回退优化器。</p>
+
+  <h3>7 实验（节选）</h3>
+  <p>在 PostgreSQL 13.5 上，Stack 取得整体 2.41× 几何均值加速，32.2% 的查询超过 2×。RCE 在 78/87 个 Stack 查询上超过 1.2×；模型在 80%+ 查询上捕获 80%+ 的 S_RCE。与 Bao 对比（表 2），Kepler 在 6 个模板中 5 个胜出，q15_0、q16_0 上远超前者。表 5 显示 RCE 计划在 6 个查询中 5 个比精确基数计划更快。图 14 的 OOD 实验表明，开启兜底后回退频率从最高 23.8% 降到 0.1%~0.2%。</p>
+
+  <div class="fig-note">📌 <b>图 4（论文原图，RCE 示例）：</b>展示两代 RCE 如何用基数扰动 [4,40,400] 与 [1,17,170] 演化出 C₁、C₂ 计划集（对应本文第 4 节图 4 示意）。
+    <div class="fig-img"><img src="images/Kepler%20Robust%20Learning%20for%20Faster%20Parametric%20Query%20Optimization/Kepler%20Robust%20Learning%20for%20Faster%20Parametric%20Query%20Optimization_p6_fig3.png" alt="RCE 演化示例图"></div>
+  </div>
+
+  <h3>8 结论与未来工作</h3>
+  <p>我们提出 Kepler，一种能用基于学习的方法鲁棒加速参数化查询的系统。我们广泛评估表明：(1) 新型候选生成算法 RCE 能带来显著执行延迟加速；(2) 鲁棒 ML 模型能可靠预测更快计划同时避免回退；有趣的是，RCE 生成的计划常常远优于精确基数计划，说明即便 PostgreSQL 这样广泛使用的系统也有巨大的改进空间。未来方向包括：用生成式基数分布（如 NeuroCard）做更高概率扰动、把计划树与选择性作为模型特征、在模板间共享结构、用主动学习降低训练采集成本，以及扩展到 PostgreSQL 之外的 DBMS。</p>
+
+  <div class="limit-box">
+    <h4>关于训练成本</h4>
+    <p>论文为得出更稳健的结论并产出完整数据集，采用了昂贵的训练数据采集流程（平均每模板约 39 CPU 天）。对实际应用，可通过主动学习等手段大幅降低该成本；结合图 16，相似性能可用显著更少的训练成本获得。</p>
+  </div>
+</div>
+
+<div class="footer">Kepler: Robust Learning for Faster Parametric Query Optimization · 深度解读 · 生成于论文精读</div>
+
+</div>
+</body>
+</html>

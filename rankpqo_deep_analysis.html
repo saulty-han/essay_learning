@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>深度解读 — RankPQO: 面向参数化查询优化的学习排序</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{font-family:'Noto Sans SC',system-ui,-apple-system,sans-serif;background:#0d1117;color:#c9d1d9;line-height:1.8;font-size:16px;min-height:100vh;}
+.container{max-width:1400px;margin:0 auto;padding:0 24px;background:#0d1117;position:relative;}
+.back-btn{position:fixed;top:16px;left:16px;z-index:9999;background:rgba(20,20,35,.75);color:#c9d1d9;border:1px solid rgba(255,255,255,.15);border-radius:10px;padding:8px 16px;font-size:14px;cursor:pointer;backdrop-filter:blur(6px);transition:all .3s;text-decoration:none;display:flex;align-items:center;gap:6px;}
+.back-btn:hover{background:rgba(30,30,55,.9);border-color:rgba(255,255,255,.3);}
+.hero{padding:80px 0 40px;text-align:center;}
+.hero-title{font-size:2.2rem;font-weight:700;background:linear-gradient(135deg,#a855f7,#7c3aed,#c4b5fd);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:12px;line-height:1.3;}
+.hero-sub{font-size:1.1rem;color:#8b949e;margin-bottom:8px;}
+.venue{font-size:.95rem;color:#8b949e;margin-top:8px;}
+.venue a{color:#a855f7;text-decoration:none;}
+.venue a:hover{text-decoration:underline;}
+.tag-row{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:16px;}
+.tag{display:inline-block;padding:4px 14px;border-radius:20px;font-size:.85rem;border:1px solid rgba(168,85,247,.3);color:#a855f7;background:rgba(168,85,247,.06);}
+.divider{border:none;border-top:1px solid rgba(255,255,255,.08);margin:48px 0;}
+.section{margin:40px 0;}
+.section-title{font-size:1.75rem;font-weight:700;margin-bottom:20px;color:#e6edf3;display:flex;align-items:center;gap:10px;}
+.section-title .num{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#a855f7,#7c3aed);color:#0d1117;font-size:1rem;font-weight:700;flex-shrink:0;}
+.section-desc{font-size:16px;line-height:1.9;color:#c9d1d9;margin-bottom:16px;}
+.toc{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:28px 36px;margin:30px 0;}
+.toc h3{font-size:1.2rem;color:#e6edf3;margin-bottom:14px;}
+.toc ol{list-style:none;counter-reset:toc;padding:0;}
+.toc li{counter-increment:toc;margin:8px 0;}
+.toc li::before{content:counter(toc) ".";color:#a855f7;font-weight:600;margin-right:8px;}
+.toc a{color:#8b949e;text-decoration:none;transition:color .2s;}
+.toc a:hover{color:#a855f7;}
+.module-card{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:24px;margin:18px 0;transition:all .3s;}
+.module-card:hover{border-color:rgba(168,85,247,.3);transform:translateY(-2px);}
+.module-card h3{font-size:1.15rem;font-weight:600;margin-bottom:10px;color:#a855f7;}
+.module-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.arch-card{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:22px;margin:14px 0;transition:all .3s;}
+.arch-card:hover{border-color:rgba(168,85,247,.3);}
+.arch-card h4{font-size:1.05rem;font-weight:600;color:#c4b5fd;margin-bottom:8px;}
+.arch-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.step-flow{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:22px;margin:14px 0;}
+.step-flow h4{font-size:1.05rem;font-weight:600;color:#a855f7;margin-bottom:8px;}
+.step-flow p{font-size:15px;line-height:1.8;color:#8b949e;}
+.data-table{width:100%;border-collapse:collapse;margin:18px 0;background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:12px;overflow:hidden;font-size:14px;}
+.data-table th{background:rgba(168,85,247,.1);color:#a855f7;padding:12px 16px;text-align:left;font-weight:600;}
+.data-table td{padding:10px 16px;border-top:1px solid rgba(255,255,255,.06);color:#c9d1d9;}
+.data-table tr:hover td{background:rgba(168,85,247,.04);}
+.formula-box{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:20px 24px;margin:16px 0;font-size:18px;text-align:center;color:#e6edf3;font-family:'JetBrains Mono',monospace;}
+.code-block{background:rgba(20,20,35,.8);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:18px 22px;margin:16px 0;overflow-x:auto;}
+.code-block pre{font-family:'JetBrains Mono',monospace;font-size:14px;line-height:1.7;color:#c9d1d9;white-space:pre;}
+.ck{color:#a855f7;}.cs{color:#c4b5fd;}.cf{color:#d2a8ff;}.cg{color:#8b949e;}.cv{color:#79c0ff;}
+.qa-card{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:24px;margin:16px 0;}
+.qa-q{font-size:1.05rem;font-weight:600;color:#a855f7;margin-bottom:12px;}
+.qa-a{font-size:15px;line-height:1.9;color:#8b949e;}
+.highlight-box{background:rgba(168,85,247,.06);border:1px solid rgba(168,85,247,.2);border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;}
+.warn-box{background:rgba(196,181,253,.08);border:1px solid rgba(196,181,253,.25);border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;}
+.info-box{background:rgba(168,85,247,.06);border:1px solid rgba(168,85,247,.2);border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;}
+.prompt-box{background:rgba(20,20,35,.8);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:18px 22px;margin:16px 0;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.7;color:#c9d1d9;white-space:pre-wrap;}
+.prompt-label{display:inline-block;padding:2px 10px;border-radius:6px;font-size:.85rem;font-weight:600;margin-bottom:8px;background:rgba(168,85,247,.15);color:#a855f7;}
+.fc{font-size:14px;color:#8b949e;text-align:center;margin:10px 0;line-height:1.6;}
+.comp-card{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:22px;margin:14px 0;transition:all .3s;}
+.comp-card:hover{border-color:rgba(168,85,247,.3);}
+.comp-card h4{font-size:1.05rem;font-weight:600;color:#c4b5fd;margin-bottom:8px;}
+.comp-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.insight-box{background:rgba(168,85,247,.06);border:1px solid rgba(168,85,247,.2);border-radius:12px;padding:18px 22px;margin:16px 0;}
+.insight-box h4{color:#a855f7;font-size:1.05rem;margin-bottom:8px;}
+.insight-box p{font-size:15px;line-height:1.8;color:#c9d1d9;}
+.limit-box{background:rgba(196,181,253,.08);border:1px solid rgba(196,181,253,.25);border-radius:12px;padding:18px 22px;margin:16px 0;}
+.limit-box h4{color:#c4b5fd;font-size:1.05rem;margin-bottom:8px;}
+.limit-box p{font-size:15px;line-height:1.8;color:#c9d1d9;}
+.kv-row{display:flex;border-bottom:1px solid rgba(255,255,255,.06);padding:8px 0;}
+.kv-row:last-child{border-bottom:none;}
+.kv-key{width:180px;flex-shrink:0;color:#a855f7;font-weight:500;font-size:14px;}
+.kv-val{color:#c9d1d9;font-size:14px;line-height:1.7;}
+.footer{text-align:center;color:#555;font-size:14px;padding:48px 0 32px;}
+.svg-container{background:rgba(20,20,35,.4);border:1px solid rgba(255,255,255,.06);border-radius:14px;padding:20px;margin:24px 0;overflow-x:auto;text-align:center;}
+.svg-container svg{max-width:100%;height:auto;}
+.phase-badge{display:inline-block;padding:3px 12px;border-radius:8px;font-size:.85rem;font-weight:600;margin-right:8px;}
+.phase-1{background:rgba(168,85,247,.15);color:#c4b5fd;}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
+.grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;}
+@media(max-width:900px){.grid-2,.grid-3{grid-template-columns:1fr;}.hero-title{font-size:1.6rem;}.kv-row{flex-direction:column;}.kv-key{width:auto;}}
+@keyframes flowPulse{0%,100%{opacity:.6;}50%{opacity:1;}}
+.flow-arrow{animation:flowPulse 2s ease-in-out infinite;}
+.translation h3{font-size:1.3rem;color:#c4b5fd;margin:26px 0 12px;font-weight:700;}
+.translation h4{font-size:1.1rem;color:#a855f7;margin:18px 0 8px;font-weight:600;}
+.translation p{font-size:15.5px;line-height:1.95;color:#c9d1d9;margin-bottom:12px;}
+.fig-note{background:rgba(168,85,247,.07);border-left:3px solid #a855f7;border-radius:8px;padding:12px 18px;margin:14px 0;font-size:14.5px;color:#d4bce8;line-height:1.8;}
+.fig-note b{color:#c4b5fd;}
+</style>
+</head>
+<body>
+<div class="container">
+
+<a class="back-btn" href="index.html">&#8592; 返回目录</a>
+
+<a href="rankpqo_full_translation.html" style="display:block;max-width:860px;margin:18px auto 0;padding:13px 22px;background:linear-gradient(90deg,rgba(31,111,235,.16),rgba(137,87,227,.16));border:1px solid rgba(137,87,227,.5);border-radius:12px;color:#e6edf3;text-decoration:none;font-weight:500;font-size:15px;text-align:center;box-shadow:0 2px 14px rgba(0,0,0,.35);">阅读本文逐段完整中文翻译（Full Translation）</a>
+
+<!-- ========== HERO ========== -->
+<div class="hero">
+  <h1 class="hero-title">RankPQO: 面向参数化查询优化的学习排序</h1>
+  <p class="hero-sub">用「混合计划枚举（改基数+改连接顺序）」+「学习排序模型 PRank」解决参数化查询的两大难题</p>
+  <div class="venue">
+    PVLDB 2024, 18(3): 863-875 &nbsp;|&nbsp;
+    <a href="https://github.com/songsong945/RankPQO">GitHub: songsong945/RankPQO</a>
+  </div>
+  <div class="tag-row">
+    <span class="tag">Parametric Query Optimization</span>
+    <span class="tag">Hybrid Enumeration</span>
+    <span class="tag">Learning-to-Rank</span>
+    <span class="tag">PRank</span>
+    <span class="tag">Plan Cache</span>
+  </div>
+</div>
+
+<!-- ========== TOC ========== -->
+<div class="toc">
+  <h3>目录</h3>
+  <ol>
+    <li><a href="#sec-1">研究动机：参数化查询优化与两大挑战</a></li>
+    <li><a href="#sec-2">系统概览：四组件流水线（含架构图）</a></li>
+    <li><a href="#sec-3">问题定义与现有方法的局限（L1–L4）</a></li>
+    <li><a href="#sec-4">混合计划枚举算法（Algorithm 1，改基数+连接顺序）</a></li>
+    <li><a href="#sec-5">排序模型 PRank：架构、编码与比较层</a></li>
+    <li><a href="#sec-6">候选计划选择（Algorithm 2）与最优计划预测</a></li>
+    <li><a href="#sec-7">模型训练：NS vs S（交替训练）与损失</a></li>
+    <li><a href="#sec-8">实验：四数据集性能、效率与消融</a></li>
+    <li><a href="#sec-9">代码使用与实战（GitHub / 安装 / 复现）</a></li>
+    <li><a href="#sec-10">总结与核心问答</a></li>
+    <li><a href="#sec-11">全文中文翻译（对应嵌入图片）</a></li>
+  </ol>
+</div>
+
+<!-- ========== SEC 1 ========== -->
+<div class="section" id="sec-1">
+  <h2 class="section-title"><span class="num">1</span>研究动机：参数化查询优化与两大挑战</h2>
+  <p class="section-desc">参数化查询（Parametric Query, PQ）在数据库应用中无处不在：同一条 SQL 模板被反复执行，每次绑定不同的参数值。核心矛盾在于——既要避免「每次都重优化」的高开销，又要避免「只优化一次」导致的次优。</p>
+
+  <div class="grid-2">
+    <div class="module-card">
+      <h3>两条经典策略及其缺陷</h3>
+      <p><b>Opt-Always</b>：每次执行都独立优化，CPU/内存开销大；</p>
+      <p><b>Opt-Once</b>：只优化首个实例并缓存其计划复用，后续执行可能严重次优。</p>
+      <p><b>参数化查询优化（PQO）</b> 取平衡：离线为模板缓存少量计划，运行时按参数挑最优——既降低优化开销，又规避次优风险。</p>
+    </div>
+    <div class="module-card">
+      <h3>PQO 的两大任务（解耦架构）</h3>
+      <p>① <b>候选计划生成</b>：离线枚举一个较大的计划子集，再挑少量（几十个）缓存；</p>
+      <p>② <b>最优计划选择</b>：运行时对具体参数向量，从缓存计划里挑执行最快的那个。</p>
+      <p>RankPQO 针对这两步分别提出创新：<b>混合计划枚举</b> 与 <b>学习排序模型</b>。</p>
+    </div>
+  </div>
+
+  <div class="highlight-box">
+    <b>两大挑战</b>：
+    <p>• <b>Challenge 1（生成）</b>：如何在庞大空间中高效生成「覆盖最优计划」的候选集。现有方法只改子计划基数（如 Kepler 的 RCE），但「要改多大基数才能产生新计划」并不清楚——基数翻 10 倍 PostgreSQL 可能仍生成同一计划，效率极低（论文称 Limitation L2/L3）。</p>
+    <p>• <b>Challenge 2（选择）</b>：如何「不实际执行」就评估不同参数下各计划的好坏。现有 ML 方法只用参数向量作输入，假设「相似参数→相似计划」（局部连续性），但现实中<b>微小参数差异即可引发基数剧变、计划剧变</b>（局部不连续），导致选错计划（Limitation L4）。</p>
+  </div>
+</div>
+
+<!-- ========== SEC 2 ========== -->
+<div class="section" id="sec-2">
+  <h2 class="section-title"><span class="num">2</span>系统概览：四组件流水线</h2>
+  <p class="section-desc">RankPQO 把流程拆为四个组件（论文 Figure 1）：① 计划枚举 → ② 模型训练 → ③ 候选计划选择 → ④ 最优计划选择。前两步离线，后两步在线。</p>
+
+  <div class="svg-container">
+    <svg viewBox="0 0 980 230" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif">
+      <defs><marker id="aR" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#c4b5fd"/></marker></defs>
+      <rect x="10" y="70" width="200" height="80" rx="10" fill="rgba(20,20,35,.85)" stroke="#a855f7"/>
+      <text x="110" y="100" fill="#e6edf3" font-size="13" text-anchor="middle" font-weight="700">① 计划枚举</text>
+      <text x="110" y="122" fill="#8b949e" font-size="11" text-anchor="middle">混合：改基数+连接顺序</text>
+
+      <rect x="260" y="70" width="200" height="80" rx="10" fill="rgba(20,20,35,.85)" stroke="#a855f7"/>
+      <text x="360" y="100" fill="#e6edf3" font-size="13" text-anchor="middle" font-weight="700">② 模型训练</text>
+      <text x="360" y="122" fill="#8b949e" font-size="11" text-anchor="middle">训练 PRank（pairwise）</text>
+
+      <rect x="510" y="70" width="200" height="80" rx="10" fill="rgba(20,20,35,.85)" stroke="#a855f7"/>
+      <text x="610" y="100" fill="#e6edf3" font-size="13" text-anchor="middle" font-weight="700">③ 候选计划选择</text>
+      <text x="610" y="122" fill="#8b949e" font-size="11" text-anchor="middle">贪心挑 k 个缓存</text>
+
+      <rect x="760" y="70" width="210" height="80" rx="10" fill="rgba(20,20,35,.85)" stroke="#c4b5fd"/>
+      <text x="865" y="100" fill="#e6edf3" font-size="13" text-anchor="middle" font-weight="700">④ 最优计划选择</text>
+      <text x="865" y="122" fill="#8b949e" font-size="11" text-anchor="middle">运行时按参数挑</text>
+
+      <line x1="210" y1="110" x2="258" y2="110" stroke="#c4b5fd" stroke-width="2" marker-end="url(#aR)"/>
+      <line x1="460" y1="110" x2="508" y2="110" stroke="#c4b5fd" stroke-width="2" marker-end="url(#aR)"/>
+      <line x1="710" y1="110" x2="758" y2="110" stroke="#c4b5fd" stroke-width="2" marker-end="url(#aR)"/>
+
+      <rect x="10" y="180" width="960" height="36" rx="8" fill="rgba(168,85,247,.07)" stroke="rgba(168,85,247,.25)"/>
+      <text x="490" y="203" fill="#c4b5fd" font-size="12" text-anchor="middle">离线（①②③）生成缓存 + 部署模型 → 在线（④）用户提交查询实例，PRank 从缓存挑最优并转成 pg_hint_plan</text>
+    </svg>
+    <div class="fc">图 1（对应论文 Figure 1）：RankPQO 系统架构。计划枚举产出多样候选，训练 PRank，再贪心选 k 个缓存；运行时按参数向量用 PRank 选最优计划。</div>
+  </div>
+
+  <div class="grid-2">
+    <div class="arch-card">
+      <h4>各组件职责</h4>
+      <p><b>计划枚举</b>：用混合算法为模板生成 n 个计划供后续选择，每分钟生成的不同计划数更多、覆盖更全。</p>
+      <p><b>模型构建</b>：用传统优化器采样部分计划并执行，收集延迟作为训练数据，构建 pairwise 排序模型 PRank。</p>
+      <p><b>候选计划选择</b>：用 PRank 预测所有计划对全部查询实例的相对延迟，在预算 k 下贪心选出使总延迟最小的计划集。</p>
+      <p><b>最优计划选择</b>：部署后，对每个用户查询实例用 PRank 对 k 个缓存计划排序，挑最优并转成 hint 计划执行。</p>
+    </div>
+    <div class="arch-card">
+      <h4>为什么用学习排序（L2R）？</h4>
+      <p>PQO 既不需要精确计划代价估计，也不需要精确计划分类——只要知道「不同参数下各计划的相对优劣」就够了。绝对代价预测受局部不连续影响很难，但<b>相对排序仍是可靠的性能指示器</b>。RankPQO 是首个把 L2R 用于 PQO 的工作，并基于 pairwise 方法（比较成对计划的优劣）。</p>
+    </div>
+  </div>
+</div>
+
+<!-- ========== SEC 3 ========== -->
+<div class="section" id="sec-3">
+  <h2 class="section-title"><span class="num">3</span>问题定义与现有方法的局限</h2>
+  <p class="section-desc">在定义形式化问题后，论文剖析了四类局限（L1–L4），正是它们催生了 RankPQO 的设计。</p>
+
+  <div class="module-card">
+    <h3>3.1 问题定义</h3>
+    <p>设模板 Q 有 d 个参数化谓词，参数向量 V=[v₁…v_d] 绑定得到查询实例 q；p 是 Q 的一个计划，Latency(p,q) 为用 p 执行 q 的实际时延。</p>
+    <p><b>候选计划生成（Def 3.1）</b>：给定负载 W={q₁…qₙ}（参数向量 Vₛ），从 Q 的所有可能计划中挑一个 k 大小的子集 P={p₁…pₖ} 缓存，使所有查询实例的总延迟 G(W,P) 最小：</p>
+    <div class="formula-box">G(W,P) = Σᵢ minⱼ Latency(pⱼ, qᵢ)</div>
+    <p><b>最优计划选择（Def 3.2）</b>：给定缓存集 P 与查询实例 q，找 p* = arg min_{pⱼ∈P} Latency(pⱼ, q)。</p>
+    <p>（注：覆盖整个选择性空间的最优计划集是 NP-hard，但少量计划即可接近最优。）</p>
+  </div>
+
+  <div class="warn-box">
+    <h4>四类局限（L1–L4）</h4>
+    <p><b>L1</b>（query-log 驱动法，如 LogPQO）：只用内置优化器生成的、代价最小的计划，性能被内置优化器封顶，无法超越。</p>
+    <p><b>L2</b>（Kepler 改基数枚举）：不清楚要改多大基数才能产生新计划，效率低（基数翻 10 倍仍可能得到同一计划）。</p>
+    <p><b>L3</b>（Kepler）：为求新计划可能把基数改得严重偏离真值，生成低质量（高延迟）计划。</p>
+    <p><b>L4</b>（现有 ML 选择法，如 LogPQO/Kepler 的分类/回归）：只用参数向量作输入，假设「相似参数→相似计划」，但<b>微小参数差异即可引发基数与计划的剧变</b>（局部不连续），导致选错计划。</p>
+  </div>
+
+  <div class="insight-box">
+    <h4>RankPQO 的破局</h4>
+    <p>针对 L1/L2/L3：提出<b>混合枚举</b>——直接枚举参数（间接改基数）并显式枚举连接顺序（基于连接图采样），既高效又提升质量。针对 L4：提出<b>同时以「计划 + 参数」为输入的学习排序模型</b>，用相对排序替代绝对代价预测，规避局部不连续。</p>
+  </div>
+</div>
+
+<!-- ========== SEC 4 ========== -->
+<div class="section" id="sec-4">
+  <h2 class="section-title"><span class="num">4</span>混合计划枚举算法（Algorithm 1）</h2>
+  <p class="section-desc">RankPQO 的核心创新之一：不再直接改子计划基数（RCE 的做法），而是<b>枚举参数间接改基数</b> + <b>基于连接图、按基数加权的连接顺序采样</b>，从而高效生成大量不同且高质量的计划。</p>
+
+  <div class="step-flow">
+    <h4>Algorithm 1：Hybrid Plan Enumeration(Q, Pinfo, k1, k2)</h4>
+    <p><b>输入</b>：模板 Q、参数信息 Pinfo、采样参数向量数 k1、采样连接顺序数 k2；<b>输出</b>：计划集 P。</p>
+    <p>1-5. 初始化参数向量集 Vₛ=∅；while |Vₛ|<k1：均匀采样每个参数值得到 V，加入 Vₛ；</p>
+    <p>6. 由 Q 构建连接图 G；</p>
+    <p>7-9. 对每个 V∈Vₛ：绑定得查询实例 q；用 PostgreSQL 优化器得到计划 p₀；</p>
+    <p>10-12. 若 p₀ 是新计划则加入 P；从 p₀ 取各表基数 Cards；</p>
+    <p>13-16. 用 SampleJoinOrders(G, Cards, k2) 采样 k2 个连接顺序；对每个顺序 O，用优化器生成计划 p 并加入 P；</p>
+    <p>17. 返回 P。</p>
+    <p><b>SampleJoinOrders 关键</b>：先按基数算各表被选中概率 Pr；从连接图未访问节点中按 Pr 随机选起点；之后每一步优先从「当前节点的邻居」中按 Pr 采样下一个表（避免笛卡尔积）；若邻居用尽则从剩余表中按 Pr 选。这样生成的连接顺序既多样又回避笛卡尔积与超慢计划。</p>
+  </div>
+
+  <div class="grid-2">
+    <div class="arch-card">
+      <h4>为什么比 Kepler 好？</h4>
+      <p>Kepler（RCE）直接改子计划基数，但「改多少才出新计划」未知，且改得过火会远离真值产生烂计划（L2/L3）。RankPQO 改为：① <b>枚举参数</b>间接影响基数（参数导致相同计划的，其谓词选择性大概率相近，可据此去重）；② <b>显式枚举连接顺序</b>——改变连接顺序几乎总是产生不同计划，效率天然更高；③ 用<b>连接图</b>避免笛卡尔积、用<b>基数加权</b>优先连接小表，进一步减少烂计划。</p>
+    </div>
+    <div class="arch-card">
+      <h4>消融验证（论文 Table 7）</h4>
+      <p>对比两种简化：<b>Method -C</b>（连接图上随机采样、不做基数加权）与 <b>Method -G</b>（完全去掉连接图、全表随机）。平均执行时间 RankPQO-S 0.312s 最优；去掉基数加权升至 0.44s（+0.128）；去掉连接图升至 0.619s（+0.179）。<b>构建连接图对计划质量贡献最大</b>。</p>
+    </div>
+  </div>
+</div>
+
+<!-- ========== SEC 5 ========== -->
+<div class="section" id="sec-5">
+  <h2 class="section-title"><span class="num">5</span>排序模型 PRank：架构、编码与比较层</h2>
+  <p class="section-desc">PRank 是贯穿「候选选择」与「最优选择」的 pairwise 学习排序模型。它同时吃<b>两个计划 + 一个参数向量</b>，预测「对给定参数，哪个计划延迟更低」。这与现有 PQO 模型（只吃参数、预测绝对代价）有本质区别，正好破解 L4。</p>
+
+  <div class="svg-container">
+    <svg viewBox="0 0 980 300" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif">
+      <defs><marker id="aP" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#c4b5fd"/></marker></defs>
+      <!-- Plan1 -->
+      <rect x="20" y="20" width="200" height="70" rx="10" fill="rgba(20,20,35,.85)" stroke="#a855f7"/>
+      <text x="120" y="48" fill="#e6edf3" font-size="13" text-anchor="middle" font-weight="700">Plan 1 (树向量)</text>
+      <text x="120" y="70" fill="#8b949e" font-size="11" text-anchor="middle">op one-hot + 表 one-hot + 谓词 emb</text>
+      <!-- Plan2 -->
+      <rect x="20" y="110" width="200" height="70" rx="10" fill="rgba(20,20,35,.85)" stroke="#a855f7"/>
+      <text x="120" y="138" fill="#e6edf3" font-size="13" text-anchor="middle" font-weight="700">Plan 2 (树向量)</text>
+      <text x="120" y="160" fill="#8b949e" font-size="11" text-anchor="middle">同样编码</text>
+      <!-- Param -->
+      <rect x="20" y="200" width="200" height="60" rx="10" fill="rgba(20,20,35,.85)" stroke="#c4b5fd"/>
+      <text x="120" y="228" fill="#e6edf3" font-size="13" text-anchor="middle" font-weight="700">Param Vector V</text>
+      <text x="120" y="248" fill="#8b949e" font-size="11" text-anchor="middle">int one-hot / float 归一 / str emb</text>
+
+      <!-- plan emb -->
+      <rect x="270" y="40" width="170" height="50" rx="10" fill="rgba(20,20,35,.85)" stroke="#a855f7"/>
+      <text x="355" y="70" fill="#e6edf3" font-size="12" text-anchor="middle">TCNN → PEmb1 (32)</text>
+      <rect x="270" y="125" width="170" height="50" rx="10" fill="rgba(20,20,35,.85)" stroke="#a855f7"/>
+      <text x="355" y="155" fill="#e6edf3" font-size="12" text-anchor="middle">TCNN → PEmb2 (32)</text>
+      <!-- param emb -->
+      <rect x="270" y="205" width="170" height="50" rx="10" fill="rgba(20,20,35,.85)" stroke="#c4b5fd"/>
+      <text x="355" y="235" fill="#e6edf3" font-size="12" text-anchor="middle">FFNN → PaEmb (32)</text>
+
+      <!-- comparison -->
+      <rect x="500" y="110" width="220" height="120" rx="10" fill="rgba(168,85,247,.1)" stroke="#a855f7" stroke-width="2"/>
+      <text x="610" y="138" fill="#c4b5fd" font-size="12" text-anchor="middle" font-weight="700">Comparison Layer</text>
+      <text x="610" y="162" fill="#c9d1d9" font-size="11" text-anchor="middle">d1 = ‖PaEmb − PEmb1‖</text>
+      <text x="610" y="182" fill="#c9d1d9" font-size="11" text-anchor="middle">d2 = ‖PaEmb − PEmb2‖</text>
+      <text x="610" y="202" fill="#c9d1d9" font-size="11" text-anchor="middle">d = d1 − d2</text>
+      <text x="610" y="222" fill="#c4b5fd" font-size="11" text-anchor="middle">σ(d) ∈ (0,1)</text>
+
+      <line x1="220" y1="55" x2="268" y2="60" stroke="#c4b5fd" stroke-width="2" marker-end="url(#aP)"/>
+      <line x1="220" y1="140" x2="268" y2="145" stroke="#c4b5fd" stroke-width="2" marker-end="url(#aP)"/>
+      <line x1="220" y1="230" x2="268" y2="225" stroke="#c4b5fd" stroke-width="2" marker-end="url(#aP)"/>
+      <line x1="440" y1="135" x2="498" y2="150" stroke="#c4b5fd" stroke-width="2" marker-end="url(#aP)"/>
+      <line x1="440" y1="155" x2="498" y2="170" stroke="#c4b5fd" stroke-width="2" marker-end="url(#aP)"/>
+      <line x1="440" y1="225" x2="498" y2="185" stroke="#c4b5fd" stroke-width="2" marker-end="url(#aP)"/>
+      <rect x="760" y="140" width="200" height="60" rx="10" fill="rgba(20,20,35,.85)" stroke="#c4b5fd"/>
+      <text x="860" y="168" fill="#e6edf3" font-size="12" text-anchor="middle" font-weight="700">输出 0 或 1</text>
+      <text x="860" y="188" fill="#8b949e" font-size="11" text-anchor="middle">&lt;0.5 → p1 更快</text>
+      <line x1="720" y1="170" x2="758" y2="170" stroke="#c4b5fd" stroke-width="2" marker-end="url(#aP)"/>
+    </svg>
+    <div class="fc">图 2（对应论文 Figure 2）：PRank 排序模型架构。计划与参数分别编码、嵌入到 32 维，比较层用「参数嵌入与两计划嵌入的距离差」经 sigmoid 输出优劣。</div>
+  </div>
+
+  <div class="grid-2">
+    <div class="arch-card">
+      <h4>特征编码（论文 Figure 3）</h4>
+      <p><b>计划编码</b>：计划用「向量树」表示，每个节点（子计划）的向量 = ① 算子 one-hot（聚合为 6 类：hash/merge/loop join、index/seq scan、aggregate）；② 表 one-hot（该节点触及哪些表）；③ 谓词 embedding（算子与列做 one-hot 后经全连接得到定长，多谓词用 average pooling）。<b>刻意不含</b>估计代价/基数/行宽等——因为这些与用户参数强相关、事先不可知。</p>
+      <p><b>参数编码</b>：维数 m，支持 int（one-hot）、float（归一化到 0–1）、string（embedding）。</p>
+    </div>
+    <div class="arch-card">
+      <h4>三层（论文 Figure 4）</h4>
+      <p><b>计划嵌入 PlanEmb</b>：用 <b>Tree CNN（TCNN）</b>——向量化计划树过三层树卷积，最后 dynamic pooling 压平，再过全连接得 32 维。（对比 Transformer/TCNN/TreeLSTM 性能相当，TCNN 最高效。）</p>
+      <p><b>参数嵌入 ParamEmb</b>：轻量前馈网络（FFNN）把编码后的参数向量映射为 32 维。</p>
+      <p><b>比较层</b>：d1=‖PaEmb−PEmb1‖，d2=‖PaEmb−PEmb2‖，d=d1−d2，输出 σ(d)=1/(1+e^{-d})。</p>
+    </div>
+  </div>
+
+  <div class="highlight-box">
+    <b>输出含义</b>：PRank(V, p1, p2) = σ(d)。若 &lt; 0.5 → Latency(p1,V) &lt; Latency(p2,V)（p1 更优）；否则 p2 更优。即：参数嵌入与某计划嵌入越「近」，该计划对此参数越优。模型用<b>相对延迟</b>作指标，天然比绝对代价回归/分类更鲁棒，直接破解 L4。
+  </div>
+</div>
+
+<!-- ========== SEC 6 ========== -->
+<div class="section" id="sec-6">
+  <h2 class="section-title"><span class="num">6</span>候选计划选择（Algorithm 2）与最优计划预测</h2>
+  <p class="section-desc">模型训练好后，RankPQO 用它做两件实事：离线挑 k 个计划缓存，在线按参数挑最优。</p>
+
+  <div class="step-flow">
+    <h4>Algorithm 2：Candidate Plan Selection(PRank, Vₛ, P, k)</h4>
+    <p>1-5. 用 PRank 分别算参数嵌入 ParamEmbs 与计划嵌入 PlanEmbs，得到 |参数|×|计划| 的<b>距离矩阵</b> DistanceMatrix[i][j] = ‖PlanEmbⱼ − ParamEmbᵢ‖；</p>
+    <p>6-13. 贪心选 k 个：每轮对每个候选 p，用 getDistance 计算「所有参数到当前已选集合 P'∪p 的最小距离之和」作为 G(W,P) 的近似（模型倾向把执行快的计划嵌入得更近），选距离和最小的 p 加入 P'，直到 |P'|=k。</p>
+    <p><b>直觉</b>：把「离每个参数最近（即对该参数最優）的计划」尽量多地纳入缓存，就能以少量计划覆盖整个参数空间的最优。</p>
+  </div>
+
+  <div class="module-card">
+    <h3>最优计划预测（在线）</h3>
+    <p>部署后，对每个用户提交的查询实例，把其参数向量与 k 个缓存计划都嵌入，<b>选与参数嵌入距离最近的那个计划</b>作为最优计划，再转成 pg_hint_plan 的 hint 计划（指定连接顺序与算子类型）执行。</p>
+    <p>相比于 Lero（Opt-Always，每查询在线枚举少数计划），RankPQO 离线枚举数百计划、缓存数十个，运行时只需「查表+排序」，规划时间更短、候选池更大，更易找到好计划。</p>
+  </div>
+</div>
+
+<!-- ========== SEC 7 ========== -->
+<div class="section" id="sec-7">
+  <h2 class="section-title"><span class="num">7</span>模型训练：NS vs S（交替训练）与损失</h2>
+  <p class="section-desc">PRank 用 pairwise 的二分类交叉熵（BCE）训练。论文重点探索了「单模型共享 vs 每模板独立」以及「如何避免遗忘」。</p>
+
+  <div class="module-card">
+    <h3>7.1 损失函数（BCE）</h3>
+    <p>对每对 (pᵢ,pⱼ) 与参数向量 V：若 Latency(pᵢ,V) ≥ Latency(pⱼ,V) 则标签 y=1（p₁ 优），否则 0；预测 ŷ=σ(d)。</p>
+    <div class="formula-box">Loss = −(1/m)·Σᵢ [ yᵢ·log(ŷᵢ) + (1−yᵢ)·log(1−ŷᵢ) ]</div>
+    <p>pairwise 训练：对每个 V 与缓存的 k 个计划，生成 k(k−1) 个训练对。</p>
+  </div>
+
+  <div class="grid-2">
+    <div class="comp-card">
+      <h4>RankPQO-NS（No Share）</h4>
+      <p>每个查询模板单独训一个模型。问题：易过拟合、推理慢、模型总大小约 n MB（n=模板数），可扩展性差。</p>
+    </div>
+    <div class="comp-card">
+      <h4>RankPQO-S（Shared + Alternative）</h4>
+      <p>所有模板<b>共享一个模型</b>，但每个模板有独立的参数嵌入输入层（因各模板参数向量不同）。训练时用<b>交替训练</b>：轮流喂各模板数据，交替步长 Steps=1 时效果最佳——既平衡各模板、又缓解先训的遗忘与后训的欠拟合。RankPQO-S 模型最小（5.9MB），扩展性最好。</p>
+    </div>
+  </div>
+
+  <div class="info-box">
+    <b>训练数据收集的省时三招</b>：① <b>随机采样</b>参数向量-计划对（JOB 全量 72300 对，只采 3000 对即可训）；② <b>多核并行</b>（进程数 6→12→18，收集时间 7.47→3.99→2.87 小时）；③ <b>超时机制</b>：以 PostgreSQL 默认计划执行时间为阈值 t，其它计划超 3t 即终止并记 10t（约 10.8% 长查询被截断）。整体采集从 89.4h 降到 22.6h（全量 / timeout）。
+  </div>
+</div>
+
+<!-- ========== SEC 8 ========== -->
+<div class="section" id="sec-8">
+  <h2 class="section-title"><span class="num">8</span>实验：四数据集性能、效率与消融</h2>
+  <p class="section-desc">在 JOB、TPCH、Stack、DSB 四个真实数据集上，对比 PostgreSQL、LogPQO、Kepler、Lero、True Cardinality、Fastest Found Plan。RankPQO 默认 k=30，训练轮 10，pairwise 数据 3000，k1=200/k2=50，嵌入 32 维。</p>
+
+  <div class="module-card">
+    <h3>8.1 总体性能（论文 Table 1，加速比 = PG 时间 / 方法时间）</h3>
+    <table class="data-table">
+      <thead><tr><th>方法</th><th>JOB</th><th>Stack</th><th>TPCH</th><th>DSB</th></tr></thead>
+      <tbody>
+        <tr><td>LogPQO</td><td>1.67</td><td>1.47</td><td>1.11</td><td>1.69</td></tr>
+        <tr><td>Kepler</td><td>1.89</td><td>2.03</td><td>1.18</td><td>1.81</td></tr>
+        <tr><td>Lero</td><td>2.01</td><td>1.92</td><td>1.18</td><td>2.04</td></tr>
+        <tr><td><b>RankPQO-S</b></td><td><b>2.52</b></td><td><b>2.41</b></td><td><b>1.19</b></td><td><b>2.30</b></td></tr>
+        <tr><td><b>RankPQO-NS</b></td><td><b>2.57</b></td><td><b>2.38</b></td><td><b>1.18</b></td><td><b>2.11</b></td></tr>
+        <tr><td>Fastest Found Plan</td><td>3.45</td><td>3.11</td><td>1.29</td><td>2.92</td></tr>
+      </tbody>
+    </table>
+    <p>RankPQO-NS 相比 PostgreSQL 在 JOB 上快 <b>2.57×</b>，相比最佳基线（Lero）最高快 <b>1.36×</b>。Fastest Found Plan 最快，说明混合枚举确实能找到好计划；RankPQO 因只缓存 top-k 服务不同参数而略逊于它。</p>
+  </div>
+
+  <div class="grid-2">
+    <div class="comp-card">
+      <h4>候选生成效率（Table 4/5）</h4>
+      <p>不同计划数：RankPQO <b>2547</b> vs Kepler 421 vs LogPQO 367；生成速度 <b>6.67/s</b> vs 3.31 vs 4.22。枚举时间 382/127/87 秒（RankPQO 因空间更大而更长），但 RankPQO <b>省掉了独立的 plan costing 阶段</b>（用排序模型直接替代），k=30 时生成候选总时间仅 749s，远优于 Kepler 的 7571s、LogPQO 的 3458s。</p>
+    </div>
+    <div class="comp-card">
+      <h4>与 Lero 对比（Table 3）</h4>
+      <p>JOB 上规划+执行总时间：PG 757ms、Lero 377ms、RankPQO-S 312ms、RankPQO-NS 305ms——RankPQO 规划时间更短（用缓存而非在线枚举）、执行时间更短（候选池更大）。总时长比 Lero 优 17.3%（JOB）/ 11.4%（DSB）。</p>
+    </div>
+  </div>
+
+  <div class="module-card">
+    <h3>8.2 消融与模型分析</h3>
+    <p><b>排序模型消融（Table 16）</b>：RankPQO-S（PRank，2.52）> No Rank（直接用 plan+param 嵌入估代价，2.41）> Plan Distance（把参数拼到每个节点再算距离，2.14）。说明「相对排序」最有效，且「把参数作为单独嵌入与计划嵌入比距离」比「拼到节点上」更好（参数主要影响叶子节点选择性）。</p>
+    <p><b>交替步长（Table 13）</b>：Steps 10/5/2/1 的加速比为 1.00/1.85/2.33/2.52——步长越小（交替越频繁）越好，因为更不易遗忘先训的模板。Table 14 显示 step=1 时各位置模板精度都更高更一致。</p>
+    <p><b>训练数据效率</b>：Table 12 显示数据量从 1k 增到 5k，精度稳定在 ~0.77–0.79，说明模型已学到区分两计划的核心模式，加数据增益有限；epoch 10 时 RankPQO-S 精度 0.79、加速 2.52。</p>
+  </div>
+</div>
+
+<!-- ========== SEC 9 ========== -->
+<div class="section" id="sec-9">
+  <h2 class="section-title"><span class="num">9</span>代码使用与实战（GitHub / 安装 / 复现）</h2>
+  <div class="kv-row"><span class="kv-key">代码仓库</span><span class="kv-val"><a href="https://github.com/songsong945/RankPQO" style="color:#a855f7;">https://github.com/songsong945/RankPQO</a>（含技术报告 PDF）</span></div>
+  <div class="kv-row"><span class="kv-key">环境</span><span class="kv-val">Python + PyTorch；PostgreSQL 12.5；pg_hint_plan（转 hint 计划）；CPU i9-10900X（20 核）/128GB RAM/RTX 3080（论文配置，可降级）</span></div>
+  <div class="kv-row"><span class="kv-key">默认参数</span><span class="kv-val">缓存计划数 k=30；训练 epoch=10；pairwise 数据 3000；k1=200 参数向量，k2=50 连接顺序；列/比较符/字符串嵌入维度 32；RankPQO-S 交替步长=1</span></div>
+  <div class="kv-row"><span class="kv-key">数据集</span><span class="kv-val">JOB（默认）、TPCH、Stack、DSB；每模板 80% 参数向量训练、20% 测试；每结果取 5 次运行中位数</span></div>
+
+  <div class="code-block">
+    <pre><span class="cg"># 1) 准备 PostgreSQL 12.5 + pg_hint_plan</span>
+sudo apt install postgresql-12
+git clone https://github.com/ossc-db/pg_hint_plan
+<span class="cg"># 2) 拉取 RankPQO 并安装依赖</span>
+git clone https://github.com/songsong945/RankPQO
+cd RankPQO
+pip install -r requirements.txt
+
+<span class="cg"># 3) 准备数据集（以 JOB 为例，每模板均匀采样 200 个参数向量）</span>
+<span class="cg"># 4) 离线：混合计划枚举（Algorithm 1, k1=200, k2=50）生成候选</span>
+<span class="cg"># 5) 采集训练数据（随机采样 3000 对 + 多核并行 + 超时机制）</span>
+<span class="cg"># 6) 训练 PRank（pairwise BCE）；推荐 RankPQO-S 交替步长=1</span>
+python train.py --mode S --step 1 --epochs 10 --data_size 3000
+<span class="cg"># 7) 离线候选选择（Algorithm 2, k=30）缓存计划</span>
+<span class="cg"># 8) 在线：用户提交查询实例，PRank 排序缓存计划，转 pg_hint_plan 执行</span></pre>
+  </div>
+  <div class="info-box">
+    <b>复现要点</b>：① 计划枚举务必同时改「参数（间接改基数）」与「连接顺序（基于连接图、基数加权采样）」，这是效率与质量的关键；② 训练数据用随机采样 + 超时机制大幅省时，不影响端到端性能；③ 优先用 <b>RankPQO-S</b>（共享模型 + 交替训练 step=1），模型最小、可扩展性最好、抗遗忘。
+  </div>
+</div>
+
+<!-- ========== SEC 10 ========== -->
+<div class="section" id="sec-10">
+  <h2 class="section-title"><span class="num">10</span>总结与核心问答</h2>
+  <div class="qa-card">
+    <div class="qa-q">Q1：RankPQO 解决的根本问题是什么？</div>
+    <div class="qa-a">参数化查询（同一模板反复执行不同参数）既要避免每次重优化、又要避免只优化一次的次优。PQO 用「离线缓存少量计划 + 运行时按参数挑最优」取平衡。RankPQO 解决了该范式下的两大难题：候选计划生成低效/低质，以及「不执行就无法评估计划好坏」且参数局部不连续导致 ML 选择失效。</div>
+  </div>
+  <div class="qa-card">
+    <div class="qa-q">Q2：混合计划枚举比 Kepler 好在哪？</div>
+    <div class="qa-a">Kepler 直接改子计划基数，但「改多少才出新计划」未知、且改过火会出烂计划。RankPQO 改为：① 枚举参数间接改基数（相同计划的参数其选择性相近，便于去重）；② 显式枚举连接顺序（几乎总产生不同计划、效率更高）；③ 用连接图避免笛卡尔积、按基数加权优先连小表。结果不同计划数 2547（Kepler 421），生成速度 6.67/s（Kepler 3.31）。</div>
+  </div>
+  <div class="qa-card">
+    <div class="qa-q">Q3：为什么用学习排序（L2R）而不是回归/分类？</div>
+    <div class="qa-a">PQO 不需要精确代价估计，只要知道「不同参数下各计划的相对优劣」。绝对代价预测受局部不连续（微小参数差异→计划剧变）影响很难，但相对排序仍是可靠指示器。PRank 同时吃「两个计划 + 一个参数向量」，预测哪个延迟更低，正好破解只用参数向量的 L4 局限。</div>
+  </div>
+  <div class="qa-card">
+    <div class="qa-q">Q4：PRank 的比较层怎么工作？</div>
+    <div class="qa-a">计划和参数分别经 TCNN / FFNN 嵌入到 32 维，得到 PEmb1、PEmb2、PaEmb；比较层算 d1=‖PaEmb−PEmb1‖、d2=‖PaEmb−PEmb2‖，d=d1−d2，输出 σ(d)∈(0,1)。σ(d)<0.5 表示对当前参数 p1 更快。即「参数嵌入与计划嵌入越近，该计划对此参数越优」。</div>
+  </div>
+  <div class="qa-card">
+    <div class="qa-q">Q5：RankPQO-S 与 -NS 怎么选？最终收益？</div>
+    <div class="qa-a">-NS 每模板独立模型（精度略高但易过拟合、模型大、可扩展性差）；-S 共享模型 + 交替训练（step=1 最佳，模型最小 5.9MB、抗遗忘、可扩展性好）。最终 RankPQO-NS 相比 PostgreSQL 最高 2.57× 加速、相比最佳基线最高 1.36× 加速，且候选生成最省时。</div>
+  </div>
+</div>
+
+<!-- ========== SEC 11 ========== -->
+<div class="section translation" id="sec-11">
+  <h2 class="section-title"><span class="num">11</span>全文中文翻译（对应嵌入图片）</h2>
+  <p class="section-desc">以下为《RankPQO: Learning-to-Rank for Parametric Query Optimization》的忠实中文翻译，保留原意与术语，并在关键处嵌入对应图示。</p>
+
+  <h3>摘要</h3>
+  <p>参数化查询优化（PQO）对高效处理参数化查询至关重要。本文针对现有 PQO 技术在<b>计划集生成</b>与<b>最优计划选择</b>两方面的关键挑战展开研究。关于计划集生成，现有方法依赖修改子计划基数，常因不清楚该修改多少而导致低效与次优；为此我们提出<b>混合计划枚举算法</b>，同时灵活调整基数与连接顺序。关于最优计划选择，近期方法依赖机器学习模型预测最小延迟的计划，但在参数绑定变化时预测不准——参数微小变化即可显著影响基数、进而影响计划最优性；为此我们提出<b>学习排序模型</b>，用相对排名作为更可靠的性能指标。我们的方法集成进 PostgreSQL，在真实数据集上实验显示效率与精度均显著提升：相较 PostgreSQL 优化器最高加速 2.57×，超越最佳现有基线最高 1.36×。</p>
+
+  <div class="fig-note">📌 <b>图 1（系统架构）</b>：四组件流水线——计划枚举 → 模型训练 → 候选计划选择 → 最优计划选择（见上文 Figure 1 SVG）。离线生成缓存并部署模型，在线按参数向量用 PRank 从缓存挑最优并转为 pg_hint_plan。</div>
+
+  <h3>1. 引言</h3>
+  <p>参数化查询（PQ）在数据库应用中被广泛使用：同一 SQL 语句被多次执行，每次绑定不同参数值，用占位符表示参数、执行时提供具体值，可减少重复编译并缓解 SQL 注入。处理复杂 SQL 的常见做法是 Opt-Always（每实例独立优化，CPU/内存开销大）；许多商业系统偏好 Opt-Once（只优化首个实例并复用其计划，后续可能次优）。PQO 提供平衡方案：相比 Opt-Always 大幅降低优化开销，同时最小化 Opt-Once 的次优风险。</p>
+  <p>本文聚焦 select-project-join-aggregate 查询的参数化设置，采用「候选计划生成与最优计划预测解耦」的架构。PQO 含两个任务：离线为模板缓存少量计划，运行时高效选择最优缓存计划执行实例。我们的方法分三步：① 枚举大量（数百）候选计划；② 从中选少量（数十）缓存（这是个 NP-complete 的覆盖问题，且需不执行就评估质量）；③ 运行时选最优缓存计划。这归纳为两大挑战——Challenge 1（高效生成既探索大空间又覆盖最优的候选集）与 Challenge 2（不执行就评估不同参数下各计划的质量）。</p>
+  <p>针对 Challenge 1，早期方法靠调用传统优化器+启发式选集，Kepler 改子计划基数枚举新计划，但「改多少基数才出新计划」不清楚、效率极低（如基数翻 10 倍 PostgreSQL 仍给同一计划）。我们提出混合枚举算法，同时改基数与连接顺序：先枚举参数改变各表选择性、选产生不同计划的参数，再对每个实例在逻辑层枚举不同连接顺序，最后指定连接顺序让 PostgreSQL 生成新计划；并用连接图与基数辅助采样生成连接顺序，提升质量。针对 Challenge 2，早期工作设计代价函数但受线性/单调假设限制；近期改用 ML 模型，但只用参数向量、假设局部连续，而反例 [31] 表明微小参数差异即可显著改变延迟（局部不连续）。我们提出学习排序模型：绝对代价预测难，但相对排名仍可靠；且 PQO 既不需精确代价估计也不需精确分类，只要理解不同参数下各计划的相对代价即可识别最优。</p>
+  <p>主要贡献：① 首个用于 PQO 的混合候选计划枚举算法，枚举效率与计划质量均优于现有；② 首个专为 PQO 设计的学习排序模型，并据此提出候选选择与最优预测新方案；③ 真实数据集上充分实验，RankPQO 在 PostgreSQL 内集成，超越 PG 最高 2.57×、超越领先基线最高 1.36×。</p>
+
+  <h3>2. 相关工作</h3>
+  <p>PQO 研究共享两目标：跨参数值范围考虑替代计划集（候选生成），以及运行时按实际参数选最合适计划（最优选择）。候选生成方面，早期寻找覆盖整个选择性空间的最优计划集（NP-hard），后续多用启发式搜索；最优选择方面，Ellipse、基于密度的聚类、SCR 受线性/单调代价假设限制。近期端到端学习方案（Kepler、LogPQO）用传统算法生成候选、ML 选最优；Kepler 改基数提升多样性但效率低，LogPQO 受内置优化器限制。我们提出同时改基数与连接顺序的混合方法。最优选择方面，现有方法把问题当分类或回归、只用参数向量，假设相似参数得相似计划，但微小参数变化可致基数剧变、需不同计划；我们提出基于学习排序的方法。本文也与 Lero 等端到端优化器区分：那些估计特定计划的执行时间，而我们需要预测「同一计划对不同参数向量的执行时间」，且要为一个模板生成更大计划集、选子集缓存、再按不同参数选计划，故现有模型不适用。</p>
+
+  <h3>3. 概览</h3>
+  <p><b>3.1 问题定义</b>。设 Q 为带 d 个参数化谓词的参数化查询（模板），参数向量 V=[v₁…v_d] 绑定得到查询实例 q，p 为 Q 的计划，Latency(p,q) 为用 p 执行 q 的时延。定义 3.1（候选计划生成）：给定负载 W 与参数向量集 Vₛ，从 Q 所有可能计划中挑 k 大小子集 P 缓存，使总延迟 G(W,P)=Σᵢ minⱼ Latency(pⱼ,qᵢ) 最小。定义 3.2（最优计划选择）：给定缓存集 P 与查询实例 q，找 p*=arg min_{pⱼ∈P} Latency(pⱼ,q)。</p>
+  <p><b>3.2 方法动机</b>。针对 Challenge 1：query-log 驱动法（LogPQO）用内置优化器生成的最小代价计划，性能被封顶（L1）；Kepler 启发式改基数枚举，既不清楚改多少（L2），又可能改得偏离真值产生烂计划（L3）。我们以「指定连接顺序直接生成新计划」克服 L2、以「连接图+基数加权采样」提升质量克服 L3。针对 Challenge 2（L4）：现有分类/回归只用参数向量、假设局部一致，但微小参数差异可致基数剧变、计划剧变。我们改为同时以「计划+参数」为输入、用学习排序技术选计划，因为绝对最优难定、相对排名仍可靠。</p>
+  <p><b>3.3 系统概览</b>（见上文图 1）。四组件：计划枚举（① 混合算法同时枚举基数与连接顺序，每分钟生成不同计划更多、覆盖更全）、模型构建（② 用传统优化器采样部分计划执行收集延迟，构建 pairwise 排序模型 PRank，输入两计划+一参数向量，预测相对延迟：若 Latency(p1,V1)<Latency(p2,V1) 输出 0，否则 1）、候选计划选择（③ 用 PRank 预测所有计划对全部实例的相对延迟，在预算 k 下贪心选使总延迟最小的 k 个）、最优计划选择（④ 部署后对每个用户查询实例用 PRank 对 k 个缓存计划排序，选最优并转成 pg_hint_plan 的 hint 计划）。</p>
+
+  <div class="fig-note">📌 <b>图 2（PRank 架构）</b>：计划 1/2 经特征编码与 TCNN 得 32 维 PEmb，参数向量经 FFNN 得 32 维 PaEmb；比较层算 d1=‖PaEmb−PEmb1‖、d2=‖PaEmb−PEmb2‖、d=d1−d2，输出 σ(d)∈(0,1)（见上文 Figure 2 SVG）。</div>
+  <div class="fig-note">📌 <b>图 3（特征编码）</b>：计划用向量树表示，每节点含算子 one-hot（6 类）、表 one-hot、谓词 embedding；参数向量按 int/float/string 分别 one-hot/归一/embedding（见论文原图）。<b>图 4（嵌入层）</b>：PlanEmb 用 TCNN（三层树卷积+dynamic pooling+全连接→32 维），ParamEmb 用 FFNN→32 维，比较层算距离差（见论文原图）。</div>
+
+  <h3>4. 排序模型 PRank</h3>
+  <p><b>4.1 模型设计</b>（见上文图 2）。PRank 含特征提取编码层、计划嵌入层（绿）、参数嵌入层（黄）、比较层（蓝）。与现有 PQO 模型两点不同：① 同时以计划与参数向量为输入（现有只用参数或选择性向量）；② 目标是预测给定查询实例下两计划的相对延迟，比回归（预测代价）或分类（识别最快计划）更简单，从而破解 L4。整体框架：输入参数向量与两计划，判断哪个对该参数向量执行延迟更低，利用计划的相对性能而非绝对代价/时间预测。</p>
+  <p>特征提取与编码层：计划编码用向量树，每子计划节点向量 = 算子 one-hot（6 类：hash/merge/loop join、index/seq scan、aggregate）+ 表 one-hot（该节点触及哪些表）+ 谓词 embedding（算子与列 one-hot 后经全连接得定长，多谓词用 average pooling）。<b>刻意不含</b>估计代价/基数/行宽/采样 embedding——这些与用户参数强相关、事先不可知。参数向量（维数 m）只用 m 个参数值作特征：int 用 one-hot、float 归一化到 (0,1)、string 用 embedding。</p>
+  <p>计划嵌入层：把计划从原特征空间映射到 32 维。对比 Transformer/TCNN/TreeLSTM 性能相当，TCNN 最高效，故选 TCNN：向量化计划树过三层树卷积，最后 dynamic pooling 压平，再经全连接得 32 维嵌入。参数嵌入层：用轻量 FFNN 把编码后的参数向量转为 32 维。比较层：对给定参数向量，算 d1=‖PaEmb−PEmb1‖、d2=‖PaEmb−PEmb2‖，d=d1−d2，输出 φ(d)=1/(1+e^{-d})。若 PRank(V,p1,p2)<0.5 → Latency(p1,V)<Latency(p2,V)，否则 ≥。</p>
+  <p><b>4.2 模型训练</b>。损失用二分类交叉熵（BCE）：Loss=−(1/m)Σᵢ[yᵢlog(ŷᵢ)+(1−yᵢ)log(1−ŷᵢ)]，yᵢ 为第 i 对的真值标签（1 表示 p1 优，0 表示 p2 优），ŷᵢ=σ(d)。pairwise 训练：对每个参数向量 V 与缓存计划 {p₁…pₖ}，生成 k(k−1) 个训练对，标签按 Latency(pᵢ,V)≥Latency(pⱼ,V) 置 1 否则 0。训练策略：最初每模板独立训一个模型（RankPQO-NS），但易过拟合、推理慢、模型约 n MB（n=模板数）；改为所有模板共享一个模型、各模板有独立参数嵌入输入层（因各模板参数向量不同）。朴素共享（顺序训）导致后训模板过拟合、先训欠拟合；改为<b>交替训练</b>（RankPQO-S，step=1 时各模板均匀训练、最佳）。模型重训：假设库配置/优化器行为/数据模式相对稳定，若偶变则采集新数据优先重训。</p>
+
+  <h3>5. 提出的方法</h3>
+  <p><b>5.1 计划枚举</b>。因空间庞大，用人工规则剪枝生成子集。混合枚举算法同时枚举基数估计与连接顺序（Algorithm 1，运行示例见 [31]）。核心：利用 PostgreSQL 基于指定选择性与连接顺序生成计划。先改谓词参数影响各表选择性（间接改基数），再对每个产生不同计划的参数集枚举不同连接顺序（因产生相同计划的参数其选择性相近）。连接顺序枚举比基数枚举更高效（改变连接顺序几乎总产生不同计划），但简单指定可能产生笛卡尔积导致烂计划；故先构建连接图，从图上采样生成连接顺序以避免笛卡尔积，并基于之前枚举的基数优先连接小表。Algorithm 1：均匀采样 k1 参数向量改选择性（行 3-5）；对每个不同参数向量用 PostgreSQL 得计划 p0（行 8-9）；对每个不同 p0 枚举 k2 连接顺序（行 13-16）；连接顺序采样时按概率（基数加权）随机选起点，后续优先从邻居采样避免笛卡尔积，邻居耗尽则从剩余表按概率选（行 26-38）。</p>
+  <p><b>5.2 训练数据采集</b>。枚举 k1 参数向量与候选集 P 后，把每个计划在每个参数向量绑定的 Q 上执行，生成延迟数据集。完整采集约需 48 CPU 天/负载。因模型只关注相对大小、识别 top-k 好计划，本身更鲁棒、泛化好，可从有限数据学习。为减采集时间用三招：① 随机采样参数-计划对（JOB 全量 72300 对只采 3000 对）；② 多核并行；③ 超时机制（以 PG 默认计划时间为阈值 t，其它计划超 3t 即终止记 10t，约 10.8% 长查询被截断）。</p>
+  <p><b>5.3 候选计划选择</b>（Algorithm 2）。先用 PRank 算参数与计划的嵌入，得 |参数|×|计划| 距离矩阵（行 1-5）；再基于距离矩阵贪心选计划（行 8-13）：每轮对每个候选 p，用 getDistance 算「所有参数到当前已选集合 P'∪p 的最小距离之和」作为 G(W,P) 的近似（模型倾向把执行快的计划嵌入得更近），选距离和最小的加入 P'，直到 |P'|=k。P' 即最终结果。</p>
+  <p><b>5.4 最优计划预测</b>。运行时把输入参数向量与缓存计划都嵌入，选与参数向量嵌入距离最近的计划作为最优，转成指定连接顺序与算子类型的 pg_hint_plan（即带 hint 的查询）。</p>
+
+  <h3>6. 实验</h3>
+  <p><b>6.1 设置</b>。数据集：JOB（IMDB，33 模板，每模板合成 200 参数向量，默认）、TPCH（SF=10，22 模板）、Stack（真实，42+45 模板，参数取自 Kepler）、DSB（TPC-DS 增强，SF=100，15 个 SPJ 查询，每模板 5 参数向量）。每模板 80% 参数向量训练、20% 测试。基线：PostgreSQL、LogPQO、Kepler、Lero（Opt-Always）。指标：运行时间与加速比（PG 时间/方法时间）、模型精度（每查询 pairwise 排序正确率）。默认：缓存 k=30、epoch=10、pairwise 数据 3000、无超时+12 核、k1=200/k2=50、嵌入 32 维、RankPQO-S 交替步长=1。环境：i9-10900X/128GB/RTX3080，PostgreSQL 12.5。</p>
+  <p><b>6.2 总体性能</b>（见上文 Table 1）。Fastest Found Plan 最快，证明混合枚举能找到好计划；RankPQO 因只缓存 top-k 服务不同参数而未及它。RankPQO-S/-NS 除 Fastest 外始终优于基线：RankPQO-NS 在 JOB 上比 PG 降 61.1% 时间、比 Kepler 降 26.4%。收益来自① 混合枚举生成更大多样高质量计划池，② 学习排序作为更可靠的选计划指标。各数据集复杂度不同（JOB 平均连接数更高、空间更大）。k 的影响（图 5）：k 增大所有方法变好但有边际递减，默认取 k=30。逐模板（表 2）：简单查询（q2/q4/q16）PG 更快（额外优化有开销）；复杂查询（q24/q30）RankPQO 最优。与 Lero 比（表 3）：PG 规划最短、Lero 最长；RankPQO 规划更短（用缓存而非在线枚举）、执行最短（候选池更大），总时间比 Lero 优 17.3%（JOB）/11.4%（DSB）。</p>
+  <p><b>6.3 候选生成分析</b>。效率（表 4）：枚举时间 LogPQO 87 / Kepler 127 / RankPQO 382（空间更大故更长）；plan costing 时间 3331 / 7429 / NA（RankPQO 无独立 costing 阶段，直接用排序模型）。不同计划数（表 5）：RankPQO 2547（6.67/s）远超 Kepler 421（3.31）、LogPQO 367（4.22）。选择时间（表 6）：k=30 时生成候选总时间 RankPQO 749s 远优于 Kepler 7571s、LogPQO 3458s。有效性（图 6）：把 RankPQO 的 L2R 模型套到 Kepler/LogPQO 上（Kepler+/LogPQO+），RankPQO-S/-NS 始终领先，证明候选生成有效。混合枚举消融（表 7）：去掉基数加权（-C）平均 0.44s、去掉连接图（-G）0.619s，均劣于 RankPQO-S 0.312s，构建连接图贡献最大。</p>
+  <p><b>6.4 模型分析</b>。采集时间（表 8/9/10）：采样+超时+多核显著降时且不影响端到端性能。训练轮（图 7a、表 11）：RankPQO-NS 训练更久（需建多个模型）；epoch 增 RankPQO-S 训练时间显著升（更频繁跨模板切换）。epoch=10 时 RankPQO-S 精度 0.79、加速 2.52；RankPQO-NS 精度 0.86、加速 2.57（但高 epoch 下过拟合致加速降）。数据量（图 7b、表 12）：精度随数据量稳定在 ~0.77–0.79，说明已学到核心模式。交替步长（图 8、表 13）：步长越小（切换越频）训练越久但精度/加速越好（step=1 时 0.79/2.52）；表 14 显示 step=1 各位置模板精度都更高更一致（缓解遗忘）。与基线比（表 15）：RankPQO 训练最久（输入含计划+参数、模型更复杂），但 RankPQO-S 模型最小（5.9MB，共享模型提升可扩展性）。统一候选集后比选计划（图 9、表 16）：RankPQO-S（2.52）> No Rank（2.41）> Plan Distance（2.14），PRank 最有效；No Rank 仍超 Kepler 说明「把计划作为输入」本身就有用；Plan Distance 把参数拼到每节点效果一般（参数主要影响叶子选择性）。</p>
+
+  <h3>7. 结论</h3>
+  <p>我们提出 RankPQO——一种面向参数化查询优化的新方法，核心是基于混合计划枚举算法（同时调整子计划基数与连接顺序）解决传统 PQO 在计划集生成与最优计划选择上的低效，并辅以学习排序模型提供更可靠的最优计划选择（尤其当微小参数变化剧烈改变执行性能时）。真实数据集上的充分实验证明了其优越性：在 PostgreSQL 内集成后，超越 PG 优化器最高 2.57×、超越领先基线最高 1.36×，确认了 RankPQO 的实用效能与显著提升数据库应用 PQO 的潜力。</p>
+
+  <h3>参考与资源</h3>
+  <p>[4] pg_hint_plan；[11] Kepler；[18] Ioannidis 等 Parametric Query Optimization；[22] Leis 等 JOB；[31] RankPQO 技术报告；[34] LogPQO（Leveraging Query Logs）；[41] Lero。</p>
+  <p>代码与数据：https://github.com/songsong945/RankPQO</p>
+</div>
+
+<div class="footer">RankPQO 深度解读 · PVLDB 2024 18(3):863-875 · GitHub: songsong945/RankPQO</div>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>深度解读 — ReST-MCTS*: LLM Self-Training via Process Reward Guided Tree Search</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{
+  font-family:'Noto Sans SC',system-ui,-apple-system,sans-serif;
+  background:#0d1117;color:#c9d1d9;
+  line-height:1.8;font-size:16px;
+  min-height:100vh;
+}
+.container{
+  max-width:1400px;margin:0 auto;padding:0 24px;
+  background:#0d1117;position:relative;
+}
+.back-btn{
+  position:fixed;top:16px;left:16px;z-index:9999;
+  background:rgba(20,20,35,.75);color:#c9d1d9;
+  border:1px solid rgba(255,255,255,.15);border-radius:10px;
+  padding:8px 16px;font-size:14px;cursor:pointer;
+  backdrop-filter:blur(6px);transition:all .3s;
+  text-decoration:none;display:flex;align-items:center;gap:6px;
+}
+.back-btn:hover{background:rgba(30,30,55,.9);border-color:rgba(255,255,255,.3);}
+.hero{padding:80px 0 40px;text-align:center;}
+.hero-title{
+  font-size:2.2rem;font-weight:700;
+  background:linear-gradient(135deg,#7c3aed,#8b5cf6,#8b5cf6);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  background-clip:text;margin-bottom:12px;line-height:1.3;
+}
+.hero-sub{font-size:1.1rem;color:#8b949e;margin-bottom:8px;}
+.venue{font-size:.95rem;color:#8b949e;margin-top:8px;}
+.venue a{color:#7c3aed;text-decoration:none;}
+.venue a:hover{text-decoration:underline;}
+.tag-row{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:16px;}
+.tag{
+  display:inline-block;padding:4px 14px;border-radius:20px;font-size:.85rem;
+  border:1px solid rgba(124,58,237,.3);color:#7c3aed;
+  background:rgba(124,58,237,.06);
+}
+.divider{border:none;border-top:1px solid rgba(255,255,255,.08);margin:48px 0;}
+.section{margin:40px 0;}
+.section-title{
+  font-size:1.75rem;font-weight:700;margin-bottom:20px;
+  color:#e6edf3;display:flex;align-items:center;gap:10px;
+}
+.section-title .num{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:36px;height:36px;border-radius:50%;
+  background:linear-gradient(135deg,#7c3aed,#8b5cf6);
+  color:#0d1117;font-size:1rem;font-weight:700;flex-shrink:0;
+}
+.section-desc{font-size:16px;line-height:1.9;color:#c9d1d9;margin-bottom:16px;}
+.toc{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:16px;padding:28px 36px;margin:30px 0;
+}
+.toc h3{font-size:1.2rem;color:#e6edf3;margin-bottom:14px;}
+.toc ol{list-style:none;counter-reset:toc;padding:0;}
+.toc li{counter-increment:toc;margin:8px 0;}
+.toc li::before{content:counter(toc) ".";color:#7c3aed;font-weight:600;margin-right:8px;}
+.toc a{color:#8b949e;text-decoration:none;transition:color .2s;}
+.toc a:hover{color:#7c3aed;}
+.module-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:24px;margin:18px 0;transition:all .3s;
+}
+.module-card:hover{border-color:rgba(124,58,237,.3);transform:translateY(-2px);}
+.module-card h3{font-size:1.15rem;font-weight:600;margin-bottom:10px;color:#7c3aed;}
+.module-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.arch-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:22px;margin:14px 0;transition:all .3s;
+}
+.arch-card:hover{border-color:rgba(124,58,237,.3);}
+.arch-card h4{font-size:1.05rem;font-weight:600;color:#8b5cf6;margin-bottom:8px;}
+.arch-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.step-flow{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:22px;margin:14px 0;
+}
+.step-flow h4{font-size:1.05rem;font-weight:600;color:#7c3aed;margin-bottom:8px;}
+.step-flow p{font-size:15px;line-height:1.8;color:#8b949e;}
+.data-table{
+  width:100%;border-collapse:collapse;margin:18px 0;
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;overflow:hidden;font-size:14px;
+}
+.data-table th{
+  background:rgba(124,58,237,.1);color:#7c3aed;
+  padding:12px 16px;text-align:left;font-weight:600;
+}
+.data-table td{
+  padding:10px 16px;border-top:1px solid rgba(255,255,255,.06);
+  color:#c9d1d9;
+}
+.data-table tr:hover td{background:rgba(124,58,237,.04);}
+.formula-box{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;padding:20px 24px;margin:16px 0;
+  font-size:18px;text-align:center;color:#e6edf3;
+  font-family:'JetBrains Mono',monospace;
+}
+.code-block{
+  background:rgba(20,20,35,.8);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;padding:18px 22px;margin:16px 0;
+  overflow-x:auto;
+}
+.code-block pre{
+  font-family:'JetBrains Mono',monospace;font-size:14px;
+  line-height:1.7;color:#c9d1d9;white-space:pre;
+}
+.ck{color:#7c3aed;}.cs{color:#8b5cf6;}.cf{color:#d2a8ff;}.cg{color:#8b949e;}.cv{color:#79c0ff;}
+.qa-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:24px;margin:16px 0;
+}
+.qa-q{font-size:1.05rem;font-weight:600;color:#7c3aed;margin-bottom:12px;}
+.qa-a{font-size:15px;line-height:1.9;color:#8b949e;}
+.highlight-box{
+  background:rgba(124,58,237,.06);border:1px solid rgba(124,58,237,.2);
+  border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;
+}
+.warn-box{
+  background:rgba(240,136,62,.08);border:1px solid rgba(240,136,62,.25);
+  border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;
+}
+.info-box{
+  background:rgba(124,58,237,.06);border:1px solid rgba(124,58,237,.2);
+  border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;
+}
+.prompt-box{
+  background:rgba(20,20,35,.8);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;padding:18px 22px;margin:16px 0;
+  font-family:'JetBrains Mono',monospace;font-size:13px;
+  line-height:1.7;color:#c9d1d9;white-space:pre-wrap;
+}
+.prompt-label{
+  display:inline-block;padding:2px 10px;border-radius:6px;
+  font-size:.85rem;font-weight:600;margin-bottom:8px;
+  background:rgba(124,58,237,.15);color:#7c3aed;
+}
+.fc{font-size:14px;color:#8b949e;text-align:center;margin:10px 0;line-height:1.6;}
+.comp-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:22px;margin:14px 0;transition:all .3s;
+}
+.comp-card:hover{border-color:rgba(124,58,237,.3);}
+.comp-card h4{font-size:1.05rem;font-weight:600;color:#8b5cf6;margin-bottom:8px;}
+.comp-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.insight-box{
+  background:rgba(124,58,237,.06);border:1px solid rgba(124,58,237,.2);
+  border-radius:12px;padding:18px 22px;margin:16px 0;
+}
+.insight-box h4{color:#7c3aed;font-size:1.05rem;margin-bottom:8px;}
+.insight-box p{font-size:15px;line-height:1.8;color:#c9d1d9;}
+.limit-box{
+  background:rgba(240,136,62,.08);border:1px solid rgba(240,136,62,.25);
+  border-radius:12px;padding:18px 22px;margin:16px 0;
+}
+.limit-box h4{color:#8b5cf6;font-size:1.05rem;margin-bottom:8px;}
+.limit-box p{font-size:15px;line-height:1.8;color:#c9d1d9;}
+.kv-row{
+  display:flex;border-bottom:1px solid rgba(255,255,255,.06);padding:8px 0;
+}
+.kv-row:last-child{border-bottom:none;}
+.kv-key{width:180px;flex-shrink:0;color:#7c3aed;font-weight:500;font-size:14px;}
+.kv-val{color:#c9d1d9;font-size:14px;line-height:1.7;}
+.footer{text-align:center;color:#555;font-size:14px;padding:48px 0 32px;}
+/* SVG architecture */
+.svg-container{
+  background:rgba(20,20,35,.4);border:1px solid rgba(255,255,255,.06);
+  border-radius:14px;padding:20px;margin:24px 0;overflow-x:auto;
+  text-align:center;
+}
+.svg-container svg{max-width:100%;height:auto;}
+/* Phase badge */
+.phase-badge{
+  display:inline-block;padding:3px 12px;border-radius:8px;
+  font-size:.85rem;font-weight:600;margin-right:8px;
+}
+.phase-1{background:rgba(99,102,241,.15);color:#818cf8;}
+.phase-2{background:rgba(124,58,237,.15);color:#8b5cf6;}
+.phase-3{background:rgba(34,197,94,.15);color:#4ade80;}
+/* Grid layout */
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
+.grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;}
+@media(max-width:900px){
+  .grid-2,.grid-3{grid-template-columns:1fr;}
+  .hero-title{font-size:1.6rem;}
+  .kv-row{flex-direction:column;}
+  .kv-key{width:auto;}
+}
+/* Animated arrow */
+@keyframes flowPulse{
+  0%,100%{opacity:.6;}
+  50%{opacity:1;}
+}
+.flow-arrow{animation:flowPulse 2s ease-in-out infinite;}
+
+</style>
+</head>
+<body>
+<div class="container">
+
+<a class="back-btn" href="index.html">&#8592; 返回目录</a>
+
+<a href="rest_mcts_full_translation.html" style="display:block;max-width:860px;margin:18px auto 0;padding:13px 22px;background:linear-gradient(90deg,rgba(31,111,235,.16),rgba(137,87,227,.16));border:1px solid rgba(137,87,227,.5);border-radius:12px;color:#e6edf3;text-decoration:none;font-weight:500;font-size:15px;text-align:center;box-shadow:0 2px 14px rgba(0,0,0,.35);">阅读本文逐段完整中文翻译（Full Translation）</a>
+
+<!-- ========== HERO ========== -->
+<div class="hero">
+  <h1 class="hero-title">ReST-MCTS*: LLM Self-Training via Process Reward Guided Tree Search</h1>
+  <p class="hero-sub">过程奖励引导的树搜索——让 LLM 自训练获得高质量推理轨迹</p>
+  <div class="venue">ICLR 2025 &nbsp;|&nbsp; <a href='https://arxiv.org/abs/2406.08124'>arXiv:2406.08124</a></div>
+  <div class="tag-row">
+    <span class="tag">Self-Training</span><span class="tag">MCTS*</span><span class="tag">Process Reward</span><span class="tag">PRM</span><span class="tag">Tsinghua</span>
+  </div>
+</div>
+
+<!-- ========== TOC ========== -->
+<div class="toc">
+  <h3>目录</h3>
+  <ol>
+    <li><a href="#sec-1">研究动机</a></li>
+    <li><a href="#sec-2">框架概览</a></li>
+    <li><a href="#sec-3">过程奖励引导的 MCTS*</a></li>
+    <li><a href="#sec-4">树搜索回溯推断正确性</a></li>
+    <li><a href="#sec-5">自训练数据收集</a></li>
+    <li><a href="#sec-6">搜索与训练的整合</a></li>
+    <li><a href="#sec-7">实验评估</a></li>
+    <li><a href="#sec-8">敏感性分析</a></li>
+    <li><a href="#sec-9">代码使用与实战（含 GitHub 源码、安装命令、使用示例）</a></li>
+    <li><a href="#sec-10">总结与未来展望</a></li>
+  </ol>
+</div>
+
+<hr class="divider">
+
+<hr class="divider">
+
+<!-- ========== 1. MOTIVATION ========== -->
+<div class="section" id="sec-1">
+  <h2 class="section-title"><span class="num">1</span> 研究动机：最终答案对 ≠ 过程对</h2>
+  <p class="section-desc">LLM 自训练普遍用"生成 → 筛正确最终答案"做训练数据，但"最终答案对 ≠ 过程对"——轨迹中常有错误 / 无用中间步骤，构成大量假阳性样本，限制微调质量。训练逐步骤的过程奖励模型（PRM）需稠密人工标注，不可扩展。</p>
+  <div class="grid-2">
+    <div class="module-card">
+      <h3>假阳性轨迹问题</h3>
+      <p>仅靠最终答案筛出的"正确"轨迹常含错误中间步，用其微调会污染策略模型。需要能反映"过程正确性"的信号。</p>
+    </div>
+    <div class="module-card">
+      <h3>PRM 标注瓶颈</h3>
+      <p>逐步骤过程奖励模型需要稠密人工标注，成本高、不可扩展。需要自动构造过程奖励的方法。</p>
+    </div>
+  </div>
+  <div class="insight-box">
+    <h4>本文主张：过程奖励引导的树搜索</h4>
+    <p>ReST-MCTS* 用改进的 MCTS* 在推理树上反向传播推断每步正确性，自动构造过程奖励并收集高质量训练轨迹，实现策略模型与奖励模型的互增强（"MuZero 式"学习）。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 2. OVERVIEW ========== -->
+<div class="section" id="sec-2">
+  <h2 class="section-title"><span class="num">2</span> 框架概览：MCTS* + 互自训练</h2>
+  <p class="section-desc">四大组件：MCTS*（树搜索策略）、PRM / 质量价值模型 Vθ（引导搜索）、Policy Model（生成步骤）、Self-Training（用搜索轨迹训策略与奖励模型）。二者相互促进。</p>
+  <div class="svg-container">
+    <svg viewBox="0 0 920 250" xmlns="http://www.w3.org/2000/svg" font-family="Noto Sans SC, sans-serif">
+      <defs><marker id="rmR" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#8b5cf6"/></marker></defs>
+      <rect x="20" y="95" width="150" height="60" rx="12" fill="rgba(124,58,237,.12)" stroke="#8b5cf6" stroke-width="1.5"/>
+      <text x="95" y="130" text-anchor="middle" fill="#c9d1d9" font-size="14" font-weight="600">问题 + 策略</text>
+      <rect x="200" y="55" width="200" height="130" rx="12" fill="rgba(124,58,237,.18)" stroke="#8b5cf6" stroke-width="2"/>
+      <text x="300" y="88" text-anchor="middle" fill="#e6edf3" font-size="13" font-weight="700">MCTS*</text>
+      <text x="300" y="110" text-anchor="middle" fill="#8b949e" font-size="10">节点选择</text>
+      <text x="300" y="128" text-anchor="middle" fill="#8b949e" font-size="10">思维扩展</text>
+      <text x="300" y="146" text-anchor="middle" fill="#8b949e" font-size="10">贪心 rollout</text>
+      <text x="300" y="164" text-anchor="middle" fill="#8b949e" font-size="10">价值反传</text>
+      <rect x="450" y="55" width="200" height="130" rx="12" fill="rgba(124,58,237,.18)" stroke="#8b5cf6" stroke-width="2"/>
+      <text x="550" y="88" text-anchor="middle" fill="#e6edf3" font-size="13" font-weight="700">价值模型 Vθ</text>
+      <text x="550" y="110" text-anchor="middle" fill="#8b949e" font-size="10">质量值 vₖ</text>
+      <text x="550" y="128" text-anchor="middle" fill="#8b949e" font-size="10">加权奖励 wₛₖ</text>
+      <text x="550" y="146" text-anchor="middle" fill="#8b949e" font-size="10">反向训练目标</text>
+      <text x="550" y="164" text-anchor="middle" fill="#8b949e" font-size="10">树搜索推断</text>
+      <rect x="700" y="55" width="200" height="130" rx="12" fill="rgba(124,58,237,.12)" stroke="#8b5cf6" stroke-width="1.5"/>
+      <text x="800" y="88" text-anchor="middle" fill="#e6edf3" font-size="13" font-weight="700">Self-Training</text>
+      <text x="800" y="110" text-anchor="middle" fill="#8b949e" font-size="10">正确轨迹 SFT</text>
+      <text x="800" y="128" text-anchor="middle" fill="#8b949e" font-size="10">价值数据训 V</text>
+      <text x="800" y="146" text-anchor="middle" fill="#8b949e" font-size="10">策略迭代</text>
+      <text x="800" y="164" text-anchor="middle" fill="#8b949e" font-size="10">互增强</text>
+      <line x1="170" y1="120" x2="195" y2="120" stroke="#8b5cf6" stroke-width="2" marker-end="url(#rmR)"/>
+      <line x1="400" y1="120" x2="445" y2="120" stroke="#8b5cf6" stroke-width="2" marker-end="url(#rmR)"/>
+      <line x1="650" y1="120" x2="695" y2="120" stroke="#8b5cf6" stroke-width="2" marker-end="url(#rmR)"/>
+    </svg>
+  </div>
+  <div class="step-flow">
+    <h4>互自训练循环</h4>
+    <p>初始 SFT 策略 πS0、由 D0 经过程奖励推断构建 DV0 训 V0；每轮 i：πSi−1 + Vᵢ−1 引导 MCTS* 生成 DG 解 → 选正确解训 πSi → 提取价值数据训 Vᵢ。策略与奖励模型相互促进。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 3. PRM ========== -->
+<div class="section" id="sec-3">
+  <h2 class="section-title"><span class="num">3</span> 过程奖励引导的 MCTS*</h2>
+  <p class="section-desc">MCTS* 以质量价值 vₖ 为目标，含节点选择、思维扩展、贪心 MC rollout、价值反传四阶段；无需完整生成即可在中间节点反传，并引入特殊 rollout 与 self-critic 提效。</p>
+  <div class="module-card">
+    <h3>质量价值与加权奖励</h3>
+    <p>定义部分解质量值 vₖ（反映到正确答案的概率与步贡献），引入推理距离 mₖ 作权重：wₛₖ = (1−vₖ₋₁)/(mₖ+1)·(1−2rₛₖ)，vₖ = max(vₖ₋₁+wₛₖ, 0)，满足有界性定理 vₖ∈[0,1]。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 4. BACKTRACK ========== -->
+<div class="section" id="sec-4">
+  <h2 class="section-title"><span class="num">4</span> 树搜索回溯推断正确性</h2>
+  <div class="module-card">
+    <h3>中间节点反传</h3>
+    <p>用 MCTS* 在剪枝树上沿正确路径推断每节点 vₖ / rₛₖ 作为价值模型训练目标。与 ORM 不同，vₖ 可在中间节点反传，无需完整生成即可获得过程奖励，省算力且避免虚假正确性。</p>
+  </div>
+  <div class="arch-card">
+    <h4>与 MATH-SHEPHERD 的区别</h4>
+    <p>MS 用随机 rollout 合成奖励；本文用树搜索充分 rollout 推断每步能否导向正确答案，验证器精度更高。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 5. COLLECT ========== -->
+<div class="section" id="sec-5">
+  <h2 class="section-title"><span class="num">5</span> 自训练数据收集</h2>
+  <div class="module-card">
+    <h3>互自训练管道</h3>
+    <p>用 MCTS* 在剪枝树上沿正确路径推断每节点 vₖ/rₛₖ 作价值模型训练目标，同时筛正确轨迹做 SFT 训策略模型，迭代互补。正确解用于训策略、过程奖励用于训价值，二者同轮产出。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 6. INTEGRATION ========== -->
+<div class="section" id="sec-6">
+  <h2 class="section-title"><span class="num">6</span> 搜索与训练的整合</h2>
+  <div class="arch-card">
+    <h4>端到端数据流</h4>
+    <p>每轮 i：当前策略 + 价值模型引导 MCTS* 生成解 → 选正确解训策略模型 → 提取价值数据训价值模型。策略模型质量提升 → 搜索生成更高质轨迹 → 价值模型更准 → 进一步反哺策略，形成互增强闭环。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 7. EXPERIMENT ========== -->
+<div class="section" id="sec-7">
+  <h2 class="section-title"><span class="num">7</span> 实验评估：MATH / GSM8K / SciBench</h2>
+  <div class="module-card">
+    <h3>设置与基线</h3>
+    <p>数据集 MATH / GSM8K / TheoremQA（生成）、SciBench / SciEval（评测）；3 基座（LLaMA-3-8B-Instruct、Mistral-7B:MetaMATH、SciGLM-6B）。基线 ReSTEM、Self-Rewarding、CoT、ToT、SC、BoN、MATH-SHEPHERD。</p>
+  </div>
+  <div class="highlight-box">
+    <p><b>主结果</b>：SciGLM-6B 2 轮后平均 35.90 vs ReSTEM 33.27 / Self-Rewarding 33.56；MATH500 验证器 SC+ReST-MCTS* 39.0 &gt; MS 37.3；SciBench 上 GLM4 16.77 vs ToT 15.82 / CoT 12.68；MATH 上 Iter#2 最高 48.5% 超 SC 42.5%。</p>
+  </div>
+  <table class="data-table">
+    <tr><th>基准 / 模型</th><th>ReST-MCTS*</th><th>最佳基线</th></tr>
+    <tr><td>SciGLM-6B（平均）</td><td>35.90</td><td>ReSTEM 33.27</td></tr>
+    <tr><td>MATH500 验证器</td><td>39.0</td><td>MS 37.3</td></tr>
+    <tr><td>SciBench（GLM4）</td><td>16.77</td><td>ToT 15.82</td></tr>
+    <tr><td>MATH Iter#2</td><td>48.5%</td><td>SC 42.5%</td></tr>
+  </table>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 8. SENSITIVITY ========== -->
+<div class="section" id="sec-8">
+  <h2 class="section-title"><span class="num">8</span> 敏感性分析：搜索预算与基座</h2>
+  <div class="module-card">
+    <h3>搜索预算与消融</h3>
+    <p>附录取消入度 / 出度权重、价值数据生成替代法（Appendix B.1）、搜索预算曲线（Figure 2）显示随预算提升性能上升。小模型 LLaMA2-13B-Chat 提升不显著，说明方法对基座有一定要求。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 9. INSIGHT ========== -->
+<div class="section" id="sec-9">
+  <h2 class="section-title"><span class="num">9</span> 代码使用与实战（含 GitHub 源码、安装命令、使用示例）</h2>
+  <div class="module-card">
+    <h3>官方仓库</h3>
+    <p>代码仓库：<a href="https://github.com/THUDM/ReST-MCTS" style="color:#8b5cf6;">https://github.com/THUDM/ReST-MCTS</a>（清华 KEG & Caltech，NeurIPS 2024，arXiv:2406.03816）。含数据 / 脚本。</p>
+  </div>
+  <div class="code-block"><pre># 1) 克隆仓库
+git clone https://github.com/THUDM/ReST-MCTS.git
+cd ReST-MCTS
+
+# 2) 安装依赖
+pip install -r requirements.txt
+
+# 3) 用 MCTS* 生成高质量训练轨迹（自动构造过程奖励）
+python mcts_search.py --model LLaMA-3-8B-Instruct --dataset MATH
+
+# 4) 互自训练：SFT 策略 + 训价值模型
+python self_training.py --policy_ckpt policy.pt --value_ckpt value.pt --rounds 2</pre></div>
+  <div class="highlight-box">
+    <p>复现要点：MCTS* 在剪枝树上沿正确路径反传 vₖ 作价值目标；正确轨迹训策略、过程奖励训价值，二者同轮产出、互增强。需真实答案（oracle）作为搜索终止信号。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 10. SUMMARY ========== -->
+<div class="section" id="sec-10">
+  <h2 class="section-title"><span class="num">10</span> 总结与未来展望</h2>
+  <p class="section-desc">ReST-MCTS* 用过程奖励引导的 MCTS* 自动构造高质量推理轨迹：在中间节点反传质量价值避免虚假正确性，并用互自训练让策略模型与价值模型相互促进，在 MATH / GSM8K / SciBench 上全面超越 ReSTEM / Self-Rewarding / MATH-SHEPHERD。</p>
+  <div class="qa-card">
+    <div class="qa-q">Q1：为何不直接用 ORM？</div>
+    <div class="qa-a">ORM 需完整生成才能反传代价高；vₖ 可在中间节点反传，省算力且避免假阳性样本。</div>
+  </div>
+  <div class="qa-card">
+    <div class="qa-q">Q2：过程奖励从哪来？</div>
+    <div class="qa-a">由 MCTS* 充分 rollout 推断每步能否导向正确答案，无需人工标注。</div>
+  </div>
+  <div class="qa-card">
+    <div class="qa-q">Q3：与 MATH-SHEPHERD 区别？</div>
+    <div class="qa-a">MS 用随机 rollout 合成奖励；本文用树搜索推断，验证器精度更高。</div>
+  </div>
+  <div class="limit-box">
+    <h4>局限与未来</h4>
+    <p>需真实答案（oracle）；未验证数学以外任务（代码 / agent / 对话 / SWE）；价值模型需扩展、数据过滤待改进。</p>
+  </div>
+</div>
+
+<div class="footer">论文深度解读 · 生成自 ReST-MCTS*: LLM Self-Training via Process Reward Guided Tree Search · 阅读时间约 30 分钟</div>
+
+</div>
+</body>
+</html>

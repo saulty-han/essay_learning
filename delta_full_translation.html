@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Delta 论文全文翻译 — A Learned Mixed Cost-based Query Optimization Framework</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="translation_style.css">
+<script>window.MathJax={tex:{inlineMath:[['$','$'],['\\(','\\)']],displayMath:[['$$','$$'],['\\[','\\]']]},svg:{fontCache:'global'}};</script>
+<script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+</head>
+<body>
+<div class="container">
+
+<a class="back-btn" href="index.html">&#8592; 返回目录</a>
+
+<!-- HERO -->
+<div class="hero">
+<h1 class="hero-title">Delta：一种学习型混合代价查询优化框架<br><span style="font-size:1.1rem;color:#666;font-weight:400;">A Learned Mixed Cost-based Query Optimization Framework</span></h1>
+<p class="hero-sub">用「兼容查询检测器 + 两阶段混合代价规划器」统一价值网络与代价模型，确定更高效的执行计划</p>
+<div class="hero-meta">Jiazhen Peng, Zheng Qu, Xiaoye Miao, Rong Zhu · 浙江大学 / 阿里巴巴 · arXiv:2506.15848 (2025)</div>
+<div class="tag-row"><span class="tag">Query Optimization</span><span class="tag">Mixed Cost-based</span><span class="tag">Value Network</span><span class="tag">Cost Model</span><span class="tag">Mahalanobis Distance</span></div>
+</div>
+
+<!-- TOC -->
+<div class="toc"><h3>目录</h3><ol>
+<li><a href="#sec-abstract">摘要 (Abstract)</a></li>
+<li><a href="#sec-intro">I. 引言 (Introduction)</a></li>
+<li><a href="#sec-related">II. 相关工作 (Related Work)</a></li>
+<li><a href="#sec-pre">III. 预备知识 (Preliminaries)</a></li>
+<li><a href="#sec-framework">IV. 框架总览 (Framework Overview)</a></li>
+<li><a href="#sec-planner">V. 混合代价规划器 (Mixed Cost-based Planner)</a></li>
+<li><a href="#sec-cqd">VI. 兼容查询检测器 (Compatible Query Detector)</a></li>
+<li><a href="#sec-eval">VII. 实验评估 (Experimental Evaluation)</a></li>
+<li><a href="#sec-concl">VIII. 结论 (Conclusion)</a></li>
+</ol></div>
+
+<!-- ======== ABSTRACT ======== -->
+<h2 id="sec-abstract" class="sec-title">摘要 (Abstract)</h2>
+<p>查询优化器是数据库管理系统的关键模块。现有优化器存在两种有缺陷的范式：(1) <strong>基于代价的优化器（CBO）</strong>用动态规划与代价模型，但面临搜索空间爆炸与启发式剪枝约束；(2) <strong>基于价值的优化器（VBO）</strong>训练价值网络以高效 beam search，但训练成本更高、精度更低。它们也缺乏检测「可能表现糟糕的查询」的机制。为确定更高效的计划，我们提出 <strong>Delta</strong>——一个混合代价查询优化框架，由<strong>兼容查询检测器</strong>与<strong>两阶段规划器</strong>组成。Delta 先用基于马氏距离的探测器预先过滤掉规划器可能表现糟糕的不兼容查询；对兼容查询，启动两阶段混合代价规划器：阶段 I 作为粗粒度过滤器，基于价值网络通过 beam search 生成高质量候选计划，放宽精度要求并缩小搜索空间；阶段 II 用细粒度的排序器基于学习型代价模型从候选计划中确定最佳计划。此外，为降低训练成本，阶段 II 复用并增强阶段 I 的训练数据。三个负载上的实验表明，Delta 识别出更高质量的计划，相对 PostgreSQL 平均加速 2.34×，并超越 SOTA 学习型方法 2.21×。</p>
+
+<!-- ======== INTRODUCTION ======== -->
+<h2 id="sec-intro" class="sec-title">I. 引言 (Introduction)</h2>
+<p>给定 SQL 查询，优化器旨在确定最小化执行代价（常以延迟为代理）的最优执行计划。由于搜索空间巨大（n 表连接存在 $O(n!)$ 量级计划），寻找最优计划是公认的 NP-hard 问题。按子计划选择准则，现有优化器分两类：</p>
+<p><strong>基于代价的优化器（CBO）</strong>：传统方法与学习型变体共享同一范式，估计子计划代价并依赖动态规划（DP）搜索。但搜索空间爆炸与启发式剪枝的局限使其难以兼顾计划质量与搜索效率——为满足 DP 最优性原则需保留所有潜在最优子计划（扩大空间），而启发式剪枝（如把搜索空间从 $O(n!)$ 降到左深树 $O(2^n)$）会遗漏最优计划；表连接过多时甚至退化为随机搜索。即便代价模型准确，CBO 也因枚举代价过高难以获得最优计划，故代价模型更擅长「比较完整计划」而非「引导搜索」。</p>
+<p><strong>基于价值的优化器（VBO）</strong>：用学习到的价值网络估计每个子计划的整体代价（即包含该子计划的所有完整计划中的最小代价，是计划生成真正关心的目标），可用 beam search 等 best-first 搜索高效探索。若价值网络准确，beam search 找到的计划即最优。但价值网络的特殊预测任务使其训练成本更高、精度低于学习型代价模型。</p>
+<p><strong>混合代价优化器</strong>：综合二者优劣，我们设计两阶段规划器。阶段 I 用基于价值的计划生成器生成 top-k 候选计划（按价值网络排序），作为粗粒度过滤器——目标仅为「保证集合中至少有一个高质量计划」，相比 VBO 追求精确排序全部计划，放宽了对价值网络的精度需求、降低训练难度。阶段 II 用基于代价的计划选择器基于学习型代价模型对候选计划做细粒度评估选最优，把搜索空间从 $O(n!)$ 缩小到 $k$，使直接评估可行。两模型训练成本高：每计划执行需数秒至数分钟且须独占资源，故阶段 II 复用并增强阶段 I 收集的执行计划训练代价模型。此外所有优化器都无法对任意查询都表现良好——我们形式化地把规划器表现糟糕的查询称为<strong>不兼容查询</strong>，并设计基于<strong>马氏距离</strong>的检测器：测量 incoming 查询与训练负载分布的偏离，将高偏离者判为不兼容，对其采用保守策略（如原生优化器）。</p>
+
+<!-- ======== RELATED WORK ======== -->
+<h2 id="sec-related" class="sec-title">II. 相关工作 (Related Work)</h2>
+<p><strong>A. CBO</strong>：单阶段 CBO（传统统计代价模型、学习型 Leon）对代价模型精度要求高，且统计模型依赖独立性/均匀性假设导致大误差并随连接指数传播。两阶段 CBO（Bao、Lero、HybridQO）在传统优化器之上用不同策略（禁用算子子集、缩放基数、指定连接顺序前缀）生成多样候选计划，再学代价模型选最优；但它们只在传统 CBO 上做粗粒度 hint 调优，无法控制候选计划集质量。所有 CBO 都依赖 DP 搜索，难以兼顾质量与效率。</p>
+<p><strong>B. VBO</strong>：用价值网络估计子计划整体代价，beam search 探索全空间；但价值网络比代价模型更难训练（真实整体代价真值更难获取），且取 top-1 计划对精度要求高。</p>
+<p><strong>C. 与已有工作差异</strong>：Delta 用混合代价模型与两阶段搜索确定更高效计划；相比依赖传统优化器与粗粒度 hint 的两阶段 CBO，Delta 用基于价值的生成器产出更高质量候选；相比 VBO，把探索目标从「选 1 个最优」改为「选 top-k」，放宽精度需求。此外 Delta 用马氏距离检测器预先过滤不兼容查询，而已有优化器假设自己能 equally 处理所有情形。</p>
+
+<!-- ======== PRELIMINARIES ======== -->
+<h2 id="sec-pre" class="sec-title">III. 预备知识 (Preliminaries)</h2>
+<p>符号见表 I：$Q,P,s$ 为查询/计划/子计划；$C(P),L(P)$ 为代价/延迟；$M$ 为代价模型，$V$ 为价值网络；$P^*,P^\triangle$ 为候选集中最优/最差计划；$R(P)=L(P)/L(P_0)$ 为相对延迟（$P_0$ 为 PostgreSQL 原生计划）。n 表连接的搜索空间大于 $(2(n-1))!/(n-1)!$。两类模型：代价模型 $M:s\to C(s)$ 或 $L(s)$；价值网络 $V:(Q,s)\to C(Q,s)$ 或 $L(Q,s)$（整体代价=含该子计划的所有完整计划中的最小代价）。</p>
+<p>用例子（表 II）说明整体代价：查询 $Q=A\bowtie B\bowtie C\bowtie D$，子计划 $s=A\bowtie B$，含 $s$ 的计划的代价有 100/120/90 等，则整体代价 $C(Q,s)=90$。整体代价比子计划代价更难估计但更有用。两阶段规划器中，阶段 I 生成器 $G$ 产生 $k$ 个候选 $S^k_G(Q)=\{P_1,\dots,P_k\}$，质量用相对延迟 $R(P_i)=L(P_i)/L(P_0)$ 衡量（$<1$ 表示优于 $P_0$）；阶段 II 选择器 $B$ 选出 $P^*=\arg\min_{P\in S}L(P)$。</p>
+<p><strong>问题陈述</strong>：候选集质量由三项指标衡量——最佳情形改善 $R(P^*)$（越小潜力越强）、最差情形风险 $R(P^\triangle)$（>1 越大风险越高）、高质量计划占比 $\eta(S^k_G)$（$R<1$ 的比例，越大越鲁棒）。满足 $R(P^*)<1.5$ 为<strong>兼容查询</strong>，否则为<strong>生成器不兼容查询</strong>。目标：设计新两阶段框架，包含(1) 生成高质量候选集的生成器，(2) 以最小训练成本学高精度选择模型，(3) 为生成器设计兼容查询检测器。</p>
+
+<!-- ======== FRAMEWORK ======== -->
+<h2 id="sec-framework" class="sec-title">IV. 框架总览 (Framework Overview)</h2>
+<p><strong>设计</strong>：整体代价比代价更适合作为「从巨大空间生成计划」时子计划的评价指标，故把 VBO（LOGER/Balsa）扩展为<strong>基于价值的计划生成器（VPG）</strong>，按价值网络排序选 top-k 而非 top-1。由于价值网络微小误差，top-k 中存在比 top-1 更高效计划的概率很高——理论证明（Lemma 1）$R(P^*)\le R(P_1)$，且实验观察 LOGER/Balsa 的 top-10 候选集质量在 39.4%/91.2% 情形下优于 top-1。相比在传统 CBO 上做粗粒度 hint 的成本型生成器，VPG 能按价值网络估计识别 top-k，为评估计划质量提供依据。</p>
+<p>由于代价模型任务更简单、更易训练，阶段 II 用<strong>基于代价的计划选择器（CPS）</strong>学执行代价模型预测各候选延迟并选最小者。为降训练成本：两阶段规划通过分配精度需求放松价值网络的数据量需求；并复用阶段 I 执行计划、用数据增强扩充——JOB 上唯一训练样本增 8–9×，TPC-DS/Stack 增 2.5–4×。</p>
+
+<div class="figure-wrap">
+<img src="images/delta_pages/p05.png" alt="Figure 1">
+<div class="fig-caption"><strong>图 1：Delta 的架构与工作流。</strong>兼容查询检测器（CQD）接受兼容查询、拒绝不兼容查询（交原生优化器）；混合代价规划器由 VPG 与 CPS 组成，先生成 top-k 候选、再选最优。</div>
+</div>
+
+<p><strong>架构与工作流</strong>：Delta 由混合代价规划器与 CQD 组成。CQD 接受兼容查询、拒绝不兼容查询（后者交保守策略如原生优化器，后端可用空闲资源重训模型以支持更多查询）。接受的查询进入混合代价规划器：阶段 I 中 VPG 作为粗粒度过滤器基于价值网络生成 top-k 候选；阶段 II 中 CPS 基于学习型代价模型（预测各候选延迟）确定最优计划。</p>
+
+<!-- ======== PLANNER ======== -->
+<h2 id="sec-planner" class="sec-title">V. 混合代价规划器 (Mixed Cost-based Planner)</h2>
+<h3 class="subsec-title">A. 基于价值的计划生成器（VPG）</h3>
+<p>价值网络比代价模型更适合引导生成器聚焦巨大空间中的「有希望区域」，但不适合确定最终最优计划。图 2 以 JOB 查询 17f 为例：LOGER/Balsa 选的 top-1 计划（L1/B1）并非最优，top-10 中存在更优的 L8/B6。</p>
+<div class="figure-wrap">
+<img src="images/delta_pages/p06.png" alt="Figure 2">
+<div class="fig-caption"><strong>图 2：VBO 生成的 top-1 与 top-k 计划对比。</strong>(a) JOB 查询 17f 上 PG/LOGER/Balsa 的计划性能；(b) top-10 中最佳计划位置的分布——LOGER 仅 40.6%、Balsa 仅 8.8% 的情形是 top-1 最优，说明 top-k 更可能含更优计划。</div>
+</div>
+<p>Top-k 生成（Algorithm 1）：自底向上，从空子计划 $s_0$ 起，每步选作用于当前子计划的算子（扫描/连接），用价值网络 $V$ 估计整体延迟并维护大小为 beam width $b$ 的有序集合，直至生成 $k$ 个完整计划。价值网络训练基于 VBO（LOGER/Balsa），用强化学习把子计划整体延迟近似为「迄今所见含该子计划计划的最佳延迟」；执行计划以 $(Q,P,L)$ 存入计划池，供阶段 II 复用，并为每个子计划 $s$ 记录整体延迟 $((Q,s),L)$ 于哈希表（取更低值更新）。</p>
+<h3 class="subsec-title">B. 基于代价的计划选择器（CPS）</h3>
+<p>阶段 I 把最优计划选择范围从巨大空间缩小到 $k$ 个候选；阶段 II 训高精度代价模型 $M$ 指导选优。CPS 采用经典代价模型预测计划延迟选最小者（图 3）。为降训练成本：<strong>复用</strong>阶段 I 计划池的执行计划，无需额外采集数据；因预测任务简单，用<strong>数据增强</strong>从执行计划抽取子计划及其直接延迟 $(s,L(s))$ 生成多样自然样本（JOB 8–9×、TPC-DS/Stack 2.5–4×）；为抗标签噪声，采用<strong>异方差回归损失</strong>建模每样本噪声、提升鲁棒性。</p>
+<div class="figure-wrap">
+<img src="images/delta_pages/p07.png" alt="Figure 3">
+<div class="fig-caption"><strong>图 3：代价模型 M 的训练。</strong>复用计划池数据 → 数据增强 → 异方差回归损失（建模噪声 σ²）→ 训得代价模型 M*，预测延迟与噪声。</div>
+</div>
+<p><strong>损失函数</strong>：代价模型 $M:P\to(L(P),\epsilon(P))$，异方差回归损失 $L=\frac1N\sum_i\big(\frac{(y_i-\hat y_i)^2}{2\sigma_i^2}+\frac{\ln\sigma_i^2}{2}\big)$；第一项对大噪声样本降权，第二项惩罚项防止 $\sigma_i^2$ 无限制增大。<strong>模型细节</strong>：融合 Bao/Lero 的树卷积特征化（算子 one-hot、基数/代价 min-max 归一化、关系 one-hot 和），经三块树卷积+层归一化+ReLU，动态池化压平后两路全连接分别预测延迟与噪声。</p>
+
+<!-- ======== CQD ======== -->
+<h2 id="sec-cqd" class="sec-title">VI. 兼容查询检测器 (Compatible Query Detector)</h2>
+<p>CQD 拦截分布外（OOD）查询以保鲁棒性：用<strong>马氏距离</strong> $D_M(\vec x,X)=\sqrt{(\vec x-\vec\mu)^\top\Sigma^{-1}(\vec x-\vec\mu)}$ 衡量查询特征与训练分布的偏离（无量纲、尺度不变、考虑变量相关性）。流程：原生优化器生成基准计划 $P_0$，把 $(Q,P_0)$ 与训练样本同样编码为高维向量，计算马氏距离；阈值指示器 $I=1$（接受）若 $D_M\le\gamma$，否则 $I=0$（拒绝交原生优化器）。$\gamma$ 控制可靠性与覆盖的权衡：小 $\gamma$ 保守（拒绝多、鲁棒但限制收益），大 $\gamma$ 放宽（覆盖广但 OOD 风险升）。</p>
+
+<!-- ======== EVALUATION ======== -->
+<h2 id="sec-eval" class="sec-title">VII. 实验评估 (Experimental Evaluation)</h2>
+<p><strong>VII-A 设置</strong>：负载 JOB（IMDB 3.6GB/21 表，94 训练/19 测试）、TPC-DS（SF=10，15 训练/5 测试模板）、Stack（>100GB/11 表，8 训练/6 测试模板）。基线：PostgreSQL（传统 CBO）、两阶段学习型 CBO（Bao/Lero/HybridQO）、VBO（LOGER/Balsa），并在 VBO 上部署 Delta 架构称 LOGER-Δ/Balsa-Δ。指标：负载相对延迟 WRL（Speedup=1/WRL）、几何平均相对延迟 GMRL、训练时间 $T_t$。参数 $k=10,b=20,\gamma=500$。</p>
+<h3 class="subsec-title">VII-B 整体性能</h3>
+<div class="table-note">
+<strong>表 III：三负载性能对比（WRL/GMRL/$T_t$）。</strong>LOGER-Δ 在 JOB/TPC-DS/Stack 的 WRL 为 0.28/0.45/0.45（相对 PG 加速 3.57×/2.22×/2.22×），GMRL 0.56/0.40/0.74；$T_t$ 仅为 LOGER 的 39.8%/34.3%/69.0%。Balsa-Δ 在 JOB/TPC-DS 加速 2.50×/1.33×。相比两阶段 CBO 与 VBO，Delta 在延迟与训练成本上均更优。
+</div>
+<p>充分训练后，Delta 在全部负载延迟上超越所有基线；相比 PG，LOGER-Δ 加速 3.57×/2.22×/2.22×，Balsa-Δ 在 JOB/TPC-DS 达 2.50×/1.33×；相比两阶段 CBO 平均提升 3.36×/1.97×/1.71×（LOGER-Δ），相比 VBO（LOGER/Balsa）提升 1.14–1.51×/1.55–4.21×。训练成本上，LOGER-Δ 仅需 LOGER 的 39.8%/34.3%/69.0% 训练时间。训练曲线（图 4）显示 Delta 收敛更快、WRL 更低且更稳定（方差更小），数据增强扩充了阶段 II 训练样本、显著减少所需执行计划数。</p>
+<div class="figure-wrap">
+<img src="images/delta_pages/p10.png" alt="Figure 4">
+<div class="fig-caption"><strong>图 4：Delta 与 VBO 的训练曲线及收敛所需计划数。</strong>Delta（LOGER-Δ/Balsa-Δ）始终更快收敛、WRL 更低；透明部分表示数据增强额外生成的计划。</div>
+</div>
+<h3 class="subsec-title">VII-C 价值还是代价：各司其职</h3>
+<p><strong>谁生成更好的候选集？</strong>对比成本型生成器（Bao/Lero）与价值型（LOGER/Balsa）：在最佳情形改善、最差情形风险、高质量计划占比三项指标上，VBO 均优于 CBO（VBO 中位数 $\eta\ge50\%$，CBO 常低于此），印证价值引导生成更鲁棒。<strong>谁更准确地选最优计划？</strong>对比价值网络（VN）与三类代价模型（朴素 NCM、学习排序 LTR、本文增强 ECM）：三种代价模型在多数场景下优于 VN（图 6），其中增强 ECM（数据增强+异方差损失）始终最佳。</p>
+<h3 class="subsec-title">VII-D CQD 的影响</h3>
+<p>图 8 混淆矩阵：CQD 在 LOGER-Δ/Balsa-Δ 上<strong>召回率 100%</strong>（无不兼容查询被误拒、无负面影响），特异度分别 71.4%/80.0%（成功过滤不兼容查询、避免坏计划）。</p>
+<h3 class="subsec-title">VII-E 消融与参数</h3>
+<p>图 7(a) 消融：去掉 CPS/CQD/数据增强/异方差损失，WRL 分别升 68%/20%/43%/30%，GMRL 升 26%/22%/35%/26%——CPS 与数据增强影响最大。参数：$\gamma=500$ 最佳（更小则接近 PG，>700 则接受全部等同无 CQD）；$k$ 增大时 WRL/GMRL 改善、规划时间仍 <350ms 且对 $k$ 不敏感，默认 $k=10$。</p>
+
+<!-- ======== CONCLUSION ======== -->
+<h2 id="sec-concl" class="sec-title">VIII. 结论 (Conclusion)</h2>
+<p>我们提出 <strong>Delta</strong>——一个混合代价查询优化框架，通过兼容查询检测器与两阶段规划器解决 CBO 与 VBO 的局限。相比传统 CBO（PostgreSQL），Delta 通过缓解搜索空间爆炸与启发式剪枝，实现 2.34× 更快的负载执行；相比两阶段 CBO，因价值型规划器产出更高质量候选，提升 2.11×；相比 VBO，因细粒度学习型代价排序，仅用 66.6% 训练时间却带来 1.94× 更高执行性能。基于马氏距离的检测器通过预先过滤不兼容查询进一步保证鲁棒性。这些结果凸显 Delta 统一价值网络与代价模型、检测不兼容查询以确定更高效计划的能力，为现代查询优化提供了实用方案。</p>
+
+<div class="footer">
+论文全文翻译 · Delta (arXiv:2506.15848, 2025)<br>
+翻译自 浙江大学 / 阿里巴巴 原文 · 含 Figure 1–4 及 Table I–III（论文原页高清渲染图）<br>
+图片来源：论文 PDF 页面高清渲染
+</div>
+
+</div><!-- end .container -->
+</body>
+</html>

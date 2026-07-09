@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Booster 论文全文翻译 — LLM 助力自动数据库调优</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="translation_style.css">
+<script>window.MathJax={tex:{inlineMath:[['$','$'],['\\(','\\)']],displayMath:[['$$','$$'],['\\[','\\]']]},svg:{fontCache:'global'}};</script>
+<script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+</head>
+<body>
+<div class="container">
+
+<a class="back-btn" href="index.html">&#8592; 返回目录</a>
+
+<!-- HERO -->
+<div class="hero">
+<h1 class="hero-title">Booster：用大模型借助历史经验提升自动数据库调优<br><span style="font-size:1.0rem;color:#666;font-weight:400;">LLMs to Boost Automatic Database Tuning Algorithms By Leveraging Prior History</span></h1>
+<p class="hero-sub">将历史调优产物结构化为查询-配置上下文，用 LLM 按查询给出配置建议，再以束搜索组合为整体配置，加速现有调优器适应环境变化</p>
+<div class="hero-meta">William Zhang, Wan Shen Lim, Andrew Pavlo · 卡内基梅隆大学 (CMU) · SIGMOD 2026 (Proc. ACM Manag. Data)</div>
+<div class="tag-row"><span class="tag">Database Tuning</span><span class="tag">LLM</span><span class="tag">Query-Config</span><span class="tag">Beam Search</span><span class="tag">Transfer/Drift</span></div>
+</div>
+
+<!-- TOC -->
+<div class="toc"><h3>目录</h3><ol>
+<li><a href="#sec-abstract">摘要 (Abstract)</a></li>
+<li><a href="#sec-intro">1. 引言 (Introduction)</a></li>
+<li><a href="#sec-bg">2. 背景 (Background)</a></li>
+<li><a href="#sec-overview">3. 框架概览 (Overview)</a></li>
+<li><a href="#sec-exp-analysis">4. 经验分析与推荐 (Experience Analysis)</a></li>
+<li><a href="#sec-compose">5. 约束组合 (Constrained Composition)</a></li>
+<li><a href="#sec-integration">6. 集成 (Integration)</a></li>
+<li><a href="#sec-eval">7. 评估 (Evaluation)</a></li>
+<li><a href="#sec-sens">8. 敏感性实验 (Sensitivity)</a></li>
+<li><a href="#sec-concl">9-10. 相关工作与结论 (Related Work &amp; Conclusion)</a></li>
+</ol></div>
+
+<!-- ======== ABSTRACT ======== -->
+<h2 id="sec-abstract" class="sec-title">摘要 (Abstract)</h2>
+<p>调优数据库管理系统（DBMS）因存在万亿级可能的配置和不断演化的负载而极具挑战。近期调优进展在优化配置空间上取得突破，但由于其设计以及无法利用查询级历史洞察，现有自动调优器难以在环境变化（如负载漂移、模式迁移）时适应并重新优化。</p>
+<p>本文提出 <strong>Booster</strong> 框架，辅助现有调优器适应环境变化（如漂移、跨模式迁移）。Booster 将历史产物结构化为<strong>查询-配置上下文（query-configuration contexts）</strong>，提示大语言模型（LLM）基于相关上下文为每个查询建议配置，再用束搜索将查询级建议组合为整体配置。在多个 OLAP 负载上，我们评估 Booster 辅助不同前沿调优器（基于代价/机器学习/LLM）适应环境变化的能力。通过组合源自查询级洞察的建议，Booster 帮助调优器发现比"从历史配置继续调优"好至多 74%、且快至多 4.7× 的配置。</p>
+
+<!-- ======== INTRODUCTION ======== -->
+<h2 id="sec-intro" class="sec-title">1. 引言 (Introduction)</h2>
+<p>为现代数据密集型应用配置 DBMS 日益困难：其一，DBMS 暴露万亿级选项（knob、索引、查询 hint）；其二，应用不断演化（数据访问模式、查询类型、负载强度变化）。自动调优器确保环境变化时配置保持最优。固定负载的调优已被充分研究（启发式、代价搜索、ML、LLM 方法）。然而这些调优器因设计而无法适应环境变化：启发式调优器无法纳入历史知识；ML 调优器在环境变化（如某查询消失）破坏其内部表示时难以为继。这些设计问题使调优器无法有效利用查询级语义（如查询计划）学习历史知识，导致环境变化后重优化更慢、陷入次优配置。</p>
+<p>我们提出 Booster 框架辅助现有调优器（代价/ML/LLM 类）适应环境变化：先将历史调优产物组织为结构化洞察；环境变化时，基于每个查询语义获取相关洞察衍生的配置，组合为整体配置并注入调优器进一步精炼。在 PostgreSQL 上的实验表明，Booster 帮助调优器发现比"从历史继续调优"性能高至多 74%、时间少至多 4.7× 的配置。</p>
+
+<!-- ======== BACKGROUND ======== -->
+<h2 id="sec-bg" class="sec-title">2. 背景 (Background)</h2>
+<p>自主驾驶 DBMS 在无人干预下自我优化，部署调优器寻找封装所有可调方面的<strong>整体配置（holistic configuration）</strong>（如系统 knob、索引、每查询 hint）。调优器分三类：(1) 启发式与代价驱动（固定算法 + what-if 代价引导）；(2) ML 与整体调优器（内部模型试错，将负载/模式表示为模型中的位）；(3) LLM 调优器（现成模型如 GPT-4o 或基于历史微调，采样多配置取最优）。</p>
+<p><strong>调优器适应性。</strong> 适应性反映复用过往经验的能力，分两类：<strong>迁移场景（Transfer）</strong>——将经验从过往部署迁移到未见部署（模式可相同或不同）；<strong>漂移场景（Drift）</strong>——部署特性随时间变化（查询参数、模板、负载量、硬件、底层数据），Redshift 观测到 50% 生产集群每日 50% 查询逐字重复。</p>
+<p><strong>适应性挑战。</strong> (1) <strong>刚性与脆弱性</strong>：代价驱动调优器缺乏将先验洞察用于引导搜索的机制；ML 调优器在内部表示因环境变化时必须重优化，预训练因目标环境差异与重评估开销而不可行。(2) <strong>负载粒度</strong>：现有调优器在负载粒度适应，无法组合不同查询的最佳方面（C1、C2 各优化不同查询）。LLM 调优器也忽略了用针对性经验逐查询增强提示的机会。图 1 显示：相比"不重调"，"从历史最佳继续调优"有改善，但仍远不及"完全重混历史知识（Total Knowledge Remix）"——后者发现比 Continue 好 13–74% 的配置。</p>
+
+<div class="figure-wrap">
+<img src="images/booster_pages/p04.png" alt="Figure 1">
+<div class="fig-caption"><strong>图 1：调优器适应性挑战。</strong>(a) 迁移场景（TPC-H→DSB）；(b) 漂移场景（DSB 查询 50% 参数变化）。四种调优器在"不重调 / 继续 6h/12h / 知识重混后调 6h"下的 PostgreSQL 运行时间，知识重混全面最优。</div>
+</div>
+
+<p><strong>LLM 查询级适应。</strong> 我们探讨将调优知识纳入 LLM 的四种技术：(1) 负载级提示（WL-Prompt）；(2) 负载级微调（WL-FT）；(3) 查询级微调（Q-FT）；(4) 富集查询级提示 + 组合（Enrich Q+Compose）。图 2 显示：WL-Prompt 最差（不用历史）；WL-FT、Q-FT 改进有限；Enrich Q+Compose 通过逐查询利用相关历史并解决冲突，找到显著更好的配置——这正是 Booster 方法的基础。</p>
+
+<div class="figure-wrap">
+<img src="images/booster_pages/p05.png" alt="Figure 2">
+<div class="fig-caption"><strong>图 2：LLM 查询级适应。</strong>WL-Prompt / WL-FT / Q-FT / Enrich Q+Compose 在 DSB（50% 参数变化）漂移负载上的运行时间对比，Enrich Q+Compose 最佳。</div>
+</div>
+
+<!-- ======== OVERVIEW ======== -->
+<h2 id="sec-overview" class="sec-title">3. 框架概览 (Overview)</h2>
+<p>Booster 与现有调优器集成（图 3）：分析产物仓库并将其发现（如起始配置）注入调优器；被注入的调优器进一步精炼配置并更新仓库。Booster 运作分三阶段（图 4）：Phase I 经验分析、Phase II 引导推荐、Phase III 约束组合。</p>
+
+<div class="figure-wrap">
+<img src="images/booster_pages/p06.png" alt="Figure 3">
+<div class="fig-caption"><strong>图 3：Booster 概览。</strong>框架与现有调优器集成以提升对环境变化的适应性，分析产物仓库并将发现注入调优器，调优器精炼后回写产物。</div>
+</div>
+
+<div class="figure-wrap">
+<img src="images/booster_pages/p06.png" alt="Figure 4">
+<div class="fig-caption"><strong>图 4：Booster 架构。</strong>Phase I 分析历史调优产物生成 QConfig；Phase II 用 LLM 为每个查询生成候选配置（种子）；Phase III 将各查询种子组合为整体配置提供给被辅助的调优器。</div>
+</div>
+
+<p><strong>Phase I 经验分析。</strong> 监控产物仓库，将产物解析为 <strong>QConfig</strong> 对象（表示某配置下查询的行为，含模式、执行计划、配置、与其他 QConfig 的链接）；再用 embedder 生成固定长度<strong>身份向量（identity vectors）</strong>并载入向量数据库。</p>
+<p><strong>Phase II 引导推荐。</strong> 收到目标负载与离线环境后，为每个查询获取相关 DBMS 信息、生成身份向量、从向量库检索相关历史 QConfig、组合进提示并调用 LLM 建议配置；经 <strong>Sanitizer</strong> 清洗得到可部署的每查询种子。</p>
+<p><strong>Phase III 约束组合。</strong> 先用排序，再用束搜索（best-first search 变体）识别高性能整体配置，终止条件为时间耗尽。</p>
+
+<!-- ======== EXPERIENCE ANALYSIS ======== -->
+<h2 id="sec-exp-analysis" class="sec-title">4. 经验分析与推荐 (Experience Analysis &amp; Recommendations)</h2>
+<h3 class="subsec-title">4.1 QConfig 构建</h3>
+<p>Phase I 挖掘产物仓库中的"有趣配置"（改善目标函数的），为每个查询构建 QConfig（图 5），含 DBMS 配置（knob、索引）与查询信息（SQL、计划），并链接到轨迹中下一配置。由于向量相似搜索需要定长向量，Booster 从每个 QConfig 构建多个 <strong>schematic</strong>（模式元数据 + 查询，可匿名化表列名），分别过 embedder 得到多个身份向量。</p>
+
+<div class="figure-wrap">
+<img src="images/booster_pages/p08.png" alt="Figure 5">
+<div class="fig-caption"><strong>图 5：QConfig 构建。</strong>Booster 从有趣配置（C0、C2、C5）生成 QConfig，每个含某查询在配置中的信息、到下游配置的链接，以及通过不同 schematic 过 embedder 得到的多个身份向量。</div>
+</div>
+
+<h3 class="subsec-title">4.2 QConfig 引导推荐</h3>
+<p>Phase II 用与 Phase I 相同的 embedder 生成查询身份向量，按欧氏距离最小化检索相似 QConfig（仅同 schematic 类型比较）。关键改进：从检索到的 QConfig 沿链接获取<strong>性能最佳的下游 QConfig</strong>（最语义相似的未必最有指导价值）。受上下文窗口限制，截断到 top-$k$（默认 $k=2$）并组装进提示（图 6），让 LLM 参考历史建议配置。</p>
+
+<div class="figure-wrap">
+<img src="images/booster_pages/p09.png" alt="Figure 6">
+<div class="fig-caption"><strong>图 6：提示增强（k=1）。</strong>Booster 检索相似 QConfig，沿链接取其下游最佳 QConfig（Q1-C5），富集进提示并请求 LLM 给出建议配置（输出 JSON）。</div>
+</div>
+
+<h3 class="subsec-title">4.3 推荐清洗（Sanitizer）</h3>
+<p>Booster 强制 LLM 输出合法 JSON，但建议可能不完整或含非法项。Sanitizer 从三源构建初步列表（LLM 建议、QConfig 参考、补全缺失参数），并引入有限探索（基于谓词静态分析增索引、置换查询 knob 如关闭排序）产生多样计划；最后移除非法选择（未知列、非法 hint），用 what-if 机制识别并删除未用索引，保留产生唯一计划的所有配置作为种子。</p>
+
+<!-- ======== COMPOSITION ======== -->
+<h2 id="sec-compose" class="sec-title">5. 约束组合 (Constrained Composition)</h2>
+<h3 class="subsec-title">5.1 种子排序</h3>
+<p>种子性能各异，排序至关重要。Booster 不依赖计划代价（与质量未必相关）也不依赖需大量数据的学习代价模型，而是<strong>实际执行每个种子</strong>估计质量（用可覆盖原索引的替代索引上界运行时间），并按计划代价递增顺序执行，辅以每查询超时。</p>
+<h3 class="subsec-title">5.2 组合算法</h3>
+<p>受基于松弛的物理设计启发，Booster 贪心构造初始配置后用<strong>束搜索</strong>精炼（算法 1，运行至时间预算耗尽）：取每查询最佳种子 → Merge 为整体候选 → Evaluate → Select 待精炼查询 → Rollout 替代种子 → 重复。Merge 对系统 knob 取最小/中位/最大，物理结构取并集去重；Select 先修合并冲突（退化查询），再贪心选最高运行时间查询；Rollout 用 M1–M4 机制生成替代种子：</p>
+<ul style="padding-left:2em;">
+<li><strong>M1 查询 knob 置换</strong>：置换种子 knob 生成多样计划（如交还优化器、强制嵌套循环）。</li>
+<li><strong>M2 计划修复</strong>：在整体配置下修复种子计划以匹配其独立计划（增/关节点）。</li>
+<li><strong>M3 隐藏索引</strong>：省略种子所用索引以发掘替代计划。</li>
+<li><strong>M4 已排序种子</strong>：仅选估计运行时间小于当前种子的已排序种子。</li>
+</ul>
+<p>Booster 采用 5 步 Rollout（Local、25%/50%/75%/100% Seed）控制评估数量。</p>
+
+<!-- ======== INTEGRATION ======== -->
+<h2 id="sec-integration" class="sec-title">6. 集成 (Integration)</h2>
+<p>Booster 与调优器无关，开发者通过 API 命令接入：(1) <strong>Parse</strong> 解析产物提取洞察；(2) <strong>Link</strong> 链接 QConfig（默认按轨迹时间顺序）；(3) <strong>Digest</strong> 将最佳整体配置传给调优器进一步精炼。部署时操作员须提供离线环境与 embedder/prompter LLM 的 API 或本地 GPU，并负责判断何时调用 Booster。</p>
+
+<!-- ======== EVALUATION ======== -->
+<h2 id="sec-eval" class="sec-title">7. 评估 (Evaluation)</h2>
+<p>目标 PostgreSQL v15.1（32GB RAM、20 worker），三个 OLAP 负载：JOB（6.7GB）、TPC-H SF10（14.3GB）、DSB SF10（22.5GB）。四种前沿调优器：P+DTA+AS（PGTune+DTA+AutoSteer）、UniTune（阿里协调调优）、Proto-X（CMU 整体调优）、$\lambda$-Tune+AS（LLM 调优 + AutoSteer）。Booster 用 Voyage 3 Large 作 embedder、Llama 3.1-8B-Instruct 作 prompter，Phase III 组合 1.5 小时。</p>
+
+<h3 class="subsec-title">7.2 精确迁移（Exact Transfer）</h3>
+<p>比较三种变体：(1) 从头调优；(2) 从历史最佳继续；(3) Booster 加速。图 7 显示 Continue 通常无效（P+DTA+AS、$\lambda$-Tune+AS 无改进，UniTune 仅 3–4% 均值改进），而 Booster 使配置比从头调优好 16–51%（Proto-X）、22–40%（DTA）、49–62%（UniTune）、34–50%（$\lambda$-Tune+AS）。</p>
+
+<div class="figure-wrap">
+<img src="images/booster_pages/p14.png" alt="Figure 7">
+<div class="fig-caption"><strong>图 7：精确迁移。</strong>各框架在 DSB、JOB、TPC-H 上"从头 / 从历史继续 / Booster 加速"的性能，★ 表示 Booster 完成组合的时刻。</div>
+</div>
+
+<h3 class="subsec-title">7.3 参数漂移（Parameter Drift）</h3>
+<p>用不同随机种子替换历史负载的 25%/50%/75%/100% 查询。图 8 显示 Booster 总在 3 小时内输出整体配置，比继续调优好 23–27%（Proto-X）、31%（P+DTA+AS）、42–64%（UniTune）、24–31%（$\lambda$-Tune+AS），且快至多 3.6×。Booster 基于查询语义重混种子，对重复查询从同模板历史种子泛化。</p>
+
+<div class="figure-wrap">
+<img src="images/booster_pages/p15.png" alt="Figure 8">
+<div class="fig-caption"><strong>图 8：参数漂移。</strong>各框架对负载参数漂移（25%–100%）的性能响应，Booster 一致优于"从历史继续"。</div>
+</div>
+
+<h3 class="subsec-title">7.4 模板漂移 / 7.5 机器迁移 / 7.6 数据增长 / 7.7 跨模式迁移</h3>
+<p>模板漂移（图 9）下 Booster 改进 12–30%（Proto-X）、24%（P+DTA+AS）、52–63%（UniTune）、26–39%（$\lambda$-Tune+AS），快至多 4.7×。机器迁移（图 10）改进 31–32%（Proto-X）、61–62%（UniTune）。数据增长（图 11–12）下 UniTune 改进 53–63%，Proto-X 较温和（6–29%）。跨模式迁移（图 13，用其他基准产物加速）改进 14–44%（Proto-X）、15–33%（P+DTA+AS）、51–74%（UniTune）、29–56%（$\lambda$-Tune+AS），且无单一主导基准作初始化。</p>
+
+<div class="figure-wrap">
+<img src="images/booster_pages/p18.png" alt="Figure 13">
+<div class="fig-caption"><strong>图 13：跨模式迁移。</strong>用其他基准（JOB/TPC-H/DSB）的产物仓库加速后，在目标基准上"从头 / Booster 加速"的性能，★ 表示 Booster 完成组合。</div>
+</div>
+
+<!-- ======== SENSITIVITY ======== -->
+<h2 id="sec-sens" class="sec-title">8. 敏感性实验 (Sensitivity Experiments)</h2>
+<p><strong>8.1 微调（Fine-Tuning）。</strong> 图 14 对比"提示富集历史"与"微调 LLM"：跨所有场景微调更差（截断限制学习、查询配置组合冲突）。<strong>8.2 查询 knob 置换策略</strong>（None/Join/Access/Sort/All）：漂移场景下 All 策略最佳。<strong>8.3 搜索时间</strong>（0.5–6h）：时间越长配置越好但收益递减，1.5h 后精确迁移趋稳。<strong>8.4 Embedder-Prompter 模型</strong>（图 17）：目标负载与历史差异越大，模型选择越重要；更强 prompter（o3-mini）在跨模式场景好 32%，但推理成本更高。<strong>8.5 Rollout 策略</strong>（图 18）：All（M1–M4 全用）最优。<strong>8.6 输入数据</strong>（图 19）：多产物（4-Input）通常优于单产物，但 $\lambda$-Tune+AS 单产物因引用更多样模板反而更好。</p>
+
+<div class="figure-wrap">
+<img src="images/booster_pages/p19.png" alt="Figure 14">
+<div class="fig-caption"><strong>图 14：微调。</strong>基于 Proto-X 历史 DSB 产物，对比"提示富集（Booster）"与"微调 LLM（FT-8192/16384/Q）"在精确迁移、50% 参数漂移、50% 模板漂移三场景下的性能，微调普遍更差。</div>
+</div>
+
+<!-- ======== CONCLUSION ======== -->
+<h2 id="sec-concl" class="sec-title">9-10. 相关工作与结论 (Related Work &amp; Conclusion)</h2>
+<p><strong>相关工作</strong>涵盖预测（forecast）、行为建模、调优框架、表示学习、自然语言调试与学习组件等方向，Booster 可与之结合（如用其表示选择相关历史经验）。</p>
+<p><strong>结论。</strong> 尽管调优器寻找高性能配置的能力进步，现有调优器因设计仍无法适应环境变化（负载漂移、跨模式迁移）。为此我们提出 Booster 框架，利用历史中的查询级洞察辅助调优器适应：将历史产物结构化为洞察，用 LLM 基于相关经验给出查询级配置，再用束搜索组合为整体配置。在 PostgreSQL OLAP 负载上，Booster 辅助前沿代价/ML/LLM 调优器适应环境变化，相比"从历史继续调优"，帮助发现性能高至多 74%、且快至多 4.7× 的配置。</p>
+
+<div class="footer">本页为 Booster (SIGMOD 2026) 论文的中文翻译，仅供学习研究使用。原文：Proc. ACM Manag. Data 4(1), Article 90, 2026。</div>
+
+</div>
+</body>
+</html>

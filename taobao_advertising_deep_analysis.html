@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>深度解读 — Enhancing Taobao Display Advertising with Multimodal Representations</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{
+  font-family:'Noto Sans SC',system-ui,-apple-system,sans-serif;
+  background:#0d1117;color:#c9d1d9;
+  line-height:1.8;font-size:16px;
+  min-height:100vh;
+}
+.container{
+  max-width:1400px;margin:0 auto;padding:0 24px;
+  background:#0d1117;position:relative;
+}
+.back-btn{
+  position:fixed;top:16px;left:16px;z-index:9999;
+  background:rgba(20,20,35,.75);color:#c9d1d9;
+  border:1px solid rgba(255,255,255,.15);border-radius:10px;
+  padding:8px 16px;font-size:14px;cursor:pointer;
+  backdrop-filter:blur(6px);transition:all .3s;
+  text-decoration:none;display:flex;align-items:center;gap:6px;
+}
+.back-btn:hover{background:rgba(30,30,55,.9);border-color:rgba(255,255,255,.3);}
+.hero{padding:80px 0 40px;text-align:center;}
+.hero-title{
+  font-size:2.2rem;font-weight:700;
+  background:linear-gradient(135deg,#d97706,#f59e0b,#f59e0b);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  background-clip:text;margin-bottom:12px;line-height:1.3;
+}
+.hero-sub{font-size:1.1rem;color:#8b949e;margin-bottom:8px;}
+.venue{font-size:.95rem;color:#8b949e;margin-top:8px;}
+.venue a{color:#d97706;text-decoration:none;}
+.venue a:hover{text-decoration:underline;}
+.tag-row{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:16px;}
+.tag{
+  display:inline-block;padding:4px 14px;border-radius:20px;font-size:.85rem;
+  border:1px solid rgba(217,119,6,.3);color:#d97706;
+  background:rgba(217,119,6,.06);
+}
+.divider{border:none;border-top:1px solid rgba(255,255,255,.08);margin:48px 0;}
+.section{margin:40px 0;}
+.section-title{
+  font-size:1.75rem;font-weight:700;margin-bottom:20px;
+  color:#e6edf3;display:flex;align-items:center;gap:10px;
+}
+.section-title .num{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:36px;height:36px;border-radius:50%;
+  background:linear-gradient(135deg,#d97706,#f59e0b);
+  color:#0d1117;font-size:1rem;font-weight:700;flex-shrink:0;
+}
+.section-desc{font-size:16px;line-height:1.9;color:#c9d1d9;margin-bottom:16px;}
+.toc{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:16px;padding:28px 36px;margin:30px 0;
+}
+.toc h3{font-size:1.2rem;color:#e6edf3;margin-bottom:14px;}
+.toc ol{list-style:none;counter-reset:toc;padding:0;}
+.toc li{counter-increment:toc;margin:8px 0;}
+.toc li::before{content:counter(toc) ".";color:#d97706;font-weight:600;margin-right:8px;}
+.toc a{color:#8b949e;text-decoration:none;transition:color .2s;}
+.toc a:hover{color:#d97706;}
+.module-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:24px;margin:18px 0;transition:all .3s;
+}
+.module-card:hover{border-color:rgba(217,119,6,.3);transform:translateY(-2px);}
+.module-card h3{font-size:1.15rem;font-weight:600;margin-bottom:10px;color:#d97706;}
+.module-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.arch-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:22px;margin:14px 0;transition:all .3s;
+}
+.arch-card:hover{border-color:rgba(217,119,6,.3);}
+.arch-card h4{font-size:1.05rem;font-weight:600;color:#f59e0b;margin-bottom:8px;}
+.arch-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.step-flow{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:22px;margin:14px 0;
+}
+.step-flow h4{font-size:1.05rem;font-weight:600;color:#d97706;margin-bottom:8px;}
+.step-flow p{font-size:15px;line-height:1.8;color:#8b949e;}
+.data-table{
+  width:100%;border-collapse:collapse;margin:18px 0;
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;overflow:hidden;font-size:14px;
+}
+.data-table th{
+  background:rgba(217,119,6,.1);color:#d97706;
+  padding:12px 16px;text-align:left;font-weight:600;
+}
+.data-table td{
+  padding:10px 16px;border-top:1px solid rgba(255,255,255,.06);
+  color:#c9d1d9;
+}
+.data-table tr:hover td{background:rgba(217,119,6,.04);}
+.formula-box{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;padding:20px 24px;margin:16px 0;
+  font-size:18px;text-align:center;color:#e6edf3;
+  font-family:'JetBrains Mono',monospace;
+}
+.code-block{
+  background:rgba(20,20,35,.8);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;padding:18px 22px;margin:16px 0;
+  overflow-x:auto;
+}
+.code-block pre{
+  font-family:'JetBrains Mono',monospace;font-size:14px;
+  line-height:1.7;color:#c9d1d9;white-space:pre;
+}
+.ck{color:#d97706;}.cs{color:#f59e0b;}.cf{color:#d2a8ff;}.cg{color:#8b949e;}.cv{color:#79c0ff;}
+.qa-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:24px;margin:16px 0;
+}
+.qa-q{font-size:1.05rem;font-weight:600;color:#d97706;margin-bottom:12px;}
+.qa-a{font-size:15px;line-height:1.9;color:#8b949e;}
+.highlight-box{
+  background:rgba(217,119,6,.06);border:1px solid rgba(217,119,6,.2);
+  border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;
+}
+.warn-box{
+  background:rgba(240,136,62,.08);border:1px solid rgba(240,136,62,.25);
+  border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;
+}
+.info-box{
+  background:rgba(217,119,6,.06);border:1px solid rgba(217,119,6,.2);
+  border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;
+}
+.prompt-box{
+  background:rgba(20,20,35,.8);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;padding:18px 22px;margin:16px 0;
+  font-family:'JetBrains Mono',monospace;font-size:13px;
+  line-height:1.7;color:#c9d1d9;white-space:pre-wrap;
+}
+.prompt-label{
+  display:inline-block;padding:2px 10px;border-radius:6px;
+  font-size:.85rem;font-weight:600;margin-bottom:8px;
+  background:rgba(217,119,6,.15);color:#d97706;
+}
+.fc{font-size:14px;color:#8b949e;text-align:center;margin:10px 0;line-height:1.6;}
+.comp-card{
+  background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:22px;margin:14px 0;transition:all .3s;
+}
+.comp-card:hover{border-color:rgba(217,119,6,.3);}
+.comp-card h4{font-size:1.05rem;font-weight:600;color:#f59e0b;margin-bottom:8px;}
+.comp-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.insight-box{
+  background:rgba(217,119,6,.06);border:1px solid rgba(217,119,6,.2);
+  border-radius:12px;padding:18px 22px;margin:16px 0;
+}
+.insight-box h4{color:#d97706;font-size:1.05rem;margin-bottom:8px;}
+.insight-box p{font-size:15px;line-height:1.8;color:#c9d1d9;}
+.limit-box{
+  background:rgba(240,136,62,.08);border:1px solid rgba(240,136,62,.25);
+  border-radius:12px;padding:18px 22px;margin:16px 0;
+}
+.limit-box h4{color:#f59e0b;font-size:1.05rem;margin-bottom:8px;}
+.limit-box p{font-size:15px;line-height:1.8;color:#c9d1d9;}
+.kv-row{
+  display:flex;border-bottom:1px solid rgba(255,255,255,.06);padding:8px 0;
+}
+.kv-row:last-child{border-bottom:none;}
+.kv-key{width:180px;flex-shrink:0;color:#d97706;font-weight:500;font-size:14px;}
+.kv-val{color:#c9d1d9;font-size:14px;line-height:1.7;}
+.footer{text-align:center;color:#555;font-size:14px;padding:48px 0 32px;}
+/* SVG architecture */
+.svg-container{
+  background:rgba(20,20,35,.4);border:1px solid rgba(255,255,255,.06);
+  border-radius:14px;padding:20px;margin:24px 0;overflow-x:auto;
+  text-align:center;
+}
+.svg-container svg{max-width:100%;height:auto;}
+/* Phase badge */
+.phase-badge{
+  display:inline-block;padding:3px 12px;border-radius:8px;
+  font-size:.85rem;font-weight:600;margin-right:8px;
+}
+.phase-1{background:rgba(99,102,241,.15);color:#818cf8;}
+.phase-2{background:rgba(217,119,6,.15);color:#f59e0b;}
+.phase-3{background:rgba(34,197,94,.15);color:#4ade80;}
+/* Grid layout */
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
+.grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;}
+@media(max-width:900px){
+  .grid-2,.grid-3{grid-template-columns:1fr;}
+  .hero-title{font-size:1.6rem;}
+  .kv-row{flex-direction:column;}
+  .kv-key{width:auto;}
+}
+/* Animated arrow */
+@keyframes flowPulse{
+  0%,100%{opacity:.6;}
+  50%{opacity:1;}
+}
+.flow-arrow{animation:flowPulse 2s ease-in-out infinite;}
+
+</style>
+</head>
+<body>
+<div class="container">
+
+<a class="back-btn" href="index.html">&#8592; 返回目录</a>
+
+<a href="taobao_advertising_full_translation.html" style="display:block;max-width:860px;margin:18px auto 0;padding:13px 22px;background:linear-gradient(90deg,rgba(31,111,235,.16),rgba(137,87,227,.16));border:1px solid rgba(137,87,227,.5);border-radius:12px;color:#e6edf3;text-decoration:none;font-weight:500;font-size:15px;text-align:center;box-shadow:0 2px 14px rgba(0,0,0,.35);">阅读本文逐段完整中文翻译（Full Translation）</a>
+
+<!-- ========== HERO ========== -->
+<div class="hero">
+  <h1 class="hero-title">Enhancing Taobao Display Advertising with Multimodal Representations</h1>
+  <p class="hero-sub">用多模态数据增强工业级推荐系统——预训练表示 + ID 模型集成</p>
+  <div class="venue">arXiv 2024 &nbsp;|&nbsp; <a href='https://arxiv.org/abs/2402.17633'>arXiv:2402.17633</a></div>
+  <div class="tag-row">
+    <span class="tag">Recommendation</span><span class="tag">Multimodal</span><span class="tag">Industrial System</span><span class="tag">Alibaba</span><span class="tag">Pre-training</span>
+  </div>
+</div>
+
+<!-- ========== TOC ========== -->
+<div class="toc">
+  <h3>目录</h3>
+  <ol>
+    <li><a href="#sec-1">研究动机</a></li>
+    <li><a href="#sec-2">框架概览</a></li>
+    <li><a href="#sec-3">阶段一：多模态表示预训练</a></li>
+    <li><a href="#sec-4">阶段二：与 ID 模型集成</a></li>
+    <li><a href="#sec-5">工业部署与冷启动策略</a></li>
+    <li><a href="#sec-6">两阶段框架的端到端整合</a></li>
+    <li><a href="#sec-7">实验评估</a></li>
+    <li><a href="#sec-8">敏感性分析</a></li>
+    <li><a href="#sec-9">代码使用与实战（含 GitHub 源码、安装命令、使用示例）</a></li>
+    <li><a href="#sec-10">总结与未来展望</a></li>
+  </ol>
+</div>
+
+<hr class="divider">
+
+<hr class="divider">
+
+<!-- ========== 1. MOTIVATION ========== -->
+<div class="section" id="sec-1">
+  <h2 class="section-title"><span class="num">1</span> 研究动机：多模态表示能给广告系统带来什么</h2>
+  <p class="section-desc">淘宝展示广告主流采用离散 ID 特征（item id / user id 等），无法捕获商品图像、文案等多模态语义，且对长尾 / 新物品存在严重冷启动问题。已有多模态方案尝试端到端训练，但工业落地中预训练编码器、新物品实时表示、系统升级的算力成本常不抵收益。</p>
+  <div class="grid-2">
+    <div class="module-card">
+      <h3>ID 特征的固有缺陷</h3>
+      <p>离散 ID 特征难以表达物品的视觉 / 文本语义，长尾与全新物品的 ID 缺乏历史交互，导致表征稀疏、冷启动差。系统对多模态信号的利用长期停留在"低垂果实"之外。</p>
+    </div>
+    <div class="module-card">
+      <h3>端到端多模态的成本困境</h3>
+      <p>直接端到端训练多模态编码器在工业级流量下算力过高；预训练编码器、新物品实时表示、系统升级三方面的部署成本，往往使离线收益无法转化为线上增益。</p>
+    </div>
+  </div>
+  <div class="insight-box">
+    <h4>本文主张：两阶段低成本落地</h4>
+    <p>提出"预训练多模态表示（SCL）+ 与 ID 模型集成（SimTier + MAKE）"的两阶段框架：先在离线侧用对比学习得到高质量多模态表示，再在在线侧以极低成本把表示接入已有 ID 模型，化解"训练成本 vs 线上收益"的矛盾，并显著缓解冷启动。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 2. OVERVIEW ========== -->
+<div class="section" id="sec-2">
+  <h2 class="section-title"><span class="num">2</span> 框架概览：两阶段多模态表示框架</h2>
+  <p class="section-desc">框架分两阶段：① 离线预训练多模态表示（SCL 语义对比学习）；② 将其集成进 ID 模型（SimTier 相似度向量 + MAKE 知识向量）。生产系统中，新物品实时经编码器生成表示，经多模态索引表进入近线训练与在线推理，端到端延迟仅数秒。</p>
+  <div class="svg-container">
+    <svg viewBox="0 0 920 240" xmlns="http://www.w3.org/2000/svg" font-family="Noto Sans SC, sans-serif">
+      <defs><marker id="atT" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#f59e0b"/></marker></defs>
+      <rect x="20" y="90" width="150" height="60" rx="12" fill="rgba(217,119,6,.12)" stroke="#f59e0b" stroke-width="1.5"/>
+      <text x="95" y="125" text-anchor="middle" fill="#c9d1d9" font-size="14" font-weight="600">图文物品</text>
+      <rect x="200" y="55" width="220" height="130" rx="12" fill="rgba(217,119,6,.18)" stroke="#f59e0b" stroke-width="2"/>
+      <text x="310" y="88" text-anchor="middle" fill="#e6edf3" font-size="13" font-weight="700">阶段一 SCL 预训练</text>
+      <text x="310" y="110" text-anchor="middle" fill="#8b949e" font-size="10">query+购买 语义对</text>
+      <text x="310" y="128" text-anchor="middle" fill="#8b949e" font-size="10">MoCo 大记忆库</text>
+      <text x="310" y="146" text-anchor="middle" fill="#8b949e" font-size="10">Triplet 难负 + InfoNCE</text>
+      <text x="310" y="164" text-anchor="middle" fill="#8b949e" font-size="10">K=196800</text>
+      <rect x="460" y="55" width="220" height="130" rx="12" fill="rgba(217,119,6,.18)" stroke="#f59e0b" stroke-width="2"/>
+      <text x="570" y="88" text-anchor="middle" fill="#e6edf3" font-size="13" font-weight="700">阶段二 集成</text>
+      <text x="570" y="110" text-anchor="middle" fill="#8b949e" font-size="10">SimTier 相似度向量</text>
+      <text x="570" y="128" text-anchor="middle" fill="#8b949e" font-size="10">MAKE 知识向量</text>
+      <text x="570" y="146" text-anchor="middle" fill="#8b949e" font-size="10">拼接进 MLP</text>
+      <text x="570" y="164" text-anchor="middle" fill="#8b949e" font-size="10">与 ID embedding 融合</text>
+      <rect x="720" y="55" width="180" height="130" rx="12" fill="rgba(217,119,6,.12)" stroke="#f59e0b" stroke-width="1.5"/>
+      <text x="810" y="88" text-anchor="middle" fill="#e6edf3" font-size="13" font-weight="700">在线推理</text>
+      <text x="810" y="110" text-anchor="middle" fill="#8b949e" font-size="10">新物品实时表示</text>
+      <text x="810" y="128" text-anchor="middle" fill="#8b949e" font-size="10">多模态索引表</text>
+      <text x="810" y="146" text-anchor="middle" fill="#8b949e" font-size="10">CTR 预估</text>
+      <text x="810" y="164" text-anchor="middle" fill="#8b949e" font-size="10">延迟仅数秒</text>
+      <line x1="170" y1="120" x2="195" y2="120" stroke="#f59e0b" stroke-width="2" marker-end="url(#atT)"/>
+      <line x1="420" y1="120" x2="455" y2="120" stroke="#f59e0b" stroke-width="2" marker-end="url(#atT)"/>
+      <line x1="680" y1="120" x2="715" y2="120" stroke="#f59e0b" stroke-width="2" marker-end="url(#atT)"/>
+    </svg>
+  </div>
+  <div class="step-flow">
+    <h4>端到端流程</h4>
+    <p>离线 SCL 预训练得到物品多模态表示 → SimTier 生成目标物品与历史交互的相似度向量、MAKE 提取多模态知识向量 → 二者与 ID embedding 拼接进 MLP 做 CTR 预估；在线侧新物品实时经编码器生成表示，进入近线训练与在线推理。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 3. SCL ========== -->
+<div class="section" id="sec-3">
+  <h2 class="section-title"><span class="num">3</span> 阶段一：多模态表示预训练（SCL）</h2>
+  <p class="section-desc">SCL（Semantic Contrastive Learning）用"用户搜索 query + 购买物品"构造语义相似对，通过对比学习把图、文物品映射到同一语义空间。</p>
+  <div class="module-card">
+    <h3>难负样本挖掘</h3>
+    <p>用 MoCo 大记忆库（K=196800）扩大负样本规模；Triplet Loss 主动挖掘难负样本（hard negatives）；InfoNCE 作为对比损失。这种"大库 + 难负"组合是表示质量的关键。</p>
+  </div>
+  <div class="kv-row"><div class="kv-key">预训练数据</div><div class="kv-val">"query + 购买物品"语义对 + 点击难负样本；下游 CTR 用淘宝一周曝光日志。</div></div>
+  <div class="kv-row"><div class="kv-key">效果</div><div class="kv-val">SCL 的 Acc@1 = 0.7474，远超 CLIP-O 的 0.2559；且 Acc@N 与下游 GAUC 强相关，可作快速迭代的代理指标。</div></div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 4. INTEGRATION ========== -->
+<div class="section" id="sec-4">
+  <h2 class="section-title"><span class="num">4</span> 阶段二：与 ID 模型集成（SimTier + MAKE）</h2>
+  <p class="section-desc">把多模态表示接入 ID 模型有两个难点：直接拼接联合训练会导致多模态参数学习不充分；ID 与多模态所需训练 epoch 数不同。SimTier 与 MAKE 分别用"简化"与"解耦"两种思路解决。</p>
+  <div class="grid-2">
+    <div class="module-card">
+      <h3>SimTier：相似度向量</h3>
+      <p>计算目标物品与历史交互物品的语义相似度，分 N 档统计成 N 维向量拼接输入。它把多模态信号"简化"为轻量特征，避免与 ID 联合训练不充分的问题。</p>
+    </div>
+    <div class="module-card">
+      <h3>MAKE：多模态知识向量</h3>
+      <p>用 DIN + 4 层 MLP 对多模态表示做多 epoch 预训练（CTR 预训练），把输出 vMAKE 接入下游，<b>解耦</b>了 ID 与多模态的 epoch 差异——ID 一 epoch 即过拟合，多模态需多 epoch。</p>
+    </div>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 5. DEPLOY ========== -->
+<div class="section" id="sec-5">
+  <h2 class="section-title"><span class="num">5</span> 工业部署与冷启动策略</h2>
+  <div class="module-card">
+    <h3>实时表示与低成本落地</h3>
+    <p>生产系统中，新物品实时经预训练编码器生成多模态表示，写入多模态索引表，供给近线训练与在线推理，端到端延迟仅数秒。相比端到端训练，本框架把多模态收益以极低成本带入线上。</p>
+  </div>
+  <div class="arch-card">
+    <h4>冷启动缓解</h4>
+    <p>多模态表示自带语义，新物品无需历史交互即可获得有效表征，低频 / 新广告的 CTR 提升尤为显著（新广告 CTR +6.9%），直接缓解 ID 特征的冷启动困境。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 6. INTEGRATION ========== -->
+<div class="section" id="sec-6">
+  <h2 class="section-title"><span class="num">6</span> 两阶段框架的端到端整合</h2>
+  <div class="arch-card">
+    <h4>离线 / 在线协同</h4>
+    <p>离线侧 SCL 预训练产出物品表示；SimTier 生成相似度向量、MAKE 提取知识向量，与 ID embedding 拼接进 MLP。在线侧新物品实时生成表示供训练 / 推理。两阶段非端到端，但通过"解耦 epoch + 简化特征"兼顾了训练充分性与系统成本。</p>
+  </div>
+  <div class="kv-row"><div class="kv-key">部署成本</div><div class="kv-val">无需改动主模型结构，仅新增表示生成与索引表；线上延迟仅数秒，算力开销可控。</div></div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 7. EXPERIMENT ========== -->
+<div class="section" id="sec-7">
+  <h2 class="section-title"><span class="num">7</span> 实验评估：预训练质量与线上增益</h2>
+  <div class="module-card">
+    <h3>设置与基线</h3>
+    <p>预训练数据用 query + 购买 + 点击难负；CTR 数据用淘宝一周曝光日志。基线：CLIP-O / CLIP-E / ID / Vector / SimScore。下游用 DIN 结构。</p>
+  </div>
+  <div class="highlight-box">
+    <p><b>主结果</b>：SCL 的 Acc@1 = 0.7474，远超 CLIP-O 的 0.2559；CTR 上 SimTier + MAKE 使 GAUC +1.25%、AUC +0.75%，低频物品提升更显著。线上：CTR +3.5%、RPM +1.5%、ROI +2.9%，新广告 CTR +6.9%。</p>
+  </div>
+  <table class="data-table">
+    <tr><th>指标</th><th>SCL / SimTier+MAKE</th><th>对比</th></tr>
+    <tr><td>预训练 Acc@1</td><td>0.7474</td><td>CLIP-O 仅 0.2559</td></tr>
+    <tr><td>GAUC 提升</td><td>+1.25%</td><td>低频组更显著</td></tr>
+    <tr><td>线上 CTR</td><td>+3.5%</td><td>新广告 +6.9%</td></tr>
+    <tr><td>RPM / ROI</td><td>+1.5% / +2.9%</td><td>—</td></tr>
+  </table>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 8. SENSITIVITY ========== -->
+<div class="section" id="sec-8">
+  <h2 class="section-title"><span class="num">8</span> 敏感性分析：消融与代理指标</h2>
+  <div class="module-card">
+    <h3>SCL 组件消融</h3>
+    <p>去掉 Triplet 后 Acc@1 降至 0.6957，再去掉 MoCo 降至 0.5760，证明难负挖掘与大记忆库对表示质量至关重要。MAKE 的 epoch 越多效果越好。</p>
+  </div>
+  <div class="module-card">
+    <h3>代理指标</h3>
+    <p>Acc@N 与下游 GAUC 强相关，可作为预训练质量的快速代理指标，显著加速迭代；低频组 AUC 提升幅度大于高频组。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 9. INSIGHT ========== -->
+<div class="section" id="sec-9">
+  <h2 class="section-title"><span class="num">9</span> 代码使用与实战（含 GitHub 源码、安装命令、使用示例）</h2>
+  <div class="module-card">
+    <h3>论文与代码</h3>
+    <p>本文为阿里巴巴集团发表于 CIKM 2024（<a href="https://arxiv.org/abs/2407.19467" style="color:#f59e0b;">arXiv:2407.19467</a>，ACM DOI 10.1145/3627673.3680068）。<b>文中未提供公开代码</b>（阿里内部系统）。以下为按文中方法的可复现说明。</p>
+  </div>
+  <div class="code-block"><pre># 1) 预训练多模态表示（SCL）：构建 query+购买 语义对
+python scl_pretrain.py --encoder clip --memory_bank 196800 \
+    --loss "triplet+infonce" --data query_buy_pairs.jsonl
+
+# 2) 训练 SimTier：目标物品与历史交互的相似度分档向量
+python train_simtier.py --repr scl.pt --n_bins 8
+
+# 3) 训练 MAKE：DIN+4层MLP 多 epoch 预训练多模态知识向量
+python train_make.py --repr scl.pt --epochs 12 --backbone din
+
+# 4) 集成进 ID 模型（拼接 SimTier + MAKE + ID embedding 进 MLP）
+python train_ctr.py --id_emb id.npy --simtier simtier.pt --make make.pt</pre></div>
+  <div class="highlight-box">
+    <p>复现要点：SCL 的关键是大记忆库 MoCo + Triplet 难负；SimTier 用"简化"避免联合训练不充分，MAKE 用"解耦 epoch"解决 ID 与多模态的 epoch 矛盾。下游可用 DIN 结构，Acc@N 作预训练代理指标。</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== 10. SUMMARY ========== -->
+<div class="section" id="sec-10">
+  <h2 class="section-title"><span class="num">10</span> 总结与未来展望</h2>
+  <p class="section-desc">本文提出两阶段多模态表示框架：SCL 用对比学习（MoCo + Triplet）得到高质量物品表示，SimTier 与 MAKE 以"简化 / 解耦"两种方式低成本接入 ID 模型，在淘宝展示广告上实现 CTR +3.5%、新广告 CTR +6.9% 的线上增益并缓解冷启动。</p>
+  <div class="qa-card">
+    <div class="qa-q">Q1：为什么不直接拼接多模态向量到 ID 模型？</div>
+    <div class="qa-a">联合训练时多模态参数学习不充分（ID 一 epoch 就过拟合），需用 SimTier（简化特征）或 MAKE（解耦多 epoch 预训练）分别处理。</div>
+  </div>
+  <div class="qa-card">
+    <div class="qa-q">Q2：ID 与多模态的 epoch 矛盾怎么解？</div>
+    <div class="qa-a">ID 特征一 epoch 即过拟合，多模态需多 epoch；MAKE 单独对多模态做多 epoch 预训练再接入，解耦二者差异。</div>
+  </div>
+  <div class="qa-card">
+    <div class="qa-q">Q3：如何快速评估预训练质量？</div>
+    <div class="qa-a">用 Acc@N 作为代理指标，它与下游 GAUC 强相关，可大幅加速预训练迭代，无需每次都跑全量 CTR。</div>
+  </div>
+  <div class="limit-box">
+    <h4>局限与未来</h4>
+    <p>两阶段非端到端；难负构造等细节未深入；仅在淘宝场景验证。未来可探索端到端联合训练与跨场景（如短视频广告）迁移。</p>
+  </div>
+</div>
+
+<div class="footer">论文深度解读 · 生成自 Enhancing Taobao Display Advertising with Multimodal Representations · 阅读时间约 30 分钟</div>
+
+</div>
+</body>
+</html>

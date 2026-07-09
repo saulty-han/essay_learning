@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>LiTS 论文全文翻译 — A Modular Framework for LLM Tree Search</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="translation_style.css">
+<script>window.MathJax={tex:{inlineMath:[['$','$'],['\\(','\\)']],displayMath:[['$$','$$'],['\\[','\\]']]},svg:{fontCache:'global'}};</script>
+<script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+</head>
+<body>
+<div class="container">
+
+<a class="back-btn" href="index.html">&#8592; 返回目录</a>
+
+<!-- HERO -->
+<div class="hero">
+<h1 class="hero-title">LiTS：面向 LLM 树搜索的模块化框架<br><span style="font-size:1.1rem;color:#666;font-weight:400;">LiTS: A Modular Framework for LLM Tree Search</span></h1>
+<p class="hero-sub">将树搜索解耦为 Policy / Transition / RewardModel 三大可复用组件，并通过装饰器注册表实现跨算法、跨领域的即插即用扩展</p>
+<div class="hero-meta">Xinzhe Li, Yaguang Tao · RMIT University · arXiv:2603.00631v2 (2026)</div>
+<div class="tag-row"><span class="tag">Tree Search</span><span class="tag">Modular Framework</span><span class="tag">MCTS</span><span class="tag">BFS</span><span class="tag">LLM Reasoning</span></div>
+</div>
+
+<!-- TOC -->
+<div class="toc"><h3>目录</h3><ol>
+<li><a href="#sec-abstract">摘要 (Abstract)</a></li>
+<li><a href="#sec-intro">1. 引言 (Introduction)</a></li>
+<li><a href="#sec-grammar">2. LiTS：统一的语法 (A Unified Grammar)</a></li>
+<li><a href="#sec-demo">3. 演示与结果 (Demonstrations and Results)</a></li>
+<li><a href="#sec-related">4. 相关工作 (Related Work)</a></li>
+<li><a href="#sec-concl">5. 结论 (Conclusion)</a></li>
+</ol></div>
+
+<!-- ======== ABSTRACT ======== -->
+<h2 id="sec-abstract" class="sec-title">摘要 (Abstract)</h2>
+<p><strong>LiTS</strong> 是一个用于通过树搜索进行 LLM 推理的模块化 Python 框架。它将树搜索解耦为三个可复用组件——<strong>Policy（策略）</strong>、<strong>Transition（转移）</strong>与 <strong>RewardModel（奖励模型）</strong>——这些组件可即插即用地接入 MCTS、BFS 等算法。基于装饰器的注册表使领域专家能通过注册组件扩展到新领域，也使算法研究者能实现自定义搜索算法。我们在 MATH500（语言推理）、Crosswords（环境规划）与 MapEval（工具使用）上验证了可组合性，表明组件与算法是正交的：组件可在同一任务类型内跨算法复用，算法也能跨所有组件与领域工作。我们还报告了一个「模式坍塌（mode-collapse）」发现：在无限动作空间中，LLM 策略的多样性——而非奖励质量——才是有效树搜索的瓶颈。</p>
+
+<!-- ======== INTRODUCTION ======== -->
+<h2 id="sec-intro" class="sec-title">1. 引言 (Introduction)</h2>
+<p>用于 LLM 推理的树搜索方法——如 Tree-of-Thoughts、RAP、ReST-MCTS——在复杂推理任务上展现出强劲性能。然而，现有实现大多是任务特定的，在适配新领域或跨方法比较时需要大量重实现工作。我们提出 <strong>LiTS（Language Inference via Tree Search）</strong>，一个模块化 Python 框架，让用户「只修改所需部分、复用其余部分」。LiTS 面向两类互补工作流的用户：(1) <strong>AI/NLP 研究者</strong>——设计新搜索算法或新推理结构（如子问题分解），仅需改动步结构、复用搜索算法；(2) <strong>领域专家</strong>——注入领域特定逻辑（提示、工具、环境动力学）而无需触碰搜索内部。LiTS 通过将推理算法与领域实现隔离，实现了双向可复用性（表 1）。</p>
+<p>相应地，LiTS 还解决了开发 LLM 推理智能体的三个关键挑战：<strong>1. 可复用性</strong>——通用数据结构（State、Action、Step）解耦推理算法与领域实现；领域逻辑进一步分解为 Policy/Transition/RewardModel 三个细粒度组件，使领域专家仅替换领域组件即可跨领域复用搜索算法，研究者以相同领域逻辑跨领域评估同一算法。<strong>2. 可扩展性</strong>——组件与搜索模块可通过外部导入和装饰器注册扩展，无需修改核心包（表 2）。<strong>3. 可观测性</strong>——内置 InferenceLogger 在组件、实例与搜索阶段粒度追踪 token 用量与延迟，并提供增量检查点以支持训练后分析。</p>
+
+<!-- ======== UNIFIED GRAMMAR ======== -->
+<h2 id="sec-grammar" class="sec-title">2. LiTS：统一的语法 (A Unified Grammar)</h2>
+<p>LiTS 抽象出三类任务类型——环境锚定（如 BlocksWorld）、语言锚定（如数学问答）、工具使用（如 MapEval）——以统一多样化的 LLM 推理范式。图 1 展示了其架构：每个模块都是可独立部署、依赖相邻模块的单位。</p>
+
+<div class="figure-wrap">
+<img src="images/lits_pages/p02.png" alt="Figure 1">
+<div class="fig-caption"><strong>图 1：LiTS 架构。</strong>Agent 编排组件（Policy、Transition、RewardModel）；组件使用 Prompt 与 LM 接口；Transition 可经 Client 调用 Tools。各层通过共享数据结构通信，解耦搜索算法与领域逻辑。</div>
+</div>
+
+<h3 class="subsec-title">2.1 lits.structures：用于解耦的通用数据结构</h3>
+<p>框架依赖一套层级类型系统将推理算法与领域实现分离：Action → Step → State → Node。每一层定义：(1) 任务无关的接口，使 lits.agents 无需了解底层实现即可运作；(2) 多态子类，用于任务特定组件间的消息传递。Action 是由 Policy 生成的原子单元；Step 封装动作及其执行结果；State 是随时间的步骤累积并提供统一渲染；Node 是面向搜索的包装，管理父指针、子节点、奖励与访问计数。该设计使研究者通过定义任务特定的 Action/Step/State 子类即可实现新推理领域，同时复用同一搜索流水线（BFS、MCTS 等）。</p>
+<h3 class="subsec-title">2.2 模块化 LLM 组件（lits.components）</h3>
+<p>LiTS 将基于 LLM 的推理分解为三个模块化组件：<strong>Policy</strong> 从状态生成候选动作；<strong>RewardModel</strong> 评估动作质量以引导搜索；<strong>Transition</strong> 执行动作并产生新状态。多数组件面向通用任务类型（声明 TASK_TYPE 常量，如 'language_grounded'、'tool_use'、'env_grounded'），数学推理与常识推理可共用相同组件与默认提示；对需要特殊行为的任务实例，开发者可设 TASK_TYPE = None 创建实例特定组件。</p>
+<div class="table-note">
+<strong>表 2：按任务类型的领域扩展模式。</strong>工具使用任务跨领域共享 Policy 与 Transition；环境锚定任务共享 Policy 与 RewardModel；语言锚定任务可能需要任务特定提示。装饰器注册：环境锚定用 @register_transition（一个装饰器）；工具使用需 BaseTool 子类；语言锚定用 @register_user_prompt 与 @register_dataset。
+</div>
+<h3 class="subsec-title">2.3 lits.prompts：任务实例优先的回退机制</h3>
+<p>LiTS 用集中式 PromptRegistry 管理所有 LLM 组件的提示，支持复用与定制。组件使用两类提示：task_prompt_spec（系统指令）与 usr_prompt_spec（用户消息模板）。注册表支持回退查找优先级：显式参数 → task_name → TASK_TYPE → default。任务实例特定组件应设 TASK_TYPE = None 以跳过 TASK_TYPE 回退，避免提示与解析逻辑错配。</p>
+<h3 class="subsec-title">2.4 Agents</h3>
+<p>LiTS 提供链式 agent（ReActChat、EnvChain）用于顺序推理，以及树搜索 agent（MCTS、BFS）用于分支探索。链式与树方法共用相同的 Policy 与 Transition——树搜索额外增加 RewardModel 用于路径选择，从而实现公平比较。所有树搜索算法继承自 BaseTreeSearch 抽象基类，处理节点 ID 管理、根创建、检查点 I/O、运行时限制、终节点收集等外围事务，子类仅需实现纯算法逻辑的 search() 方法。新算法通过 @register_search("name") 注册，自动与所有已注册组件和任务类型协作。</p>
+<h3 class="subsec-title">2.5 工具使用（Tool Use）</h3>
+<p>LiTS 采用与 LangChain 兼容的工具协议：每个工具是声明 name、description、args_schema 与 _run() 的 BaseTool 子类，使异构动作（SQL 查询、API 调用、地理查找）共享一致可调用接口。工具由封装 I/O 逻辑的 Client 实例化，在运行时传给 agent，由 policy 选择、transition 执行，将抽象推理落地为真实世界交互。对带有逐样本可变状态的工具，资源注册表支持可选的 prepare_example 回调在每样本前重置工具内部状态。</p>
+
+<!-- ======== DEMONSTRATIONS ======== -->
+<h2 id="sec-demo" class="sec-title">3. 演示与结果 (Demonstrations and Results)</h2>
+<p>我们在三类任务上评估以验证通用性与可扩展性，目标是验证组件可复用性而非刷榜。LiTS 提供「CLI 优先」工作流，所有产物（配置、日志、检查点、评估输出）写入单一 save_dir，可通过 eval –save_dir 复现评估。环境锚定与工具使用实验用 Claude 3.5 Sonnet（报告成本），语言锚定实验用自部署 Llama3-8B（报告墙钟时间）。</p>
+<h3 class="subsec-title">3.1 环境锚定任务：新增领域</h3>
+<p>BlocksWorld 照搬 RAP 的 MCTS 实现；新增 Crosswords 仅需注册共享键 "crosswords" 的三个组件（Transition 子类、领域提示、数据集加载器），复用相同的 EnvGroundedPolicy 与 EnvGroundedPRM，CLI 上只需 –dataset crosswords。表 3 显示 MCTS 在 BlocksWorld 达 66.7%（488K token / $21.99），在 Crosswords 部分匹配达 22.67%。</p>
+<div class="table-note">
+<strong>表 3：环境锚定结果（30 例）。</strong>跨领域共用相同组件。BlocksWorld：Chain 26.7% / MCTS 66.7%；Crosswords：Chain 6.67% / MCTS 22.67%（精确 / 部分匹配）。<br>
+<strong>表 4：Crosswords 上 LLM 动作多样性（温度 0.8→1.2）。</strong>唯一状态 16；每状态平均策略调用 7.9；全部重复率 81.1%、错误输出重复率 81.0%、正确输出 17.3%——温度缩放无法改善探索。
+</div>
+<p><strong>无限动作空间中的模式坍塌。</strong> 尽管在检测到重复后升温（0.8→1.2），Crosswords 上 127 次 LLM 调用仍出现 81.1% 的重复率，且错误输出间重复率几乎相同。即便用真实答案的 oracle 奖励，树搜索仍失败——证实瓶颈是动作多样性而非奖励质量。其根源是结构性的：开放式文本动作空间中，策略是无校准随机策略头的 LLM，基于温度的采样在 token 层面而非动作层面探索，导致相同提示的两次调用倾向产生语义重复动作；有限动作空间（如 BlocksWorld）则可确定性回退到未选有效动作以保证分支多样性。</p>
+<h3 class="subsec-title">3.2 工具使用任务：资源注册</h3>
+<p>工具使用任务中，用户注册共享同键的两个函数：数据集加载器（@register_dataset）与资源加载器（@register_resource，返回工具与上下文）。MapEval-SQL（10 例）上 ReAct 达 40%（表 5，成本 $0.57）；在其 3 例子集上跑 MCTS 花费 $18.40 却仅 0%——LLM-as-judge 奖励模型中的自我偏好偏置使 MCTS 偏好冗长却错误的查询，凸显奖励模型质量是工具使用树搜索的瓶颈。</p>
+<h3 class="subsec-title">3.3 语言锚定任务：可组合性与可扩展性</h3>
+<p>在 MATH500 上演示三个层级的可扩展性：<strong>跨算法组件复用</strong>——ReST-MCTS* 用内置组件，因原 PRM 未开源而以公开 PRM 替代，体现解耦组件如何在缺件时复现；<strong>注册组件自定义公式</strong>——RAP 需子问题分解结构，用户注册自定义 Step/Policy/Transition，MCTS 算法本身无需改代码；<strong>自定义搜索算法</strong>——BFS 经 @register_search 注册，自动与所有组件协作。表 6 显示：BFS（39%）以约一半墙钟时间达到与 MCTS（37%）相当精度；RAP 仅 18%，说明组件选择比算法选择更主导；三者均优于 CoT（17%）。表 7 对比 LiTS 与 LLM Reasoners、LangGraph，LiTS 在任务无关搜索、组件共享、工具使用树搜索、提示注册、装饰器扩展、推理日志、检查点等方面全面领先。</p>
+<div class="table-note">
+<strong>表 6：MATH500 结果（100 例，Llama3-8B）。</strong>CoT 17% / RAP(MCTS) 18% / ReST(MCTS) 37% / ToT(BFS) 39%。<br>
+<strong>表 7：特性对比。</strong>LiTS 在任务无关搜索、组件共享、工具使用树搜索、提示注册、装饰器扩展、推理日志、检查点七项上均优于 LLM Reasoners 与 LangGraph。
+</div>
+
+<!-- ======== RELATED WORK ======== -->
+<h2 id="sec-related" class="sec-title">4. 相关工作 (Related Work)</h2>
+<p>我们将 LiTS 与 <strong>LLM Reasoners</strong>（唯一提供完整树搜索实现的其他框架）和 <strong>LangGraph</strong>（最广泛采用的 LLM 编排框架，但缺乏原生树搜索支持）对比。LLM Reasoners 将任务特定逻辑捆绑进单体配置类，每种搜索方法都需重实现完整任务逻辑；LiTS 则抽出可复用组件，用户只需实现一次领域特定函数。LangGraph 需自定义状态类型、expand/score/prune 函数与手动图接线；LiTS 提供预实现的算法，相同组件仅经提示注册即可跨任务工作。</p>
+
+<!-- ======== CONCLUSION ======== -->
+<h2 id="sec-concl" class="sec-title">5. 结论 (Conclusion)</h2>
+<p>我们提出 <strong>LiTS</strong>，一个将 LLM 树搜索解耦为跨搜索算法与任务类型共享的可复用组件（Policy、Transition、RewardModel）的模块化框架。基于装饰器的注册表使扩展无需修改核心代码：用户注册领域特定组件、数据集、工具或搜索算法，CLI 按注册名自动解析。演示表明：相同内置组件可在 MCTS 与 BFS 间复用；新增领域仅需一个 Transition 子类与数据集加载器；工具使用基准经资源注册即可集成。我们还发现，在无限动作空间中，LLM 策略的多样性——而非奖励质量——才是有效树搜索的主要瓶颈。</p>
+<p><strong>实践中的可扩展性。</strong> 模块化设计已在不修改核心的前提下支撑后续研究：分支必要性（BN）评估器作为新的组件类型接入；可插拔于 Policy 层的上下文增强模块正在开发。可复现性上，每次运行将完整配置写入 save_dir/config.json，可经 lits-eval –save_dir 仅凭已存终节点复现。</p>
+<p><strong>局限与未来工作：</strong> (1) 实证规模偏小，需更大规模基准评估；(2) 模式坍塌结论基于单一环境，需跨解码策略系统研究；(3) 工具使用奖励需校准，计划集成校准验证器与训练 PRM；(4) 仅内置 MCTS 与 BFS，计划扩展 A* 与 beam-search；(5) 吞吐上需并发与批处理 LLM 调用；(6) 工具生态计划集成 Model Context Protocol（MCP），使第三方工具服务器可经 MCP 客户端直接挂载。</p>
+
+<div class="footer">
+论文全文翻译 · LiTS (arXiv:2603.00631v2, 2026)<br>
+翻译自 RMIT University 原文 · 含 Figure 1 及 Table 1–7（论文原页高清渲染图）<br>
+图片来源：论文 PDF 页面高清渲染
+</div>
+
+</div><!-- end .container -->
+</body>
+</html>

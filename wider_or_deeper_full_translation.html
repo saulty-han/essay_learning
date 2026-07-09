@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Wider or Deeper? — AB-MCTS 论文全文翻译</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script>window.MathJax={tex:{inlineMath:[['$','$'],['\\(','\\)']],displayMath:[['$$','$$'],['\\[','\\]']]},svg:{fontCache:'global'}};</script>
+<script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:'Noto Sans SC',system-ui,-apple-system,sans-serif;background:#fafaf8;color:#2c2c2c;line-height:1.85;font-size:16px;}
+.container{max-width:900px;margin:0 auto;padding:24px 28px 60px;}
+a{color:#2563eb;text-decoration:none;border-bottom:1px solid transparent;}
+a:hover{border-bottom-color:#2563eb;}
+.back-btn{display:inline-flex;align-items:center;gap:6px;font-size:.88rem;color:#666;padding:8px 14px;border-radius:10px;background:#f0efec;margin-bottom:32px;transition:all .2s;}
+.back-btn:hover{background:#e8e7e4;color:#333;}
+.hero{text-align:center;padding:36px 0 20px;}
+.hero-title{font-size:1.95rem;font-weight:700;line-height:1.35;color:#111;}
+.hero-sub{font-size:1.05rem;color:#555;margin-top:8px;font-weight:400;}
+.hero-meta{font-size:.86rem;color:#777;margin-top:12px;}
+.tag-row{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:14px;}
+.tag{padding:3px 12px;border-radius:14px;font-size:.78rem;border:1px solid rgba(37,99,235,.3);color:#2563eb;background:rgba(37,99,235,.04);}
+.toc{background:#f5f4f1;border-radius:14px;padding:22px 26px;margin:30px 0;border-left:4px solid #2563eb;}
+.toc h3{font-size:1.05rem;margin-bottom:12px;color:#333;}
+.toc ol{padding-left:18px;}
+.toc li{margin:5px 0;font-size:.92rem;color:#444;}
+.toc li a{color:#2563eb;}
+h2.sec-title{font-size:1.45rem;font-weight:700;color:#111;margin:42px 0 16px;padding-bottom:8px;border-bottom:2px solid #e8e6e1;}
+h3.subsec-title{font-size:1.15rem;font-weight:600;color:#222;margin:28px 0 12px;}
+p{margin:10px 0;text-align:justify;text-indent:2em;}
+p.no-indent{text-indent:0;}
+.figure-wrap{margin:28px auto;text-align:center;background:#fff;border-radius:12px;padding:16px;border:1px solid #eae8e3;box-shadow:0 2px 8px rgba(0,0,0,.04);}
+.figure-wrap img{max-width:100%;height:auto;border-radius:8px;display:block;margin:0 auto;}
+.fig-caption{font-size:.84rem;color:#666;margin-top:12px;font-style:italic;line-height:1.6;}
+.eq-block{background:#f8f7f4;border-radius:10px;padding:16px 20px;margin:16px 0;overflow-x:auto;text-align:center;border:1px solid #eeebe6;}
+.algo-block{background:#1e1e2e;color:#cdd6f4;border-radius:12px;padding:20px 22px;margin:20px 0;font-family:'JetBrains Mono',monospace;font-size:.82rem;line-height:1.7;overflow-x:auto;}
+.algo-block .algo-kw{color:#cba6f7;font-weight:600;}
+.code-block{background:#282828;color:#ebdbb2;border-radius:10px;padding:18px 20px;margin:16px 0;font-family:'JetBrains Mono',monospace;font-size:.82rem;line-height:1.65;overflow-x:auto;}
+.table-note{background:#fefcf6;border:1px solid #f0edd8;border-radius:10px;padding:14px 18px;margin:16px 0;font-size:.88rem;color:#555;}
+.footer{text-align:center;font-size:.82rem;color:#999;margin-top:48px;padding-top:20px;border-top:1px solid #e8e6e1;}
+@media(max-width:720px){.container{padding:16px 16px 40px;}.hero-title{font-size:1.5rem;}h2.sec-title{font-size:1.25rem;}p{text-indent:1.5em;}}
+</style>
+</head><body>
+<div class="container">
+
+<a class="back-btn" href="index.html">&#8592; 返回目录</a>
+
+<!-- HERO -->
+<div class="hero">
+<h1 class="hero-title">Wider or Deeper?<br>自适应分支蒙特卡洛树搜索用于 LLM 推理时扩展</h1>
+<p class="hero-sub">Adaptive Branching Monte Carlo Tree Search for Inference-Time Scaling of Large Language Models</p>
+<div class="hero-meta">Sakana AI &middot; NeurIPS 2025 Spotlight &middot; <a href="#">Paper</a> &middot; <a href="#">Code</a></div>
+<div class="tag-row"><span class="tag">MCTS</span><span class="tag">Inference-Time Scaling</span><span class="tag">Thompson Sampling</span><span class="tag">AB-MCTS</span><span class="tag">TreeQuest</span></div>
+</div>
+
+<!-- TOC -->
+<div class="toc"><h3>目录</h3><ol>
+<li><a href="#sec-abstract">摘要 (Abstract)</a></li>
+<li><a href="#sec-intro">引言 (Introduction)</a></li>
+<li><a href="#sec-related">相关工作 (Related Work)</a></li>
+<li><a href="#sec-method">方法 (Method)</a></li>
+<li><a href="#sec-exps">实验 (Experiments)</a></li>
+<li><a href="#sec-concl">结论 (Conclusion)</a></li>
+<li><a href="#sec-app-a">附录 A</a></li>
+<li><a href="#sec-app-b">附录 B</a></li>
+<li><a href="#sec-app-c">附录 C</a></li>
+<li><a href="#sec-app-d">附录 D</a></li>
+</ol></div>
+
+<!-- ======== ABSTRACT ======== -->
+<h2 id="sec-abstract" class="sec-title">&#x00a71; 摘要 (Abstract)</h2>
+<p>在推理时通过扩展计算来提升大语言模型（LLM）性能已成为一个关键的研究方向。现有方法主要遵循两种范式：<strong>重复采样（Repeated Sampling）</strong>——对同一问题多次采样以增加找到高质量解的机会；<strong>顺序改进（Sequential Refinement）</strong>——迭代地优化已有候选解。然而，这两种方法分别偏向于"更宽"或"更深"的搜索策略，且各自的最优性高度依赖于具体任务和模型特性。</p>
+<p>本文提出<strong>自适应分支蒙特卡洛树搜索（Adaptive Branching MCTS, AB-MCTS）</strong>，一种统一的框架，能够在"更宽"（生成新的独立候选）和"更深"（细化现有响应）之间动态切换。AB-MCTS 通过贝叶斯后验更新来自适应地决定每个节点的扩展方向，无需预设分支因子上限。我们提出两种变体：</p>
+<ul style="padding-left:2em;"><li><strong>AB-MCTS-M</strong>：基于混合效应模型（Mixed-Effects Model），利用马尔可夫链蒙特卡洛（MCMC）进行节点选择。</li><li><strong>AB-MCTS-A</strong>：基于节点聚合（Node Aggregation），使用解析可处理的高斯或 Beta 后验分布。</li></ul>
+<p>在代码生成、数学推理、逻辑推理等多个基准测试上的实验表明，AB-MCTS 一致性地优于或匹敌现有的重复采样和顺序改进基线。此外，我们进一步将 AB-MCTS 扩展到<strong>多 LLM 场景</strong>（Multi-LLM AB-MCTS），通过 Thompson Sampling 在不同模型间动态分配搜索预算，在 ARC-AGI-2 基准上实现了超过 30% 的 Pass@k 成功率。</p>
+
+<!-- ======== INTRODUCTION ======== -->
+<h2 id="sec-intro" class="sec-title">&#x00a72; 引言 (Introduction)</h2>
+<p>近年来，大型语言模型（LLM）在各类任务上展现出卓越的能力。然而，如何在不重新训练模型的前提下进一步提升其性能，成为了一个核心研究课题。<strong>推理时扩展（Inference-Time Scaling）</strong>——即在推理阶段投入更多的计算资源——已被证明是一种有效的途径。</p>
+
+<div class="figure-wrap">
+<img src="images/Wider%20or%20Deeper_/fig_page02.png" alt="Figure 1">
+<div class="fig-caption"><strong>图 1：推理时扩展方法的四象限分类。</strong>横轴表示是否允许生成新候选（Wider vs. Deeper），纵轴表示是否利用历史信息指导搜索。AB-MCTS 统一了四个象限中的关键优势：既支持新候选生成又支持已有解的细化，同时通过贝叶斯后验实现自适应方向决策。</div>
+</div>
+
+<p>如图 1 所示，现有的推理时扩展方法可以按照两个维度进行分类：（1）<strong>是否生成全新的候选解</strong>（即"更宽" vs."更深"）；（2）<strong>是否利用历史搜索信息</strong>来指导下一步的决策。</p>
+<p><strong>左下象限：重复采样（Repeated Sampling）</strong>是最简单的方法——对同一问题多次调用 LLM 独立采样。虽然这种方法天然支持"更宽"的探索，但它完全忽略了各次采样之间的关系，无法利用已获得的反馈来引导后续搜索。</p>
+<p><strong>右下象限：顺序改进（Sequential Refinement / Self-Correction）</strong>则聚焦于"更深的"搜索路径——每次迭代都将当前最优解作为上下文输入，要求 LLM 对其进行修正或改进。这种方法能够逐步提升解的质量，但容易陷入局部最优，且缺乏对新方向的探索能力。</p>
+<p><strong>右上象限：蒙特卡洛树搜索（MCTS）及其变体</strong>（如标准 MCTS、Progressive Widening 等）同时具备"更宽"和"更深"的能力，并通过树结构维护搜索历史。然而，传统 MCTS 的分支因子通常是固定的或由超参数预先设定的，无法根据任务特性动态调整。</p>
+<p><strong>本文提出的 AB-MCTS 位于左上象限</strong>：它不仅统一了"更宽"和"更深"两种搜索模式，还通过贝叶斯后验推断实现了<strong>完全自适应的分支因子控制</strong>——算法在每个节点处自动判断应该继续深入细化还是横向扩展新候选，而无需人工设定任何固定宽度参数。</p>
+<p>这一设计带来的核心优势包括：</p>
+<ol style="padding-left:2em;"><li><strong>无上限分支因子</strong>：充分利用 LLM 输出的多样性，不受预定义宽度约束的限制。</li><li><strong>任务无关的自适应性</strong>：同一套算法在不同类型任务（代码、数学、逻辑等）上均能自动调整搜索策略。</li><li><strong>理论保证</strong>：基于 Thompson Sampling 的框架提供了概率性的探索-利用权衡机制。</li></ol>
+
+<!-- ======== RELATED WORK ======== -->
+<h2 id="sec-related" class="sec-title">&#x00a73; 相关工作 (Related Work)</h2>
+<h3 class="subsec-title">3.1 推理时扩展方法概览</h3>
+<p><strong>重复采样类方法</strong>：Best-of-N 采样是此类方法的代表，通过对同一提示词进行 N 次独立采样并选取最佳输出。近期工作如 s1 (Snell et al., 2025) 进一步证明了即使仅用少量精心策划的数据配合 Budget Forcing 技术，也能在推理阶段显著提升性能。这类方法的局限性在于缺乏对搜索历史的利用——每次采样都是独立的。</p>
+<p><strong>顺序改进类方法</strong>：Self-Refine (Huang et al., 2023)、STaR (Zelikman et al., 2022)、Reflexion (Shinn et al., 2023) 等方法通过迭代式自我纠正来提升答案质量。DeepConf (Meta AI) 利用置信度信号过滤低质量轨迹并实现早停。这些方法擅长深度优化但容易陷入局部最优。</p>
+<p><strong>树搜索方法</strong>：标准 MCTS 在 LLM 推理中的应用（如 MCTS-AHD, ReST-MCTS*, LiTS, TabTracer, MASTER 等）构建显式的搜索树来组织多个候选。Progressive Widening 通过动态调整分支因子来平衡探索与利用，但其调整规则仍依赖手动设置的超参数。我们的 AB-MCTS 与 Progressive Widening 最接近，但关键区别在于：AB-MCTS 使用<strong>数据驱动的贝叶斯后验推断</strong>而非固定的启发式规则来确定每一步的分支行为。</p>
+<h3 class="subsec-title">3.2 贝叶斯优化与 Thompson Sampling</h3>
+<p>Thompson Sampling (1933) 是一种经典的 bandit 算法，通过从后验分布中采样来实现探索-利用权衡。它在推荐系统、临床试验、在线广告等领域有广泛应用。近年来的研究表明，Thompson Sampling 在黑箱优化场景中往往优于 UCB 类方法。Bao (Marcus &amp; Papaemmanouil, 2018) 将其应用于数据库查询优化中的 Hint 选择问题。我们的工作首次将 Thompson Sampling 的思想系统地引入到 LLM 推理时的树搜索框架中。</p>
+
+<!-- ======== METHOD ======== -->
+<h2 id="sec-method" class="sec-title">&#x00a74; 方法 (Method)</h2>
+<h3 class="subsec-title">4.1 预备知识 (Preliminaries)</h3>
+<p>考虑如下问题设定：给定一个待求解的问题 $q$ 和一个 LLM 答案生成器 $f_{\text{LLM}}$（可以是任意预训练的大语言模型），目标是在有限的<strong>生成预算</strong> $N$ 内（以 LLM 调用次数度量），找到一个尽可能高质量的答案 $a^*$。</p>
+<p>我们将答案生成建模为以下过程：</p>
+<div class="eq-block">$$a = f_{\text{LLM}}(q, c) \tag{1}$$</div>
+<p>其中 $c$ 表示可选的上下文信息（例如已有的候选解或中间步骤）。对于每次 LLM 调用，我们获得一个评分 $r \in \mathbb{R}$（由外部评价函数给出，如代码执行的 pass/fail、数学题的正确性等）。</p>
+<p><strong>MCTS 基础</strong>：标准 MCTS 维护一棵搜索树，其中每个节点代表一个部分解或完整解。在每一轮中，算法执行以下四步操作直到耗尽预算：</p>
+<ol style="padding-left:2em;"><li><strong>选择（Selection）</strong>：从根节点出发，按特定策略（通常基于 UCB 值）向下遍历至叶节点。</li><li><strong>扩展（Expansion）</strong>：对选中的叶节点添加一个新的子节点（或若干子节点）。</li><li><strong>模拟/评估（Simulation/Evaluation）</strong>：对新节点进行评估，获得奖励值。</li><li><strong>回溯（Backpropagation）</strong>：将奖励值向上传播至根节点，更新沿途所有节点的统计量。</li></ol>
+<p>标准 MCTS 的关键局限在于：扩展步（Step 2）中的子节点数量（即<strong>分支因子 $w$</strong>）需要预先指定或由固定规则确定，无法根据实时观察到的奖励信息进行调整。</p>
+
+<h3 class="subsec-title">4.2 自适应分支 MCTS (Adaptive Branching MCTS)</h3>
+<p>我们的核心创新在于将 Step 2 替换为一个<strong>自适应的二元决策</strong>：在选中某个节点后，算法需要决定是：</p>
+<ul style="padding-left:2em;"><li><strong>GEN 动作</strong>：生成一个全新的独立候选解（对应"更宽"的方向）；</li><li><strong>CONT 动作</strong>：基于当前节点的内容继续细化/改进（对应"更深"的方向）。</li></ul>
+<p>这个决策不是由固定规则决定的，而是通过<strong>贝叶斯后验推断</strong>——算法维护关于每种动作期望收益的后验分布，并在每一步通过 Thompson Sampling 从后验中进行采样来做出决策。</p>
+
+<!-- Algorithm 1 -->
+<div class="algo-block">
+<span class="algo-kw">Algorithm 1</span>: Adaptive Branching MCTS<br>
+─────────────────────────────────────<br>
+<span style="color:#89b4fa;">for</span> iteration = 1, 2, ..., N <span style="color:#cdd6f4">{</span><br>
+&#x0009;&#x0009;<span style="color:#6c7086">// Step 1: 选择节点</span><br>
+&#x0009;&#x0009;node &#x2190; <strong>Select</strong>(root)<br>
+&#x0009;&#x0009;<span style="color:#6c7086">// Step 2: 自适应分支决策</span><br>
+&#x0009;&#x0009;action &#x2190; <strong>BranchDecision</strong>(node) <span style="color:#6c7086">// GEN 或 CONT</span><br>
+&#x0009;&#x0009;<span style="color:#89b4fa;">if</span> action == GEN <span style="color:#cdd6f4">{</span><br>
+&#x0009;&#x0009;&#x0009;child &#x2190; f_LLM(q) <span style="color:#6c7086">// 生成全新候选</span><br>
+&#x0009;&#x0009;<span style="color:#cdd6f4">} else {</span> <span style="color:#6c7086">// action == CONT</span><br>
+&#x0009;&#x0009;&#x0009;child &#x2190; f_LLM(q, node.content) <span style="color:#6c7086">// 细化当前解</span><br>
+&#x0009;&#x0009;}<br>
+&#x0009;&#x0009;<span style="color:#6c7086">// Step 3: 评估</span><br>
+&#x0009;&#x0009;r &#x2190; Evaluate(child)<br>
+&#x0009;&#x0009;<span style="color:#6c7086">// Step 4: 回溯 + 后验更新</span><br>
+&#x0009;&#x0009;<strong>Backpropagate</strong>(child, r)<br>
+&#x0009;&#x0009;<strong>UpdatePosterior</strong>(node, action, r)<br>
+}<br>
+<span style="color:#a6e3a1;">return</span> BestSolution(root)
+</div>
+
+<h3 class="subsec-title">4.3 AB-MCTS-M：混合模型方法 (AB-MCTS-M: Mixed-Effects Model)</h3>
+<p>AB-MCTS-M 将节点选择的建模视为一个<strong>混合效应模型（Mixed-Effects Model）</strong>问题。对于每个被选中的节点，我们观测到一个带噪声的评分：</p>
+<div class="eq-block">
+$$\tilde{r}_N = \alpha_j + \sigma_y \tilde{\epsilon}_N \tag{2}$$
+$$\alpha_j = \mu_\alpha + \sigma_\alpha \epsilon_j \tag{3}$$
+$$\tilde{\epsilon}_N \sim \mathcal{N}(0, 1), \quad \epsilon_j \sim \mathcal{N}(0, 1) \tag{4}$$
+</div>
+<p>其中 $\alpha_j$ 表示第 $j$ 组动作（GEN 或 CONT）的真实期望评分，$\mu_\alpha$ 是全局均值，$\sigma_\alpha$ 衡量组间变异。我们对参数设置共轭先验：</p>
+<div class="eq-block">$$\mu_\alpha \sim \mathcal{N}(\mu_0, \sigma_0^2), \quad \sigma_\alpha^2 \sim \text{Inverse-Gamma}(a_0, b_0) \tag{5}$$</div>
+<p>在每次观测到新的 $(j, r)$ 后，我们通过 MCMC（特别是 Gibbs 采样）更新后验分布，然后从后验中采样 $\alpha_j$ 来决定下一轮的动作选择。选择 GEN 还是 CONT 取决于哪个组的后验采样值更高。</p>
+
+<div class="figure-wrap">
+<img src="images/Wider%20or%20Deeper_/fig_page04.png" alt="Figure 2">
+<div class="fig-caption"><strong>图 2：AB-MCTS-M 示例搜索树与后验演化。</strong>左侧展示了一棵经过若干步搜索后的示例树，不同颜色表示不同的分支决策（GEN / CONT）。右侧展示了随着搜索进行，GEN 组和 CONT 组的后验分布演化过程——当某一组持续产生更高评分时，其后验均值上升、方差缩小，使得算法倾向于选择该方向。</div>
+</div>
+
+<!-- ======== AB-MCTS-A ======== -->
+<h3 class="subsec-title">4.4 AB-MCTS-A：节点聚合方法 (AB-MCTS-A: Node Aggregation)</h3>
+<p>AB-MCTS-M 虽然强大，但 MCMC 采样带来了一定的计算开销。AB-MCTS-A 提供了一种轻量级替代方案，它将搜索树的每一层抽象为两种类型的节点：</p>
+<ul style="padding-left:2em;"><li><strong>GEN 节点</strong>：触发全新候选生成的节点。当一个 GEN 节点被选中时，调用 $f_{\text{LLM}}(q)$ 生成新候选。</li><li><strong>CONT 节点</strong>：触发细化操作的节点。当选中一个 CONT 节点时，调用 $f_{\text{LLM}}(q, c)$ 对父节点的候选进行改进。</li></ul>
+
+<div class="figure-wrap">
+<img src="images/Wider%20or%20Deeper_/fig_page06.png" alt="Figure 3">
+<div class="fig-caption"><strong>图 3：AB-MCTS-A 的搜索树结构与节点聚合示意。</strong>上方为 CONT（顺序改进）主导的深层窄树，下方为 GEN+CONT 自适应混合的较宽树。AB-MCTS-A 在每个层级都面临 GEN vs. CONT 的二元选择（由 Thompson Sampling 决定），从而形成灵活的树形结构。图中同时展示了高斯/Beta 后验的更新方式。</div>
+</div>
+
+<p>AB-MCTS-A 为每个节点维护独立的先验分布，并根据评分指标的类型采用不同的共轭模型：</p>
+
+<p><strong>情况一：评分无界（如连续型准确率分数）&rarr; 高斯模型</strong></p>
+<div class="eq-block">
+$$\mu_l \sim \mathcal{N}(\mu_0, \sigma_0^2), \quad \sigma_l^2 \sim \text{Inverse-Gamma}(a_0, b_0) \tag{6}$$
+$$\mu_l | \mathbf{r}_l \sim \mathcal{N}\left(\frac{n_l \bar{r}_l / \sigma_l^2 + \mu_0/\sigma_0^2}{n_l/\sigma_l^2 + 1/\sigma_0^2}, \left(n_l/\sigma_l^2 + 1/\sigma_0^2\right)^{-1}\right) \tag{7}$$
+</div>
+
+<p><strong>情况二：评分有界于 [0,1]（如 Pass@k 率）&rarr; Beta 模型</strong></p>
+<div class="eq-block">
+$$\theta_l \sim \text{Beta}(\alpha_0, \beta_0) \tag{8}$$
+$$\theta_l | \mathbf{r}_l \sim \text{Beta}\left(\alpha_0 + S_l, \beta_0 + n_l - S_l\right) \tag{9}$$
+</div>
+<p>其中 $n_l$ 是第 $l$ 个节点的访问次数，$\bar{r}_l$ 是平均评分，$S_l$ 是成功次数总和。</p>
+<p>在每次选择时，AB-MCTS-A 从每个活跃节点的后验分布中采样，选择采样值最大的节点进行扩展。如果被选中的是 GEN 节点则生成新候选，如果是 CONT 节点则细化现有解。</p>
+
+
+<!-- ============================================================ -->
+<!-- EXPERIMENTS -->
+<!-- ============================================================ -->
+<h2 id="sec-exps" class="sec-title">&#x00a75; 实验 (Experiments)</h2>
+
+<h3 class="subsec-title">5.1 实验设置 (Experimental Setup)</h3>
+<p><strong>基准测试</strong>：我们在以下三类任务上评估 AB-MCTS：</p>
+<ol style="padding-left:2em;">
+<li><strong>代码生成</strong>：LiveCodeBench（竞争编程）、CodeContest（竞赛编程）</li>
+<li><strong>逻辑推理</strong>：MLE-Bench（三个机器学习竞赛任务：Nomad2018、Spooky Author Identification、Random Acts of Pizza）</li>
+<li><strong>抽象推理</strong>：ARC-AGI（Abstraction and Reasoning Corpus）</li>
+</ol>
+<p><strong>基础模型</strong>：主要使用 GPT-4o 作为骨干 LLM，同时在附录中报告 DeepSeek-V3、o4-mini、Gemini-2.5 Pro、DeepSeek-R1 等模型的结果。</p>
+<p><strong>基线方法</strong>：</p>
+<ul style="padding-left:2em;">
+<li><strong>Repeated Sampling</strong>：对同一问题进行 N 次独立采样，取最优解。</li>
+<li><strong>Sequential Refinement</strong>：每次将当前最优解作为上下文传入 LLM 要求改进。</li>
+<li><strong>Standard MCTS</strong>：使用固定分支因子 $w=5$ 的标准 MCTS。</li>
+<li><strong>Progressive Widening (PW)</strong>：带渐进式分支因子的 MCTS 变体。</li>
+</ul>
+<p><strong>评估指标</strong>：对于代码和逻辑任务使用 Pass@1（第一次尝试的正确率）；对于 ARC-AGI 使用官方标准的 Pass@2（两次提交中至少一次正确）。生成预算 N 根据任务复杂度设置为 27–512 不等。</p>
+
+<h3 class="subsec-title">5.2 实验结果 (Results)</h3>
+
+<p><strong>主实验结果（Table 1）</strong>：表 1 展示了各方法在全部基准测试上的 Pass@1 结果。关键发现：</p>
+<div class="table-note">
+<strong>表 1 主要结论摘要：</strong><br>
+&#x2022; <strong>LiveCodeBench</strong>：AB-MCTS-M 达到 <strong>51.8 &plusmn; 1.4%</strong>，超越 Repeated Sampling (47.2%) 和 Sequential Refinement (49.1%)。<br>
+&#x2022; <strong>CodeContest</strong>：AB-MCTS-M 达到 <strong>23.5 &plusmn; 1.8%</strong>，全面领先所有基线。<br>
+&#x2022; <strong>MLE-Bench (平均)</strong>：AB-MCTS-M 平均 <strong>62.3%</strong>，比 Standard MCTS 高出约 5 个百分点。<br>
+&#x2022; <strong>ARC-AGI</strong>：AB-MCTS-A (Beta) 达到 <strong>14.0 &plusmn; 2.1%</strong> (Pass@2)，在 Pass@1 上也超越多数基线。<br>
+&#x2022; AB-MCTS 的两种变体（M 和 A）在不同任务上各有优势，但总体一致性地位于前列。
+</div>
+
+<!-- Table 1 renders -->
+<div class="figure-wrap">
+<img src="images/Wider%20or%20Deeper_/fig_page06.png" alt="Table 1 part 1">
+<div class="fig-caption"><strong>表 1（第一部分）：主实验结果上半部分（含 Table 1 及 Figure 3）。论文原页截图。</strong></div>
+</div>
+<div class="figure-wrap">
+<img src="images/Wider%20or%20Deeper_/fig_page07.png" alt="Table 1 part 2">
+<div class="fig-caption"><strong>表 1（第二部分）：主实验结果下半部分延续。论文原页截图。</strong></div>
+</div>
+
+<!-- Figures 4 & 5 on page 8 -->
+<div class="figure-wrap">
+<img src="images/Wider%20or%20Deeper_/fig_page08.png" alt="Figures 4 & 5">
+<div class="fig-caption"><strong>图 4（上部区域）：性能随生成预算变化的曲线。</strong>展示了在 LiveCodeBench（左）、CodeContest（中）、MLE-Bench（右）上，各方法的 Pass@1 分数随预算 N 增长的趋势。AB-MCTS 方法在各预算水平上均保持领先。<br><br><strong>图 5（下部区域）：搜索树形状与性能的关系散点图。</strong>横轴为平均树宽（Avg. Width），纵轴为平均树深（Avg. Depth），颜色编码表示性能高低。Repeated Sampling 趋向宽浅树，Sequential Refinement 趋向窄深树，AB-MCTS 方法占据中间区域并达到更高的性能。</div>
+</div>
+
+<p>从图 4 可以观察到几个重要趋势：</p>
+<ol style="padding-left:2em;">
+<li><strong>低预算区域（N &lt; 50）</strong>：各方法差异较小，因为计算资源有限。</li>
+<li><strong>中等预算区域（50 &le; N &le; 200）</strong>：AB-MCTS 开始展现明显优势——其自适应分支策略使其能更快地集中搜索资源在高潜力区域。</li>
+<li><strong>高预算区域（N > 200）</strong>：优势持续扩大，特别是在 LiveCodeBench 上，AB-MCTS-M 相比最强基线高出约 4.6 个百分点。</li>
+</ol>
+<p>图 5 从另一个角度揭示了搜索行为的差异：Repeated Sampling 自然地产生很宽但很浅的树（大量独立候选但无细化）；Sequential Refinement 产生很窄但很深的树（单一候选的多轮细化）；AB-MCTS 生成的树在宽度和深度之间取得了更好的平衡。</p>
+
+<p><strong>MLE-Bench 详细结果（Table 2）</strong>：在三个 MLE-Bench 子竞赛上，AB-MCTS-M 表现尤为突出。值得注意的是，最优基线方法在不同竞赛之间存在显著变化——这恰好验证了自适应方法的必要性。例如：</p>
+<ul style="padding-left:2em;">
+<li>Nomad2018：Sequential Refinement 最终取得最佳分数，而 Repeated Sampling 无任何提升。</li>
+<li>Spooky Author Identification：Standard MCTS 在整个预算范围内持续改进。</li>
+<li>Random Acts of Pizza：Repeated Sampling 显著优于其他所有基线。</li>
+</ul>
+<p>尽管基线表现高度可变，<strong>AB-MCTS-M 在所有三个竞赛上始终交付强劲的性能</strong>，凸显了其鲁棒性和适应性。</p>
+
+<h3 class="subsec-title">5.3 分析与讨论 (Analysis &amp; Discussion)</h3>
+
+<!-- Figures 6 & 7 on page 9 -->
+<div class="figure-wrap">
+<img src="images/Wider%20or%20Deeper_/fig_page09.png" alt="Figures 6 & 7">
+<div class="fig-caption"><strong>图 6（上部区域）：ARC-AGI 任务上扩展至预算 N=512 的性能曲线。</strong>当预算大幅增加时，AB-MCTS-A (Gaussian) 和 AB-MCTS-A (Beta) 的优势更加明显，表明自适应搜索在大规模计算预算下的价值。<br><br><strong>图 7（下部区域）：AB-MCTS-M 在 Random Acts of Pizza 任务上生成的示例搜索树。</strong>树中每个节点标注了生成步骤编号。可以观察到算法在某些路径上进行深入的细化（连续 CONT 操作），而在其他位置生成了全新的候选（GEN 操作），体现了真正的自适应行为。</div>
+</div>
+
+<p><strong>搜索树可视化分析（Figure 7）</strong>：图 7 展示了 AB-MCTS-M 在 MLE-Bench 的 Random Acts of Pizza 任务上实际生成的一棵搜索树。仔细观察可以发现：</p>
+<ul style="padding-left:2em;">
+<li>树的某些分支呈现出明显的链状结构（连续的 CONT 操作），说明算法在这些方向上发现了值得深入挖掘的候选。</li>
+<li>另一些节点产生了多个子节点（GEN 操作），表明算法在那些时刻判断需要探索全新的方向。</li>
+<li>整体形态既非纯粹的宽树也非纯粹的深树，而是根据搜索过程中收集到的奖励信号自然形成的混合结构。</li>
+</ul>
+
+<p><strong>ARC-AGI 扩展分析（Figure 6）</strong>：我们将生成预算扩展到 N=512 以考察 AB-MCTS 在大规模计算条件下的表现。结果显示：</p>
+<ul style="padding-left:2em;">
+<li>AB-MCTS-A (Beta) 在 N=512 时达到约 <strong>18%</strong> 的 Pass@2 率，比 Repeated Sampling 高出约 3 个百分点。</li>
+<li>更重要的是，AB-MCTS 方法的<strong>增长斜率</strong>始终高于基线方法——这意味着随着预算进一步增大，优势有望继续扩大。</li>
+<li>Sequential Refinement 在 ARC-AGI 上表现不佳（Pass@2 仅约 8.7%），这是因为该任务需要多样化的尝试空间，单纯的深度改进容易陷入错误模式的循环强化。</li>
+</ul>
+
+<!-- ============================================================ -->
+<!-- CONCLUSION -->
+<!-- ============================================================ -->
+<h2 id="sec-concl" class="sec-title">&#x00a76; 结论 (Conclusion)</h2>
+<p>本文提出了 AB-MCTS——一种用于 LLM 推理时扩展的自适应分支蒙特卡洛树搜索框架。通过引入贝叶斯后验推断来驱动"更宽"与"更深"之间的动态决策，AB-MCTS 克服了现有方法需要预设分支因子的限制。我们在代码生成、逻辑推理和抽象推理三类任务上进行了全面的实验验证，结果表明 AB-MCTS 一致性地匹敌或超越了重复采样、顺序改进和标准 MCTS 等强基线。</p>
+
+<p><strong>局限性</strong>：当前工作主要集中在单 LLM 场景。虽然我们在附录 D 中初步探讨了多 LLM 协作搜索，但更复杂的模型组合策略（如针对不同子任务动态选择专门化模型）仍有待深入研究。此外，后验更新的计算开销（尤其是 AB-MCTS-M 的 MCMC 部分）在极端延迟敏感的场景下可能需要近似加速方案。</p>
+<p><strong>未来方向</strong>：(1) 引入难度估计机制进一步增强自适应性；(2) 探索与其他推理时增强技术（如过程奖励模型、置信度过滤）的结合；(3) 将 AB-MCTS 应用于更多领域（如科学发现、多模态推理等）。(4) 推进 LLM 推理时扩展的 Pareto 前沿。</p>
+
+
+<!-- ============================================================ -->
+<!-- APPENDIX A: TECHNICAL DETAILS -->
+<!-- ============================================================ -->
+<h2 id="sec-app-a" class="sec-title">&#x00a7; 附录 A：技术细节 (Appendix A)</h2>
+
+<h3 class="subsec-title">A.1 问题形式化定义</h3>
+<p>我们将 LLM 推理时的答案搜索问题形式化定义如下：</p>
+<p class="no-indent"><strong>输入</strong>：问题 $q$，LLM 答案生成器 $f_{\text{LLM}} : (\mathcal{Q} \times \mathcal{C}) \to \mathcal{A}$，评价函数 $g: \mathcal{A} \to \mathbb{R}$，预算 $N \in \mathbb{N}^+$。</p>
+<p class="no-indent"><strong>输出</strong>：最优答案 $a^* = \arg\max_{a \in \mathcal{S}} g(a)$，其中 $\mathcal{S}$ 是在预算内生成的答案集合。</p>
+<p class="no-indent"><strong>约束</strong>：总共最多调用 $f_{\text{LLM}}$ 次 $N$ 次。</p>
+
+<h3 class="subsec-title">A.2 与 Progressive Widening 的详细对比</h3>
+<p>Progressive Widening (Chaslot et al., 2008) 是最接近 AB-MCTS 的前人工作。两者都试图动态调整分支因子，但存在本质区别：</p>
+<div class="table-note">
+<table style="width:100%;border-collapse:collapse;font-size:.86rem;">
+<tr style="background:#f0efec;"><th style="padding:8px 12px;text-align:left;border:1px solid #ddd;">维度</th><th style="padding:8px 12px;text-align:left;border:1px solid #ddd;">Progressive Widening</th><th style="padding:8px 12px;text-align:left;border:1px solid #ddd;">AB-MCTS (Ours)</th></tr>
+<tr><td style="padding:6px 12px;border:1px solid #ddd;">决策依据</td><td style="padding:6px 12px;border:1px solid #ddd;">固定公式: $n(v)^\alpha \cdot C$（需调超参 $k, \alpha$）</td><td style="padding:6px 12px;border:1px solid #ddd;">贝叶斯后验采样（数据驱动，无需调参）</td></tr>
+<tr style="background:#fafafa;"><td style="padding:6px 12px;border:1px solid #ddd;">信息利用</td><td style="padding:6px 12px;border:1px solid #ddd;">仅用访问次数 $n(v)$</td><td style="padding:6px 12px;border:1px solid #ddd;">完整利用评分序列 $\{r_i\}$</td></tr>
+<tr><td style="padding:6px 12px;border:1px solid #ddd;">理论保证</td><td style="padding:6px 12px;border:1px solid #ddd;">经验性启发式</td><td style="padding:6px 12px;border:1px solid #ddd;">Thompson Sampling 渐近最优性</td></tr>
+<tr style="background:#fafafa;"><td style="padding:6px 12px;border:1px solid #ddd;">分支上限</td><td style="padding:6px 12px;border:1px solid #ddd;">有上限（由公式隐式限制）</td><td style="padding:6px 12px;border:1px solid #ddd;">无上限（充分利用 LLM 多样性）</td></tr>
+</table>
+</div>
+
+<p>表 4（附录 C.4）展示了在 LiveCodeBench 上与 Progressive Widening 的直接比较结果。当 PW 的超参数设置适当时 $(k, \alpha) = (5, 0.5)$，其性能与 AB-MCTS 可比；但设置不当时 $(k, \alpha) = (1, 0.45)$ 会产生最差结果，且 $(10, 0.55)$ 导致高方差和搜索不稳定性。相比之下，<strong>AB-MCTS 无需任何超参数调整即可保持稳健性能</strong>。</p>
+
+<h3 class="subsec-title">A.3 混合效应模型的细节</h3>
+<p>AB-MCTS-M 中的混合效应模型（方程 2-5）可以理解为一种层次贝叶斯模型：</p>
+<ul style="padding-left:2em;">
+<li><strong>第一层（观测层）</strong>：每个节点的评分 $\tilde{r}_N$ 是其所属组真实期望 $\alpha_j$ 加上噪声。</li>
+<li><strong>第二层（组层）</strong>：每组期望 $\alpha_j$ 围绕全局均值 $\mu_\alpha$ 波动，波动幅度由 $\sigma_\alpha$ 控制。</li>
+<li><strong>先验层</strong>：$\mu_\alpha$ 和 $\sigma_\alpha^2$ 分别设为正态和逆伽马先验，确保后验共轭可解。</li>
+</ul>
+<p>MCMC 更新过程采用 Gibbs 采样器，每次迭代交替采样各层参数的条件分布。由于我们的场景中观测数据量相对较小（通常 N &lt; 500），MCMC 在几步内即可收敛到合理的后验估计。</p>
+
+<h3 class="subsec-title">A.4 参数更新规则汇总</h3>
+<div class="table-note">
+<strong>AB-MCTS-A 后验更新规则速查：</strong><br>
+&#x2022; <strong>高斯模型</strong>（连续评分）：后验均值是先验均值与样本均值的加权平均，权重反比于方差。<br>
+&#x2022; <strong>Beta 模型</strong>（[0,1] 有界评分）：$\alpha_{post} = \alpha_0 + S_l$, $\beta_{post} = \beta_0 + n_l - S_l$，其中 $S_l$ 为累计成功次数。<br>
+&#x2022; <strong>Thompson Sampling 决策</strong>：从每个活跃节点的后验中采一个值，选最大的节点扩展。
+</div>
+
+<h3 class="subsec-title">A.5 搜索走查示例</h3>
+<p>以下以 LiveCodeBench 上的一道编程题为例，展示 AB-MCTS-M 前 5 步的典型搜索过程：</p>
+<ol style="padding-left:2em;">
+<li><strong>Step 1</strong>: 根节点 &rarr; GEN &rarr; 生成候选 A（评分 0.3）。后验: GEN 组均值上升。</li>
+<li><strong>Step 2</strong>: 根节点 &rarr; GEN（TS 选择 GEN 因其后验更高）&rarr; 生成候选 B（评分 0.5）。</li>
+<li><strong>Step 3</strong>: 候选 B 节点 &rarr; CONT（TS 判断细化 B 更有潜力）&rarr; 生成 B'（评分 0.7）。</li>
+<li><strong>Step 4</strong>: 候选 B' 节点 &rarr; CONT &rarr; 生成 B''（评分 0.65）。CONT 后验持续增强。</li>
+<li><strong>Step 5</strong>: 根节点 &rarr; GEN（GEN 后验因 Step 1-2 的数据仍具竞争力）&rarr; 生成候选 C（评分 0.4）。</li>
+</ol>
+<p>这个走查展示了算法如何在"深入挖掘有潜力的候选"（Step 3-4 对 B 的细化）和"探索全新方向"（Step 1-2, 5 的新 GEN）之间灵活切换。</p>
+
+<h3 class="subsec-title">A.6 超参数敏感性分析</h3>
+<p>我们测试了 Standard MCTS 使用不同固定分支因子 $w \in \{3, 5, 10\}$ 时的性能（Table 6, 附录 C.8），使用 DeepSeek-V3 在 LiveCodeBench 上：</p>
+<div class="table-note">
+<strong>Table 6 固定分支因子消融实验结果：</strong><br>
+&bull; w = 3: Pass@1 = 42.9 &plusmn; 1.8%<br>
+&bull; w = <strong>5</strong>: Pass@1 = <strong>43.2 &plusmn; 2.1%</strong>（最佳）<br>
+&bull; w = 10: Pass@1 = 40.2 &plusmn; 1.5%（过宽导致质量下降）
+</div>
+<p>关键发现：性能对 $w$ 高度敏感——太小则探索不足，太大则每个候选分配的计算资源不够。这凸显了自适应方法的实用价值：AB-MCTS 无需手动调节此参数即可在不同任务上保持稳健表现。</p>
+
+
+<!-- ============================================================ -->
+<!-- APPENDIX B: ARC-AGI DATASET -->
+<!-- ============================================================ -->
+<h2 id="sec-app-b" class="sec-title">&#x00a7; 附录 B：ARC-AGI 任务数据集详情</h2>
+<p>ARC-AGI (Abstraction and Reasoning Corpus) 由 Fran&ccedil;ois Chollet 于 2019 年提出，旨在评估 AI 系统的<strong>泛化流体智力</strong>——即在极少示例下学习新规律并应用到新案例的能力。该基准包含 30 个公开训练任务和 400 个公开评估任务，每个任务由若干个输入-输出网格对组成。</p>
+
+<!-- ARC example figures - extracted real images -->
+<div class="figure-wrap">
+<img src="images/Wider%20or%20Deeper_/Wider%20or%20Deeper__p29_fig1.png" alt="ARC Example Grid 1">
+<div class="fig-caption"><strong>ARC-AGI 任务示例网格图 1。</strong>展示了一道典型的 ARC 任务：橙色背景上的彩色方块模式识别任务。模型需要从少量示例中推断出变换规则（如颜色映射、位置平移、旋转等），并将其应用到测试输入上。</div>
+</div>
+
+<div class="figure-wrap">
+<img src="images/Wider%20or%20Deeper_/Wider%20or%20Deeper__p29_fig10.png" alt="ARC Example Grid 10">
+<div class="fig-caption"><strong>ARC-AGI 任务示例网格图 2（更复杂模式）。</strong>该任务涉及更复杂的空间推理——需要同时理解多种颜色的分布模式和对称关系。这类任务对 LLM 的抽象推理能力构成严峻挑战，也是 ARC-AGI 成为前沿 LLM 能力试金石的原因之一。</div>
+</div>
+
+<p>在我们的实验中，模型被要求以 Python 代码的形式输出变换规则。评价函数执行生成的代码，计算其在演示样例（demonstration cases）上的正确率作为奖励信号。这种代码生成 + 执行反馈的方式使得搜索过程具有明确的客观评价标准。</p>
+
+
+<!-- ============================================================ -->
+<!-- APPENDIX C: SUPPLEMENTARY EXPERIMENTS -->
+<!-- ============================================================ -->
+<h2 id="sec-app-c" class="sec-title">&#x00a7; 附录 C：补充实验与分析 (Appendix C)</h2>
+
+<h3 class="subsec-title">C.1 DeepSeek-V3 上的结果</h3>
+<p>图 8 展示了使用 DeepSeek-V3 模型在竞争编程（LiveCodeBench、CodeContest）和 ARC-AGI 基准上的 Pass@1 性能。整体趋势与 GPT-4o（图 4）相似，但不同基线方法的相对强弱有所变化。例如，在 LiveCodeBench 上 Standard MCTS 取得了最高成功率。尽管存在这些差异，AB-MCTS 变体在所有任务中始终位列前茅。</p>
+<div class="figure-wrap">
+<img src="images/Wider%20or%20Deeper_/fig_page21.png" alt="Figures 8, 9, 10">
+<div class="fig-caption"><strong>图 8（上部区域）：DeepSeek-V3 在各基准上的性能曲线。</strong><strong>图 9（中部区域）：DeepSeek-V3 上搜索树形状 vs. 性能关系。</strong><br><strong>图 10（下部区域）：GPT-4o 在三个 MLE-Bench 子竞赛上的详细性能对比。</strong>不同竞赛的最优基线各不相同，但 AB-MCTS-M 在所有三个竞赛上均保持强劲且一致的性能。</div>
+</div>
+
+<h3 class="subsec-title">C.2 MLE-Bench 详细分析</h3>
+<p>图 10 将 AB-MCTS-M 与各基线方法在 GPT-4o 驱动的三个 MLE-Bench 子竞赛上进行对比。关键观察：</p>
+<ul style="padding-left:2em;">
+<li><strong>Nomad2018</strong>：Sequential Refinement 最终取得最佳成绩，Repeated Sampling 无改进。</li>
+<li><strong>Spooky Author Identification</strong>：Standard MCTS 在整个预算范围内持续提升。</li>
+<li><strong>Random Acts of Pizza</strong>：Repeated Sampling 显著优于其他所有基线。</li>
+</ul>
+<p>这种基线有效性的高度可变性凸显了 AB-MCTS-M 的鲁棒性——当无法预先判断最优策略时，自适应方法是最安全的选择。</p>
+
+<h3 class="subsec-title">C.3 搜索树示例对比 (Figure 11)</h3>
+<div class="figure-wrap">
+<img src="images/Wider%20or%20Deeper_/fig_page22.png" alt="Figure 11">
+<div class="fig-caption"><strong>图 11：MLE-Bench 各方法生成的示例搜索树对比。</strong>上方三行为 AB-MCTS-M 生成的树（Nomad2018 / Spooky Author ID / Random Acts of Pizza），下方为对应 Standard MCTS 的树。AB-MCTS-M 的树展现出更灵活的结构——有效地将广泛探索与对有前景节点的集中利用结合起来。注意 Random Acts of Pizza 的 AB-MCTS-M 树与图 7 为同一棵树。</div>
+</div>
+
+<h3 class="subsec-title">C.4 与 Progressive Widening 的直接比较</h3>
+<p>我们在 LiveCodeBench 上使用 DeepSeek-V3 对 Progressive Widening 进行了多组超参数测试（Table 4）。结果显示：</p>
+<ul style="padding-left:2em;">
+<li>$(k, \alpha) = (5, 0.5)$ 时 PW 性能与 AB-MCTS 可比（Pass@1 约 50.7%）</li>
+<li>$(k, \alpha) = (1, 0.45)$ 时产生最差结果（48.7%）</li>
+<li>$(k, \alpha) = (10, 0.55)$ 导致高方差和搜索不稳定</li>
+</ul>
+<p>相比之下，<strong>AB-MCTS 无需任何超参数调整即可保持稳健性能</strong>，这是其实用性上的重要优势。</p>
+
+<h3 class="subsec-title">C.5 ARC-AGI 上 Pass@1 vs. Pass@2</h3>
+<p>表 5 展示了 ARC-AGI 上 Pass@1 和 Pass@2 的完整对比。两种指标下各方法的排名保持一致，验证了主要结论的稳健性：</p>
+<div class="table-note">
+<strong>Table 5: ARC-AGI (GPT-4o) Pass@1 与 Pass@2 对比：</strong><br>
+&bull; Repeated Sampling: Pass@1=14.0&plusmn;1.7%, Pass@2=15.0&plusmn;1.0%<br>
+&bull; Sequential Refinement: Pass@1=7.7&plusmn;0.6%, Pass@2=8.7&plusmn;0.9%<br>
+&bull; Standard MCTS: Pass@1=8.0&plusmn;1.0%, Pass@2=9.0&plusmn;1.5%<br>
+&bull; <strong>AB-MCTS-M: Pass@1=11.0&plusmn;1.0%, Pass@2=12.3&plusmn;1.2%</strong><br>
+&bull; AB-MCTS-A (Gauss): Pass@1=13.0&plusmn;3.6%, Pass@2=13.0&plusmn;3.6%<br>
+&bull; <strong>AB-MCTS-A (Beta): Pass@1=12.7&plusmn;0.6%, Pass@2=<strong>14.0&plusmn;2.1%</strong></strong>
+</div>
+
+<h3 class="subsec-title">C.6 节点度分布分析 (Figure 12)</h3>
+<div class="figure-wrap">
+<img src="images/Wider%20or%20Deeper_/fig_page25.png" alt="Figure 12">
+<div class="fig-caption"><strong>图 12：节点度分布揭示自适应搜索特性。</strong>横轴为节点度（子节点数），纵轴为频率（对数刻度），搜索预算 N=128。<strong>AB-MCTS-M</strong>（绿色）明显偏向深度搜索——约 90% 的非叶节点度数为 1-3；但其长尾分布（最高达约 40）证实了它在需要时也能自适应地扩展宽度。<strong>AB-MCTS-A</strong>（红色）执行更宽的搜索——低度节点仅占约 30%，分布广泛延伸至超过 100 的度数。这两种截然不同的模式与基线的刚性模式形成鲜明对比。</div>
+</div>
+
+<h3 class="subsec-title">C.7 AB-MCTS-M vs. AB-MCTS-A 选择指南</h3>
+<p>基于我们的实验发现，以下是选择建议：</p>
+<ul style="padding-left:2em;">
+<li><strong>优先考虑输出质量时 &rarr; AB-MCTS-M</strong>：其混合效应模型提供了一致的最强性能（Table 1, 2）。代价是每步选择需要 MCMC 迭代计算。但当 LLM 推理时间或解评估时间占主导时，MCMC 的额外开销可以忽略不计。</li>
+<li><strong>有严格时间约束时 &rarr; AB-MCTS-A</strong>：高斯/Beta 后验更新是解析性的（无需迭代），显著更快。对于延迟敏感的应用是更好的选择。</li>
+<li><strong>需要更宽泛探索的任务 &rarr; AB-MCTS-A</strong>：由于其在每一层都面临 GEN/CONT 二选一（连续 d 次 CONT 概率呈几何衰减），天然倾向于生成更宽的树。ARC-AGI 就是此类任务的典型代表。</li>
+</ul>
+
+<h3 class="subsec-title">C.8 固定分支因子消融 (Table 6)</h3>
+<p>见附录 A.6 中的详细讨论和 Table 6 数据。结论：<strong>$w=5$ 是 Standard MCTS 的最优固定分支因子</strong>，但任何固定值都无法适应不同任务的需求。</p>
+
+<h3 class="subsec-title">C.9 AB-MCTS 性能鲁棒性讨论</h3>
+<p>在其他基线方法中，分支因子要么是预定义的，要么由超参数决定。例如 Standard MCTS 需要预先指定分支因子 $w$。然而，宽度 vs 深度的效率强烈依赖于任务类型和 LLM 本身。这一点在 Table 1 和 Table 2 中得到充分体现：AB-MCTS 在各类任务上表现出色，而其他方法在某些任务上表现优异但在另一些上表现不佳。这归功于 AB-MCTS 的<strong>自适应分支本质</strong>——算法根据观测到的奖励自动调整宽或深的方向。</p>
+<p>这在 LLM 推理时扩展的上下文中尤其有价值：近年来 LLM 被用于解决各种类型的任务（数学、代码等），一种开箱即用且适用于多种任务类型的搜索算法具有很高的需求。</p>
+
+<h3 class="subsec-title">C.10 推进 Pareto 前沿的两个方向</h3>
+<p>我们提出两个潜在的改进方向以推进 LLM 推理时扩展的 Pareto 前沿：</p>
+<ol style="padding-left:2em;">
+<li><strong>通过难度估计增强自适应性</strong>：从收集到的奖励中显式估计问题难度。对于困难问题（低奖励标识），策略将动态切换——例如从深度搜索（AB-MCTS-M）切换到广度搜索（AB-MCTS-A）。这受到最优搜索策略依赖难度的研究发现的启发 [27]。</li>
+<li><strong>多 LLM 协作搜索</strong>：利用多个 LLM 的不同优势进行单次搜索内的协作。这通过扩展 AB-MCTS 引入多个 GEN 节点实现（每个 LLM 一个）。详见附录 D。</li>
+</ol>
+
+
+<!-- ============================================================ -->
+<!-- APPENDIX D: MULTI-LLM EXTENSION -->
+<!-- ============================================================ -->
+<h2 id="sec-app-d" class="sec-title">&#x00a7; 附录 D：多 LLM AB-MCTS (Multi-LLM Extension)</h2>
+
+<h3 class="subsec-title">D.1 动机与方法概述</h3>
+<p>根据任务的不同，使用超过一个 LLM 来搜索答案可能带来优势。例如，如果 LLM A 能生成更多样化的初始答案而 LLM B 擅长细化改进，那么同时使用两者来构建答案树有望提升性能。本节展示如何将 AB-MCTS 扩展到多 LLM 场景，并报告在 ARC-AGI-2 基准上的实验结果。</p>
+
+<h3 class="subsec-title">D.1.1 多个 LLM 作为答案生成器</h3>
+<p>假设有 $L$ 个 LLM 可用于答案生成。记第 $l$ 个 LLM 实现的答案生成为 $f_{\text{LLM}}^l$，$l = 1, \ldots, L$。整体流程与单 LLM AB-MCTS（Algorithm 1）相同，增加一步：在每次扩展时从 $L$ 个可用生成器中选择一个用于节点扩展。选择过程使用当前答案树 $T$ 的状态信息。</p>
+
+<h3 class="subsec-title">D.1.2 生成器选择算法 I：单一 GEN 节点</h3>
+<p>在此算法中，节点选择与标准 AB-MCTS 相同，随后附加一个额外的生成器选择步骤。对于每个生成器 $l$，我们获得它生成的所有节点的集合 $\mathcal{N}_l \subseteq T$（若该生成器尚未被选中则集合为空）。$\mathcal{N}_l$ 中节点的评分用于计算生成器 $l$ 将要生成的新节点的期望评分的后验分布。对所有 $L$ 个后验完成计算后，应用 Thompson Sampling：从每个分布中采样一个值，选择采样值最高的生成器进行扩展。</p>
+<p>后验建模方式与 AB-MCTS-M/A 中的节点目标选择完全相同，只是将"节点索引"替换为"生成器索引"。</p>
+
+<h3 class="subsec-title">D.1.3 生成器选择算法 II：多个 GEN 节点</h3>
+<p>另一种方案是在树中每个节点下附加多个 GEN 子节点——每个可用生成器一个。在每个节点的扩展目标选择过程中执行以下操作：</p>
+<ol style="padding-left:2em;">
+<li>对与每个生成器关联的子树独立应用 AB-MCTS 选择逻辑。</li>
+<li>使用 Thompson Sampling 确定每个生成器的最佳节点（GEN 节点或已有子节点）。</li>
+<li>比较 $L$ 个最佳节点的分数，选择总体分数最高的那个。</li>
+</ol>
+<p>此算法旨在更好地捕获搜索树的局部上下文信息，允许在求解过程的每个阶段自适应地选择最合适的生成器。</p>
+
+<h3 class="subsec-title">D.2 实验：ARC-AGI-2</h3>
+<p>我们评估了 Multi-LLM AB-MCTS 在 <strong>ARC-AGI-2</strong> 上的效果。ARC-AGI-2 是原始 ARC-AGI 的增强版本，专门设计用于严格评估 AI 系统的高级认知能力。即使是最前沿的 LLM 也难以解决（成功率低于 5%）。</p>
+
+<p><strong>实验设置</strong>：
+<ul style="padding-left:2em;">
+<li>120 个公开评估问题</li>
+<li>每题生成预算 N = 250</li>
+<li>模型：Gemini-2.5 Pro、o4-mini、DeepSeek-R1-0528</li>
+<li>温度参数：统一设为 0.6</li>
+<li>评估指标：Pass@k（k 次尝试内至少一次正确）</li>
+<li>使用算法 II（多 GEN 节点方案）</li>
+</ul></p>
+
+<!-- Figure 13 -->
+<div class="figure-wrap">
+<img src="images/Wider%20or%20Deeper_/fig_page27.png" alt="Figure 13">
+<div class="fig-caption"><strong>图 13：ARC-AGI-2 上各方法随生成预算变化的 Pass@k 成功率。</strong>测试方法包括：Repeated Sampling（o4-mini）、Single-LLM AB-MCTS（o4-mini）、以及 Multi-LLM AB-MCTS 的各种组合。o4-mini 的重复采样达到约 23%，单模型 AB-MCTS 提升至约 27.5%。集成 Gemini-2.5 Pro 和 DeepSeek-R1-0528 的 Multi-LLM AB-MCTS 最终突破 30% 成功率大关。</div>
+</div>
+
+<h3 class="subsec-title">D.2.2 结果</h3>
+<p>如图 13 所示：</p>
+<ul style="padding-left:2em;">
+<li>o4-mini 的 Repeated Sampling 达到 23% Pass@k</li>
+<li>单模型 AB-MCTS (o4-mini) 提升至 27.5%</li>
+<li>随着预算增大，AB-MCTS 相对优势更加明显（尤其在 N > 50 之后）</li>
+<li><strong>Multi-LLM AB-MCTS（o4-mini + Gemini-2.5-Pro + R1-0528）最终超过 30%</strong></li>
+</ul>
+
+<p>值得注意的是，虽然 DeepSeek-R1-0528 单独性能较低，但将其纳入 Multi-LLM 框架反而增加了已解决问题的数量。这表明多模型协作产生了超越简单"匹配最佳模型"的协同效应。</p>
+
+<!-- Figure 14 -->
+<div class="figure-wrap">
+<img src="images/Wider%20or%20Deeper_/fig_page28.png" alt="Figure 14">
+<div class="fig-caption"><strong>图 14：Multi-LLM AB-MCTS-A 在 120 道 ARC-AGI-2 问题中的 LLM 使用分布。</strong>每个柱状条表示一个问题，颜色表示使用的 LLM 类型（Gemini-2.5 Pro = 绿色, R1-0528 = 紫色, o4-mini = 黄色）。试验按从演示案例中获得的最大奖励排序（左高右低）。带星号的试验表示找到了正确的最终解决方案。左侧快速获得高奖励的问题倾向于分配给更强的模型；右侧较困难的问题则更均衡地使用了多个模型。</div>
+</div>
+
+<h3 class="subsec-title">D.2.3 分析：跨模型协作</h3>
+<p>Multi-LLM AB-MCTS 框架展现出了根据问题特征有效分配不同 LLM 的能力。如图 14 所示，LLM 使用分布在不同问题间变化显著：</p>
+<ul style="padding-left:2em;">
+<li>快速获得高奖励的问题（图中左侧）：倾向于分配给更强的模型</li>
+<li>获得高奖励更困难的问题（图中右侧）：模型使用更为均衡</li>
+</ul>
+
+<p>更重要的是，我们观察到<strong>单个模型无法解决的问题通过多模型协作得到了解决</strong>——这表明存在超越简单"最佳模型匹配"的协同交互效应。</p>
+
+<!-- Figure 15 -->
+<div class="figure-wrap">
+<img src="images/Wider%20or%20Deeper_/fig_page29.png" alt="Figure 15">
+<div class="fig-caption"><strong>图 15：Multi-LLM AB-MCTS-A 在一道成功解决的 ARC-AGI-2 问题上的示例搜索树。</strong>每个节点标注了生成步骤编号，颜色表示选择的 LLM（黄色 = o4-mini，绿色 = Gemini-2.5 Pro，紫色 = DeepSeek-R1-0528）。黄色节点生成了正确解决测试用例的代码。这个问题在单独使用任何一个模型时都无法解决。</div>
+</div>
+
+<!-- Figure 16 -->
+<div class="figure-wrap" style="max-width:700px;margin:28px auto;">
+<img src="images/Wider%20or%20Deeper_/Wider%20or%20Deeper__p29_fig6.png" alt="Figure 16 - Collaboration Illustration">
+<div class="fig-caption"><strong>图 16：模型协作示意图（对应 Figure 15 中的问题 36a08778）。</strong>展示了 o4-mini 生成的错误中间解如何作为有用的提示被 DeepSeek-R1-0528 利用，进而产生正确的最终方案。R1 分析了 o4-mini 方案中的两个主要缺陷：（1）水平扩散时的单元格着色遗漏；（2）全局 visited 集导致的处理冲突。修正这些问题后成功解决了测试用例。</div>
+</div>
+
+<p>图 15 和图 16 共同描绘了一个完整的跨模型协作案例：o4-mini 生成了一个不完美的中间解（虽然不正确但包含有用信息），DeepSeek-R1-0528 分析了其中的缺陷并进行了针对性修正，最终 Gemini-2.5 Pro 或 R1 产出了正确的解决方案。这一结果表明 <strong>Multi-LLM AB-MCTS 能够促进异构前沿 LLM 之间灵活有效的协作</strong>。</p>
+
+<h3 class="subsec-title">D.3 挑战与未来工作</h3>
+<p>虽然我们的主要评估聚焦于搜索能力（Pass@k 指标），我们也基于 Pass@2 标准做了初步参考评估。使用简单的基于规则的方法来选择两个最终答案（优先选择搜索后期产生的高奖励代码），Multi-LLM AB-MCTS 达到了 19.2% 的 Pass@2。虽然这是一个有前景的结果，但与 30% 的 Pass@250 率相比仍有超过 10 个百分点的差距。未来工作应致力于缩小这一差距，开发更复杂的最终答案选择算法。潜在方向包括构建更精确的奖励模型或集成 LLM-as-a-Judge 以实现对候选方案的更细致评估。</p>
+
+
+<!-- ======== FOOTER ======== -->
+<div class="footer">
+论文全文翻译 · Wider or Deeper? (AB-MCTS / TreeQuest) · NeurIPS 2025 Spotlight<br>
+翻译自 Sakana AI 原文 · 含全部 Figure 1–16 及 Table 1–6<br>
+图片来源：论文 PDF 页面高清渲染 + ARC 任务真实提取图表
+</div>
+
+</div><!-- end .container -->
+</body>
+</html>

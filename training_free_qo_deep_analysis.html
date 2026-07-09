@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>深度解读 — Training-Free Query Optimization via LLM-Based Plan Similarity (LLM-PM)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{font-family:'Noto Sans SC',system-ui,-apple-system,sans-serif;background:#0d1117;color:#c9d1d9;line-height:1.8;font-size:16px;min-height:100vh;}
+.container{max-width:1400px;margin:0 auto;padding:0 24px;background:#0d1117;position:relative;}
+.back-btn{position:fixed;top:16px;left:16px;z-index:9999;background:rgba(20,20,35,.75);color:#c9d1d9;border:1px solid rgba(255,255,255,.15);border-radius:10px;padding:8px 16px;font-size:14px;cursor:pointer;backdrop-filter:blur(6px);transition:all .3s;text-decoration:none;display:flex;align-items:center;gap:6px;}
+.back-btn:hover{background:rgba(30,30,55,.9);border-color:rgba(255,255,255,.3);}
+.hero{padding:80px 0 40px;text-align:center;}
+.hero-title{font-size:2.1rem;font-weight:700;background:linear-gradient(135deg,#f9a8d4,#ec4899,#f472b6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:12px;line-height:1.3;}
+.hero-sub{font-size:1.1rem;color:#8b949e;margin-bottom:8px;}
+.venue{font-size:.95rem;color:#8b949e;margin-top:8px;}
+.venue a{color:#ec4899;text-decoration:none;}
+.venue a:hover{text-decoration:underline;}
+.tag-row{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:16px;}
+.tag{display:inline-block;padding:4px 14px;border-radius:20px;font-size:.85rem;border:1px solid rgba(236,72,153,.3);color:#ec4899;background:rgba(236,72,153,.06);}
+.divider{border:none;border-top:1px solid rgba(255,255,255,.08);margin:48px 0;}
+.section{margin:40px 0;}
+.section-title{font-size:1.75rem;font-weight:700;margin-bottom:20px;color:#e6edf3;display:flex;align-items:center;gap:10px;}
+.section-title .num{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#f9a8d4,#ec4899);color:#0d1117;font-size:1rem;font-weight:700;flex-shrink:0;}
+.section-desc{font-size:16px;line-height:1.9;color:#c9d1d9;margin-bottom:16px;}
+.toc{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:28px 36px;margin:30px 0;}
+.toc h3{font-size:1.2rem;color:#e6edf3;margin-bottom:14px;}
+.toc ol{list-style:none;counter-reset:toc;padding:0;}
+.toc li{counter-increment:toc;margin:8px 0;}
+.toc li::before{content:counter(toc) ".";color:#ec4899;font-weight:600;margin-right:8px;}
+.toc a{color:#8b949e;text-decoration:none;transition:color .2s;}
+.toc a:hover{color:#ec4899;}
+.module-card{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:24px;margin:18px 0;transition:all .3s;}
+.module-card:hover{border-color:rgba(236,72,153,.3);transform:translateY(-2px);}
+.module-card h3{font-size:1.15rem;font-weight:600;margin-bottom:10px;color:#ec4899;}
+.module-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.arch-card{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:22px;margin:14px 0;transition:all .3s;}
+.arch-card:hover{border-color:rgba(236,72,153,.3);}
+.arch-card h4{font-size:1.05rem;font-weight:600;color:#f472b6;margin-bottom:8px;}
+.arch-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.step-flow{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:22px;margin:14px 0;}
+.step-flow h4{font-size:1.05rem;font-weight:600;color:#ec4899;margin-bottom:8px;}
+.step-flow p{font-size:15px;line-height:1.8;color:#8b949e;}
+.data-table{width:100%;border-collapse:collapse;margin:18px 0;background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:12px;overflow:hidden;font-size:14px;}
+.data-table th{background:rgba(236,72,153,.1);color:#ec4899;padding:12px 16px;text-align:left;font-weight:600;}
+.data-table td{padding:10px 16px;border-top:1px solid rgba(255,255,255,.06);color:#c9d1d9;}
+.data-table tr:hover td{background:rgba(236,72,153,.04);}
+.formula-box{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:20px 24px;margin:16px 0;font-size:18px;text-align:center;color:#e6edf3;font-family:'JetBrains Mono',monospace;}
+.code-block{background:rgba(20,20,35,.8);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:18px 22px;margin:16px 0;overflow-x:auto;}
+.code-block pre{font-family:'JetBrains Mono',monospace;font-size:14px;line-height:1.7;color:#c9d1d9;white-space:pre;}
+.ck{color:#ec4899;}.cs{color:#f472b6;}.cf{color:#d2a8ff;}.cg{color:#8b949e;}.cv{color:#79c0ff;}
+.qa-card{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:24px;margin:16px 0;}
+.qa-q{font-size:1.05rem;font-weight:600;color:#ec4899;margin-bottom:12px;}
+.qa-a{font-size:15px;line-height:1.9;color:#8b949e;}
+.highlight-box{background:rgba(236,72,153,.06);border:1px solid rgba(236,72,153,.2);border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;}
+.warn-box{background:rgba(244,114,182,.08);border:1px solid rgba(244,114,182,.25);border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;}
+.info-box{background:rgba(236,72,153,.06);border:1px solid rgba(236,72,153,.2);border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;}
+.prompt-box{background:rgba(20,20,35,.8);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:18px 22px;margin:16px 0;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.7;color:#c9d1d9;white-space:pre-wrap;}
+.prompt-label{display:inline-block;padding:2px 10px;border-radius:6px;font-size:.85rem;font-weight:600;margin-bottom:8px;background:rgba(236,72,153,.15);color:#ec4899;}
+.fc{font-size:14px;color:#8b949e;text-align:center;margin:10px 0;line-height:1.6;}
+.comp-card{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:22px;margin:14px 0;transition:all .3s;}
+.comp-card:hover{border-color:rgba(236,72,153,.3);}
+.comp-card h4{font-size:1.05rem;font-weight:600;color:#f472b6;margin-bottom:8px;}
+.comp-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.insight-box{background:rgba(236,72,153,.06);border:1px solid rgba(236,72,153,.2);border-radius:12px;padding:18px 22px;margin:16px 0;}
+.insight-box h4{color:#ec4899;font-size:1.05rem;margin-bottom:8px;}
+.insight-box p{font-size:15px;line-height:1.8;color:#c9d1d9;}
+.limit-box{background:rgba(244,114,182,.08);border:1px solid rgba(244,114,182,.25);border-radius:12px;padding:18px 22px;margin:16px 0;}
+.limit-box h4{color:#f472b6;font-size:1.05rem;margin-bottom:8px;}
+.limit-box p{font-size:15px;line-height:1.8;color:#c9d1d9;}
+.kv-row{display:flex;border-bottom:1px solid rgba(255,255,255,.06);padding:8px 0;}
+.kv-row:last-child{border-bottom:none;}
+.kv-key{width:180px;flex-shrink:0;color:#ec4899;font-weight:500;font-size:14px;}
+.kv-val{color:#c9d1d9;font-size:14px;line-height:1.7;}
+.footer{text-align:center;color:#555;font-size:14px;padding:48px 0 32px;}
+.svg-container{background:rgba(20,20,35,.4);border:1px solid rgba(255,255,255,.06);border-radius:14px;padding:20px;margin:24px 0;overflow-x:auto;text-align:center;}
+.svg-container svg{max-width:100%;height:auto;}
+@media(max-width:900px){
+  .grid-2,.grid-3{grid-template-columns:1fr;}
+  .hero-title{font-size:1.6rem;}
+  .kv-row{flex-direction:column;}
+  .kv-key{width:auto;}
+}
+@keyframes flowPulse{0%,100%{opacity:.6;}50%{opacity:1;}}
+.flow-arrow{animation:flowPulse 2s ease-in-out infinite;}
+.translation h3{font-size:1.3rem;color:#f472b6;margin:26px 0 12px;font-weight:700;}
+.translation h4{font-size:1.1rem;color:#ec4899;margin:18px 0 8px;font-weight:600;}
+.translation p{font-size:15.5px;line-height:1.95;color:#c9d1d9;margin-bottom:12px;}
+.fig-note{background:rgba(236,72,153,.07);border-left:3px solid #ec4899;border-radius:8px;padding:12px 18px;margin:14px 0;font-size:14.5px;color:#e8a8cf;line-height:1.8;}
+.fig-note b{color:#f472b6;}
+</style>
+</head>
+<body>
+<div class="container">
+
+<a class="back-btn" href="index.html">&#8592; 返回目录</a>
+
+<a href="training_free_qo_full_translation.html" style="display:block;max-width:860px;margin:18px auto 0;padding:13px 22px;background:linear-gradient(90deg,rgba(31,111,235,.16),rgba(137,87,227,.16));border:1px solid rgba(137,87,227,.5);border-radius:12px;color:#e6edf3;text-decoration:none;font-weight:500;font-size:15px;text-align:center;box-shadow:0 2px 14px rgba(0,0,0,.35);">阅读本文逐段完整中文翻译（Full Translation）</a>
+
+<!-- ========== HERO ========== -->
+<div class="hero">
+  <h1 class="hero-title">LLM-PM：免训练、基于 LLM 计划相似度的查询优化</h1>
+  <p class="hero-sub">用「预训练 LLM 把执行计划编码成向量 → 在嵌入空间找近邻 → 邻域投票选 hint → 双邻域一致性校验」给优化器推荐 hint，无需任何训练</p>
+  <div class="venue">
+    arXiv 2506.05853 (2025) &nbsp;|&nbsp;
+    <a href="https://arxiv.org/abs/2506.05853">arXiv: 2506.05853</a> &nbsp;|&nbsp;
+    LLM-PM (LLM-based Plan Mapping) · openGauss / JOB-CEB
+  </div>
+  <div class="tag-row">
+    <span class="tag">Query Optimization</span>
+    <span class="tag">LLM Embeddings</span>
+    <span class="tag">Training-Free</span>
+    <span class="tag">Plan Similarity</span>
+    <span class="tag">Hint Recommendation</span>
+    <span class="tag">k-NN</span>
+  </div>
+</div>
+
+<!-- ========== TOC ========== -->
+<div class="toc">
+  <h3>目录</h3>
+  <ol>
+    <li><a href="#sec-1">研究动机：为什么用「计划嵌入」做免训练优化</a></li>
+    <li><a href="#sec-2">框架概览：Plan-Mapping + 自适应 Hint 搜索双阶段</a></li>
+    <li><a href="#sec-3">问题定义与 7 个布尔 Hint</a></li>
+    <li><a href="#sec-4">自适应 Hint 搜索（Algorithm 1）：超时剪枝 + 计划缓存</a></li>
+    <li><a href="#sec-5">Plan-Mapping 算法（Algorithm 2）：邻域投票 + 双邻域校验</a></li>
+    <li><a href="#sec-6">整体系统设计：快路径 / 兜底 / 持续学习</a></li>
+    <li><a href="#sec-7">实验评估：JOB-CEB 十折交叉验证</a></li>
+    <li><a href="#sec-8">消融研究与讨论</a></li>
+    <li><a href="#sec-9">代码使用与实战（思路与复现）</a></li>
+    <li><a href="#sec-10">总结、局限与未来工作</a></li>
+    <li><a href="#sec-11">全文中文翻译</a></li>
+  </ol>
+</div>
+
+<!-- ========== SEC 1 ========== -->
+<div class="section" id="sec-1">
+  <h2 class="section-title"><span class="num">1</span>研究动机：为什么用「计划嵌入」做免训练优化</h2>
+  <p class="section-desc">查询优化的核心困难在于代价模型与基数估计不准，导致优化器选错计划（例如本该用 hash join 却用了 nested-loop）。DBA 可用 hint 引导优化器，但「选对 hint」极其复杂——需要深度理解查询、数据与优化器内部启发式，且错误 hint 反而拖慢。近年来用 ML 自动化这一过程的趋势有两条：① 端到端替换优化器（如 Neo）；② 以 hint/代价修正来引导现有优化器（如 AQO、ACM、Bao、AutoSteer、FASTgres、COOOL、Lero、HERO）。</p>
+
+  <div class="highlight-box">
+    <b>LLM 用于查询优化的两条路线：</b><br>
+    · <strong>生成式（LLM-QO、LLM-R2）：</strong>用 LLM 直接「写」执行计划或重写规则。潜力大但推理成本高、延迟大、离实用尚远。<br>
+    · <strong>调优式（LLMSteer 等）：</strong>保留优化器，用 LLM 嵌入查询文本，再训练小分类器选 hint。LLM-PM 更接近这一支，但更进一步——<strong>嵌入的是「执行计划」而非「查询文本」</strong>，且完全免训练。
+  </div>
+
+  <div class="insight-box">
+    <h4>本文立场</h4>
+    <p>目标不是追求极致加速，而是证明「执行计划嵌入」的实用价值，并构建一个简单、鲁棒、<strong>可用于生产</strong>的系统。LLM-PM 刻意轻量、免训练：用冻结（frozen）的预训练 LLM 嵌入计划，再用简单的近邻检索来迁移 hint 集。相比生成式 LLM，仅用嵌入便宜得多、快得多；近邻检索高效、鲁棒、透明，是可插拔、易适应新 workload/模式/数据分布的机制。</p>
+  </div>
+
+  <div class="warn-box">
+    <b>为什么「免训练」重要？</b> 端到端学习型优化器（Neo 等）需要海量标注数据与漫长训练，还丢弃了成熟优化器的数十年手工启发式，且泛化存疑。LLM-PM 把「重活」交给预训练 LLM 的语义表示，规避了训练阶段，契合「快速、高效优化系统」的需求。
+  </div>
+</div>
+
+<!-- ========== SEC 2 ========== -->
+<div class="section" id="sec-2">
+  <h2 class="section-title"><span class="num">2</span>框架概览：Plan-Mapping + 自适应 Hint 搜索双阶段</h2>
+  <p class="section-desc">LLM-PM 由两部分组成：(1) 计划映射算法（Plan-Mapping）——在嵌入空间把相似计划的 hint 集迁移过来；(2) 自适应搜索（Adaptive Hint Search）——穷举探索整个 hint 空间找最优配置作为兜底。搜索算法本身不新颖，但作为兜底保证完备性与系统自洽。</p>
+
+  <div class="svg-container">
+    <svg viewBox="0 0 960 260" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif">
+      <defs><marker id="ar2" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#f472b6"/></marker></defs>
+      <rect x="20" y="90" width="220" height="80" rx="10" fill="rgba(20,20,35,.8)" stroke="#ec4899"/>
+      <text x="130" y="118" fill="#e6edf3" font-size="13" text-anchor="middle" font-weight="700">入站 SQL 查询 Q</text>
+      <text x="130" y="140" fill="#8b949e" font-size="11" text-anchor="middle">全 hint 启用下规划</text>
+
+      <rect x="290" y="90" width="240" height="80" rx="10" fill="rgba(20,20,35,.8)" stroke="#ec4899"/>
+      <text x="410" y="116" fill="#e6edf3" font-size="13" text-anchor="middle" font-weight="700">Plan-Mapping（Alg.2）</text>
+      <text x="410" y="138" fill="#8b949e" font-size="11" text-anchor="middle">嵌入+邻域投票+校验</text>
+
+      <rect x="590" y="30" width="240" height="70" rx="10" fill="rgba(20,20,35,.8)" stroke="#f472b6"/>
+      <text x="710" y="56" fill="#e6edf3" font-size="13" text-anchor="middle" font-weight="700">✓ hint 通过校验</text>
+      <text x="710" y="78" fill="#8b949e" font-size="11" text-anchor="middle">快路径：直接执行</text>
+
+      <rect x="590" y="150" width="240" height="70" rx="10" fill="rgba(20,20,35,.8)" stroke="#f472b6"/>
+      <text x="710" y="176" fill="#e6edf3" font-size="13" text-anchor="middle" font-weight="700">✗ 无 hint / 校验失败</text>
+      <text x="710" y="198" fill="#8b949e" font-size="11" text-anchor="middle">兜底：Adaptive Search</text>
+
+      <rect x="860" y="90" width="90" height="80" rx="10" fill="rgba(20,20,35,.8)" stroke="#f472b6"/>
+      <text x="905" y="118" fill="#e6edf3" font-size="12" text-anchor="middle" font-weight="700">执行 Q</text>
+      <text x="905" y="138" fill="#8b949e" font-size="11" text-anchor="middle">用 hint H</text>
+
+      <line x1="240" y1="130" x2="288" y2="130" stroke="#f472b6" stroke-width="2" marker-end="url(#ar2)"/>
+      <line x1="530" y1="110" x2="588" y2="65" stroke="#f472b6" stroke-width="2" marker-end="url(#ar2)"/>
+      <line x1="530" y1="150" x2="588" y2="185" stroke="#f472b6" stroke-width="2" marker-end="url(#ar2)"/>
+      <line x1="830" y1="65" x2="858" y2="110" stroke="#f472b6" stroke-width="2" marker-end="url(#ar2)"/>
+      <line x1="830" y1="185" x2="858" y2="150" stroke="#f472b6" stroke-width="2" marker-end="url(#ar2)"/>
+      <path d="M905,170 C905,235 130,235 130,172" fill="none" stroke="#f472b6" stroke-width="2" stroke-dasharray="5,4" marker-end="url(#ar2)"/>
+      <text x="470" y="250" fill="#8b949e" font-size="11" text-anchor="middle">持续学习：兜底搜索产出的三元组不断扩充参考集（虚线反馈回 Plan-Mapping）</text>
+    </svg>
+    <p class="fc">图 2（论文 Figure 2 总体系统控制流）：Plan-Mapping 走快路径；失败则兜底到 Adaptive Hint Search；三元组持续反哺参考集。</p>
+  </div>
+
+  <div class="grid-2">
+    <div class="arch-card"><h4>2.1 快路径（Plan-Mapping）</h4><p>用全 hint 启用规划入站查询、嵌入、与参考 workload 用 Algorithm 2 比对；若候选 hint 通过双邻域一致性校验，则带该 hint 直接执行。</p></div>
+    <div class="arch-card"><h4>2.2 兜底（Adaptive Hint Search）</h4><p>当 Plan-Mapping 无 hint 或校验拒绝，转 Algorithm 1：穷举（但带超时剪枝）扫描全部 128 个二进制 hint 集，找到最快配置，并缓存最优的 ⟨默认计划, 最优 hint, 最优计划⟩ 三元组供将来使用。</p></div>
+  </div>
+</div>
+
+<!-- ========== SEC 3 ========== -->
+<div class="section" id="sec-3">
+  <h2 class="section-title"><span class="num">3</span>问题定义与 7 个布尔 Hint</h2>
+  <p class="section-desc">自动 hint 选择被形式化为：给定查询 Q，找到 hint 集 H 使执行时间最小。</p>
+
+  <div class="formula-box">
+    H*(Q) = arg min_{H ∈ H(Q)} T(Q, P_H) &nbsp;—&nbsp; 公式(1)
+  </div>
+  <p class="section-desc">其中 H(Q) 是 Q 的所有有效 hint 配置空间。实践中 H(Q) 可能极大，因此用两种技术加速搜索。</p>
+
+  <div class="module-card">
+    <h3>3.1 两种加速技术</h3>
+    <p><b>超时阈值（fastest-so-far）：</b>每次计划执行后更新 Tmin ← min(Tmin, T(Q,P))（初始 Tmin = 默认计划耗时）。若某 hinted 计划超过当前 Tmin 则中止其执行并标记为次优——尽早剪掉昂贵计划。</p>
+    <p><b>计划缓存（plan caching）：</b>每个不同物理计划连同其测得的延迟一起缓存；当优化器产生已在缓存中的计划时，直接复用存储的延迟而不再执行。在「许多 hint 对所选计划影响很小」时最有效。</p>
+  </div>
+
+  <div class="data-table">
+    <table>
+      <thead><tr><th>考虑的 7 个布尔 hint（1=禁用该算子，0=保持默认启用）</th></tr></thead>
+      <tbody>
+        <tr><td>enable_nestloop / enable_hashjoin / enable_mergejoin</td></tr>
+        <tr><td>enable_seqscan / enable_indexscan / enable_indexonlyscan / enable_bitmapscan</td></tr>
+        <tr><td>共 2⁷ = 128 种二进制 hint 集</td></tr>
+      </tbody>
+    </table>
+    <p class="fc">表：本文考虑的 7 个布尔 hint；注意其编码约定「1 表示禁用该算子」。</p>
+  </div>
+
+  <div class="step-flow">
+    <h4>3.2 等价 hint 集的消歧（Canonical 选择）</h4>
+    <p>同一物理计划可能由多个 hint 配置生成，例如 H1=(0,1,1,1,0,1,1) 与 H2=(0,1,1,1,0,1,0) 仅末位（bitmapscan）不同却产生相同计划。为选唯一「规范」hint 集，取<strong>禁用算子最少</strong>的配置：bH(P) = argmin_{H: P_H=P} Σ h_i。上例中 H2 更优（少禁用一个）。理由：① 若某 knob 开/关都产生同计划，说明它对效率无影响，保持启用可避免不必要的限制；② 多关算子会压缩优化器搜索空间，可能在不同于训练 workload 的查询/分布上表现差。最宽松的 hint 集在引导到目标计划的同时，保留了优化器尽可能多的内置经验。</p>
+  </div>
+</div>
+
+<!-- ========== SEC 4 ========== -->
+<div class="section" id="sec-4">
+  <h2 class="section-title"><span class="num">4</span>自适应 Hint 搜索（Algorithm 1）</h2>
+  <p class="section-desc">Algorithm 1 在单次遍历中扫描全部 128 个二进制 hint 集，同时不断收紧执行时间阈值。先用全算子启用执行查询，建立初始 Tmin 并播种计划-延迟缓存 C；其余配置分配到 w=8 个工作线程并行。对每个 hint 集，优化器产生物理计划；若计划已在 C 中则直接取延迟，否则在当前 Tmin 超时下执行；超时的计划被提前中止并标记次优；每当更快的执行完成，Tmin 被原子更新，立即收紧所有在途 worker 的超时。</p>
+
+  <div class="code-block">
+    <pre>Algorithm 1 Adaptive Hint Search (Timeout Pruning + Plan Cache)
+Input: Q; H={H1..H128}; w←8
+Output: Tmin; plan–latency cache C
+1: Tmin ← execute(Q, default)
+2: C ← { plan(Q,default) : Tmin }
+3: for all H in H\{default} parallel on w threads:
+4:   P ← plan(Q, H)
+5:   if P in C: t ← C[P]
+6:   else: t ← execute(Q, H, timeout=Tmin)
+7:        if t == Timeout: mark H sub-optimal; continue
+8:        C[P] ← t
+9:   Tmin ← min(Tmin, t)   # atomic
+10: return (Tmin, C)</pre>
+  </div>
+
+  <div class="insight-box">
+    <h4>为什么高效</h4>
+    <p>因为慢计划被快速终止、重复计划通过缓存短路，整个过程把大部分算力花在少数有希望的候选上，同时<strong>保证对 128 个 hint 空间的全覆盖</strong>。这是「兜底」机制的核心：当 Plan-Mapping 无把握时，仍能通过穷举得到最优配置，并把它缓存为三元组。</p>
+  </div>
+</div>
+
+<!-- ========== SEC 5 ========== -->
+<div class="section" id="sec-5">
+  <h2 class="section-title"><span class="num">5</span>Plan-Mapping 算法（Algorithm 2）：邻域投票 + 双邻域校验</h2>
+  <p class="section-desc">核心假设：LLM 的嵌入能为查询计划提供良好表示；嵌入空间中相近的计划倾向于共享物理结构，因而同一 hint 集常在该局部邻域内都有效。离线搜索（§3.2）产出三元组 (d_i, H*_i, o_i)：d_i 是第 i 个默认计划的嵌入，H*_i 其最优 hint 集，o_i 是对应优化后计划的嵌入（若无 hint 加速则 H*_i 为全启用向量且 o_i=d_i）。</p>
+
+  <div class="svg-container">
+    <svg viewBox="0 0 960 300" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif">
+      <defs><marker id="ar5" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#f472b6"/></marker></defs>
+      <circle cx="250" cy="160" r="120" fill="rgba(236,72,153,.06)" stroke="rgba(236,72,153,.3)"/>
+      <text x="250" y="40" fill="#f472b6" font-size="13" font-weight="700">默认计划嵌入空间</text>
+      <circle cx="250" cy="160" r="8" fill="#f472b6"/>
+      <text x="250" y="185" fill="#e6edf3" font-size="12" text-anchor="middle">p0 (P0)</text>
+      <circle cx="190" cy="120" r="6" fill="#79c0ff"/><circle cx="300" cy="130" r="6" fill="#79c0ff"/>
+      <circle cx="210" cy="210" r="6" fill="#79c0ff"/><circle cx="310" cy="200" r="6" fill="#79c0ff"/>
+      <circle cx="160" cy="170" r="6" fill="#79c0ff"/><circle cx="330" cy="160" r="6" fill="#79c0ff"/>
+      <text x="250" y="245" fill="#8b949e" font-size="11" text-anchor="middle">N 个最近邻（半透明蓝）→ 投票选 Hcand</text>
+
+      <text x="480" y="160" fill="#f472b6" font-size="20" font-weight="700">→</text>
+
+      <circle cx="710" cy="160" r="120" fill="rgba(244,114,182,.06)" stroke="rgba(244,114,182,.3)"/>
+      <text x="710" y="40" fill="#f472b6" font-size="13" font-weight="700">候选计划嵌入空间</text>
+      <circle cx="710" cy="160" r="8" fill="#f472b6"/>
+      <text x="710" y="185" fill="#e6edf3" font-size="12" text-anchor="middle">pcand (Pcand)</text>
+      <circle cx="650" cy="120" r="6" fill="#79c0ff"/><circle cx="770" cy="130" r="6" fill="#79c0ff"/>
+      <circle cx="670" cy="210" r="6" fill="#79c0ff"/><circle cx="760" cy="200" r="6" fill="#79c0ff"/>
+      <circle cx="620" cy="170" r="6" fill="#79c0ff"/><circle cx="790" cy="160" r="6" fill="#79c0ff"/>
+      <text x="710" y="245" fill="#8b949e" font-size="11" text-anchor="middle">K 个最近邻（优化后运行时）→ 校验</text>
+
+      <path d="M258,150 C400,110 580,110 700,150" fill="none" stroke="#f472b6" stroke-width="2" marker-end="url(#ar5)"/>
+      <text x="480" y="100" fill="#8b949e" font-size="10" text-anchor="middle">用 Hcand 重规划</text>
+    </svg>
+    <p class="fc">图 1（论文 Figure 1 两阶段 hint 选择）：左—在 N 个最近默认计划邻域中投票选候选 hint；右—用 K 个最近优化计划邻域校验收益。</p>
+  </div>
+
+  <div class="step-flow">
+    <h4>5.1 两阶段测试</h4>
+    <p><b>① 邻域投票：</b>在 N 个最近默认计划中，选「最常见的非默认 hint 集」作候选 Hcand。假设：结构相似的计划往往有同样的低效点，故对邻居有效的 hint 也可能以类似方式优化新计划。</p>
+    <p><b>② 一致性校验：</b>用所选候选 hint 重规划查询，对默认计划与候选计划分别取其 K 个最近邻（均有已知执行时间），比较两邻域的平均运行时。若候选计划邻域的平均运行时更小，则采纳新 hint；否则保留原计划。</p>
+  </div>
+
+  <div class="code-block">
+    <pre>Algorithm 2 Plan-Mapping (Two-Neighborhood Consistency)
+Input: Q; reference T={(d_i,H*_i,o_i,t_def_i,t_opt_i)}; N, K
+Output: Hout or ∅
+1: P0 ← plan(Q, default); p0 ← ϕ(P0)
+2: N  ← N nearest {d_i} to p0
+3: Hcand ← mode{ H*_i | H*_i≠0, (d_i,..)∈N }   # 非默认中最频繁
+4: if Hcand undefined: return ∅
+5: Pcand ← plan(Q, Hcand); pcand ← ϕ(Pcand)
+6: K0    ← K nearest {d_i} to p0;      t0bar ← mean(t_def over K0)
+7: Kcand ← K nearest {o_i} to pcand;   tcandbar ← mean(t_opt over Kcand)
+8: if tcandbar < t0bar: Hout ← Hcand  else Hout ← ∅
+9: return Hout</pre>
+  </div>
+
+  <div class="module-card">
+    <h3>5.2 超参数</h3>
+    <p>· <strong>N</strong>：投票阶段邻域大小（实验 N=16）；<br>
+    · <strong>K</strong>：一致性校验邻域大小（K=16；小的 K 偏向最近计划，大的 K 增加覆盖与稳定）；<br>
+    · <strong>距离度量</strong>：默认欧氏距离。</p>
+    <p>两阶段测试在「覆盖」与「安全」间取得平衡：N 邻域投票编译出本地流行 hint 列表并选最频繁者作候选；K 邻域一致性校验防止盲用会把优化器推入次优空间的 hint。</p>
+  </div>
+</div>
+
+<!-- ========== SEC 6 ========== -->
+<div class="section" id="sec-6">
+  <h2 class="section-title"><span class="num">6</span>整体系统设计：快路径 / 兜底 / 持续学习</h2>
+  <p class="section-desc">把嵌入方法与自适应搜索整合为统一管线，旨在：(1) 当经验库存在相似历史计划时，经由 Plan-Mapping 快速优化；(2) 对新查询兜底到彻底 hint 搜索；(3) 通过持续累积执行经验随时间改进。</p>
+
+  <div class="grid-3">
+    <div class="comp-card"><h4>阶段 1 · Plan-Mapping</h4><p>全 hint 启用规划、嵌入、与参考集比对（Alg.2）；候选通过双邻域校验则直接带 Hcand 执行（快路径）。</p></div>
+    <div class="comp-card"><h4>阶段 2 · 兜底搜索</h4><p>Plan-Mapping 无 hint 或校验拒绝时，转 Alg.1 穷举 128 hint 集，找到最快配置并缓存三元组。</p></div>
+    <div class="comp-card"><h4>阶段 3 · 执行与持续学习</h4><p>兜底产出的三元组不断扩充参考集；随反馈循环，需要慢速穷举的查询比例逐步缩小，端到端延迟稳步改善。</p></div>
+  </div>
+
+  <div class="highlight-box">
+    <b>设计收益：</b>低中位延迟（多数查询由轻量嵌入映射器解决），同时保证即使是「困难」查询最终也能从彻底搜索中受益。计划嵌入存储（embeddings storage）是连接两阶段的经验库。
+  </div>
+</div>
+
+<!-- ========== SEC 7 ========== -->
+<div class="section" id="sec-7">
+  <h2 class="section-title"><span class="num">7</span>实验评估：JOB-CEB 十折交叉验证</h2>
+  <p class="section-desc">实验在单节点 openGauss 上（Kunpeng-920 128 核 / 1000GB RAM / 2TB SSD；shared_buffers=256GB, work_mem=80GB, query_dop=1）。数据集为 IMDB 上的 JOB-CEB（16 个模板、3133 个查询实例）。计划嵌入用 OpenAI <code>text-embedding-3-large</code> 生成。图 3 用 PCA 把高维嵌入降到二维，可见默认计划按查询组明显成簇。</p>
+
+  <div class="data-table">
+    <table>
+      <thead><tr><th>指标</th><th>结果</th></tr></thead>
+      <tbody>
+        <tr><td>十折平均 runtime 降低</td><td>19.1%（即平均 1.19× 更快）</td></tr>
+        <tr><td>全 workload 总加速（汇总所有测试查询 runtime）</td><td><b>21.1%</b></td></tr>
+        <tr><td>可达最大加速（理论上界）</td><td>62.5%</td></tr>
+        <tr><td>最慢折 / 最快折</td><td>+8% / +32%</td></tr>
+        <tr><td>90 分位执行时间下降</td><td>24.7%</td></tr>
+        <tr><td>中位时间改善</td><td>2.1%</td></tr>
+        <tr><td>每折分布（加速 / 减速 / 不变）</td><td>20% / 20% / 60%</td></tr>
+      </tbody>
+    </table>
+    <p class="fc">表：十折交叉验证结果（图 5a/b，表 5b）。Plan-Mapping 在长尾（最慢查询）切片收益最大，少数低延迟切片偶发变慢。</p>
+  </div>
+
+  <div class="data-table">
+    <table>
+      <thead><tr><th>最优 hint 集（Top）</th><th>Count</th></tr></thead>
+      <tbody>
+        <tr><td>0000000（全启用 = 默认）</td><td>1468</td></tr>
+        <tr><td>0001100</td><td>226</td></tr>
+        <tr><td>1000100</td><td>146</td></tr>
+        <tr><td>1100100</td><td>114</td></tr>
+        <tr><td>0000100</td><td>106</td></tr>
+        <tr><td>其他（共 86/128 种至少当选一次最优）</td><td>—</td></tr>
+      </tbody>
+    </table>
+    <p class="fc">表 4：约半数查询最优配置与默认（全启用）一致；128 种位向量中有 86 种至少一次当选最优。仅禁用 nestloop 并非总是制胜策略——最优 hint 集多样。</p>
+  </div>
+
+  <div class="insight-box">
+    <h4>平台差异的警示</h4>
+    <p>先前 PostgreSQL 研究报告：单个「全局禁用 nested-loop」hint 就能让 JOB-CEB 加速 60%+；但在本实验的 openGauss 上，同样的 hint 反而让性能退化约 50%。这正说明「没有哪个 hint 是普适最优」，也是本文采用「多邻域策略」的动机。</p>
+  </div>
+</div>
+
+<!-- ========== SEC 8 ========== -->
+<div class="section" id="sec-8">
+  <h2 class="section-title"><span class="num">8</span>消融研究与讨论</h2>
+  <p class="section-desc">一个自然的问题：学到的 LLM 嵌入是否真比「昂贵的字符串匹配」更有用？为此作者关掉一致性校验，用两种退化配置对比：① Levenshtein 编辑距离；② 仅 LLM 嵌入（无一致性校验）。</p>
+
+  <div class="data-table">
+    <table>
+      <thead><tr><th>配置</th><th>总延迟变化</th><th>超时数</th></tr></thead>
+      <tbody>
+        <tr><td>Levenshtein（编辑距离）</td><td><span style="color:#f87171">−64.4%（变慢）</span></td><td>87</td></tr>
+        <tr><td>LLM 嵌入（无一致性校验）</td><td>+16.1%</td><td>5</td></tr>
+        <tr><td>LLM 嵌入 + 一致性校验（完整）</td><td><b>+21.1%</b></td><td>1</td></tr>
+        <tr><td>默认优化器（参考）</td><td>0</td><td>3</td></tr>
+      </tbody>
+    </table>
+    <p class="fc">表 1（消融）：Levenshtein 不仅没加速反而变慢 64.4%、触发 87 次超时；LLM 嵌入即便无校验仍有 16.1% 加速、仅 5 次超时（约为 Levenshtein 的 1/5）；开启一致性校验后加速升至 21.1%、超时降到 1 次。</p>
+  </div>
+
+  <div class="module-card">
+    <h3>8.1 结论与未来工作</h3>
+    <p>消融证实：学到的嵌入捕捉到了远超原始字符串相似度的信息，且与一致性校验结合是稳健收益的关键。即便最先进的 OpenAI 嵌入，其训练语料也极少同时包含「查询计划 + hint 如何影响计划」的显式信息——自然下一步是开发/微调领域专用嵌入（含丰富 SQL 语法、优化技术、hint 标注与代价反馈）。</p>
+    <p>当前 Plan-Mapping 平均约 20% 加速（约为理论上界的三分之一）。剩余差距约一半来自候选 hint 选择阶段：在「oracle」配置下（一致性校验可查看默认与候选计划的真实运行时），可收回近 40% 的可达加速（即最大值的约三分之二）——说明更精细的相似度度量或投票机制有望填补大部分残差。</p>
+  </div>
+</div>
+
+<!-- ========== SEC 9 ========== -->
+<div class="section" id="sec-9">
+  <h2 class="section-title"><span class="num">9</span>代码使用与实战（思路与复现）</h2>
+  <p class="section-desc">论文在 openGauss 上构建了原型并基于 JOB-CEB 评测，<strong>未提供公开代码仓库</strong>。下面给出可落地的复现思路。</p>
+
+  <div class="kv-row"><span class="kv-key">论文</span><span class="kv-val">Vasilenko, Demin, Boorlakov. arXiv:2506.05853 (2025). LLM-PM.</span></div>
+  <div class="kv-row"><span class="kv-key">DBMS</span><span class="kv-val">openGauss（单节点）；hint 通过 SQL 内联 hint 语法施加</span></div>
+  <div class="kv-row"><span class="kv-key">嵌入模型</span><span class="kv-val">OpenAI text-embedding-3-large（冻结，免训练）</span></div>
+  <div class="kv-row"><span class="kv-key">超参</span><span class="kv-val">N=16, K=16, 欧氏距离, w=8 工作线程, 7 个布尔 hint（2⁷=128 集）</span></div>
+
+  <div class="code-block">
+    <pre># —— 概念性复现步骤 ——
+# 1) 离线：对参考 workload 每个查询 Q
+#    a. P0 = plan(Q, 默认) ; d = embed(P0)          # 默认计划嵌入
+#    b. 用 Adaptive Hint Search 找 H* (128 集穷举+超时剪枝+计划缓存)
+#    c. P* = plan(Q, H*) ; o = embed(P*)            # 优化后计划嵌入
+#    d. 记录三元组 (d, H*, o, t_def, t_opt) 入参考集
+#
+# 2) 在线：新查询 Q
+#    a. p0 = embed(plan(Q,默认))
+#    b. N = kNN(p0, 参考集默认嵌入, k=16)
+#    c. Hcand = mode{ H*_i | H*_i != 全启用, i∈N }
+#    d. 若 Hcand 存在: pcand = embed(plan(Q,Hcand))
+#       计算 t0bar = mean(默认运行时 over KNN(p0,k=16))
+#       计算 tcandbar = mean(优化运行时 over KNN(pcand,k=16, 用 o_i))
+#       若 tcandbar < t0bar: 用 Hcand 执行; 否则用默认
+#    e. 若 Hcand 不存在或无 hint: 走 Adaptive Hint Search 兜底</pre>
+  </div>
+
+  <div class="warn-box">
+    <b>注意事项：</b>论文用 OpenAI 商业嵌入 API；若需自托管，可替换为开源嵌入模型（如 sentence-transformers），但相似度质量可能不同。hint 的具体语法依赖目标 DBMS（openGauss / PostgreSQL 的 enable_* 参数），实现时需映射到对应系统的等价开关。
+  </div>
+</div>
+
+<!-- ========== SEC 10 ========== -->
+<div class="section" id="sec-10">
+  <h2 class="section-title"><span class="num">10</span>总结、局限与未来工作</h2>
+  <p class="section-desc">LLM-PM 是一个轻量、免训练的框架：用预训练 LLM 对执行计划做嵌入，通过 hint 推荐来引导传统代价优化器。它先在 N 个最近默认计划中找出本地流行的 hint 集，再用「比较默认与优化计划区域平均运行时」的双邻域一致性校验验证收益。无需改动底层 DBMS、无需大量离线训练，只复用嵌入空间中编码的历史计划结果。</p>
+
+  <div class="highlight-box">
+    <b>核心贡献：</b>· 用 LLM 生成的执行计划嵌入增强 hint 选择；· 轻量、快速、免训练，无需大量训练或系统改动即可引导优化器；· 在 JOB-CEB 上证明 LLM 计划 hinting 能稳定超越默认优化器（平均 21.1% 总加速）；· 凸显 LLM 嵌入改善查询性能的潜力，为高效 LLM 驱动优化系统指明方向。
+  </div>
+
+  <div class="limit-box">
+    <h4>局限与未来</h4>
+    <p>· 当前平均加速约为理论上界的三分之一，候选选择阶段是主要残差来源；<br>
+    · 通用 LLM 嵌入缺乏「计划–hint–代价」领域语料，领域专用/微调嵌入是下一步；<br>
+    · 可用度量学习或「计划+SQL 混合特征」精炼嵌入空间，并按局部密度动态适配邻域大小；<br>
+    · 硬件/引擎异构使跨系统直接对比困难（同 hint 在不同 DBMS 上效果可能相反）。</p>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-q">Q1：LLM-PM 和 LLM-QO、LLMSteer 有何本质区别？</div>
+    <div class="qa-a">LLM-QO 用生成式 LLM「写」计划（端到端替换优化器，贵且慢）；LLMSteer 嵌入「查询文本」再训小分类器。LLM-PM 嵌入的是「执行计划」本身、且完全免训练，用近邻检索迁移 hint，最贴近生产实用性。</div>
+  </div>
+  <div class="qa-card">
+    <div class="qa-q">Q2：为什么需要「双邻域一致性校验」？</div>
+    <div class="qa-a">单靠邻域投票可能盲用会把优化器推入次优空间的 hint。校验通过比较「候选计划邻域的平均优化运行时」与「默认计划邻域的平均默认运行时」，只对确有收益的 hint 采纳，把超时从 5 次降到 1 次、加速从 16.1% 提到 21.1%。</div>
+  </div>
+  <div class="qa-card">
+    <div class="qa-q">Q3：消融里 Levenshtein 为什么反而变慢 64%？</div>
+    <div class="qa-a">编辑距离只看计划字符串的表面相似，捕捉不到「结构/语义相近 → 同样 hint 有效」的信息；近邻检索到的「相似」计划实际并不共享低效点，导致推荐错误 hint、大量执行超时，整体严重退化。</div>
+  </div>
+  <div class="qa-card">
+    <div class="qa-q">Q4：兜底搜索会不会很慢？</div>
+    <div class="qa-a">单次兜底需扫 128 个 hint 集，但靠超时剪枝与计划缓存把算力集中在少数有希望的候选上；且它是「一次性」地为新查询建立三元组，之后同类查询走快路径即可，随持续学习兜底比例越来越小。</div>
+  </div>
+</div>
+
+<!-- ========== SEC 11 ========== -->
+<div class="section translation" id="sec-11">
+  <h2 class="section-title"><span class="num">11</span>全文中文翻译</h2>
+  <p class="section-desc">以下为论文核心内容的中文翻译（本文为向量图论文，原图以 SVG 在正文重现，此处以 📌 标记对应章节）。</p>
+
+  <h3>摘要</h3>
+  <p>大语言模型（LLM）嵌入为数据库查询优化提供了一条有前景的新途径。本文探讨预训练的执行计划嵌入如何在不需额外模型训练的情况下指导 SQL 查询执行。我们提出 LLM-PM（LLM-based Plan Mapping）框架：嵌入查询的默认执行计划，在先前执行过的计划中找其 k 近邻，并基于邻域投票推荐数据库 hint 集。一个轻量一致性校验验证所选 hint，而兜底机制在需要时搜索整个 hint 空间。在 openGauss 的 JOB-CEB 基准上评测，LLM-PM 平均实现 21% 的查询延迟缩减。本工作凸显了 LLM 驱动的嵌入带来实际查询性能改进的可能，并为免训练、基于嵌入的优化器引导系统开辟了新方向。</p>
+
+  <h3>1 引言（节选）</h3>
+  <p>查询优化是关系数据库系统的核心问题：优化器必须从庞大的候选空间（可能的连接顺序、连接算法、表访问方法等）中为每条 SQL 构造高效执行计划。数十年研究产出复杂的代价优化器，却仍不完美，会选次优计划拖慢执行。主因是不准的基数估计与依赖简单假设的代价模型。现代 DBMS 提供优化器 hint 作为影响/覆盖计划选择的机制。困难在于选对 hint 极复杂，错误 hint 甚至可能反噬性能。近期用 ML 自动化此过程的趋势有两条：完全替换传统优化器，或以 hint/代价修正引导现有优化器。尽管进展鼓舞人心，基于 LLM 的技术因推理成本高、延迟大，离真实部署仍远。本文提出一种直白方法：利用 LLM 对「执行计划」（而非查询本身）的嵌入来识别最优 hint 集，结合 LLM 表示的表达力与一个简单、快速、基于类比的预测系统，无需训练， bridging LLM 的表达力与对快速高效优化系统的需求。</p>
+
+  <div class="fig-note">📌 <b>图 1（对应正文 Figure 1）：</b>两阶段 hint 选择——在 N 个最近默认计划邻域中投票选候选 hint，再用 K 个最近优化计划邻域验证其收益。</div>
+
+  <h3>3 LLM-PM</h3>
+  <p>我们把自动 hint 选择形式化为：给定查询 Q，找 hint 集 H 使 T(Q, P_H) 最小（公式 1）。H(Q) 为所有有效 hint 配置空间，实践中极大。为加速，用两种技术：超时阈值（每次执行后 Tmin←min(Tmin,T)，超则中止并标记次优）与计划缓存（相同物理计划复用已测延迟）。考虑的 7 个布尔 hint 为 enable nestloop / hashjoin / mergejoin / seqscan / indexscan / indexonlyscan / bitmapscan（2⁷=128 集）。等价 hint 集消歧：选「禁用算子最少」的规范配置，以保留优化器内置经验。</p>
+  <p>自适应 hint 搜索（Algorithm 1）单遍扫描全部 128 集并持续收紧超时；先用全启用执行建立 Tmin 与计划缓存 C，其余配置在 w=8 线程并行；每 hint 集产生计划，若已在 C 则取延迟否则在 Tmin 超时下执行，超时标记次优，更快完成则原子更新 Tmin。因慢计划被快停、重复计划经缓存短路，过程把算力集中在少数有希望的候选上，同时保证全覆盖。</p>
+
+  <div class="fig-note">📌 <b>图 2（对应正文 Figure 2）：</b>LLM-PM 总体系统控制流——Plan-Mapping 快路径；失败则兜底 Adaptive Hint Search；三元组持续反哺参考集。</div>
+
+  <h3>3.3 Plan-Mapping 算法</h3>
+  <p>核心假设：相近嵌入空间中的计划共享物理结构，故同一 hint 常在该局部邻域有效。离线搜索产出三元组 (d_i, H*_i, o_i)。两阶段：① 邻域投票——在 N 个最近默认计划中，选最常见的非默认 hint 集作 Hcand；② 一致性校验——用 Hcand 重规划，对默认计划（p0）与候选计划（pcand）各取 K 个最近邻，比较两邻域平均运行时，若候选邻域更小则采纳。超参 N=16、K=16、欧氏距离（Algorithm 2）。</p>
+
+  <h3>4 评估（节选）</h3>
+  <p>在 openGauss（Kunpeng-920 128 核、1000GB RAM）上用 IMDB 的 JOB-CEB（16 模板、3133 查询）评测，计划嵌入用 OpenAI text-embedding-3-large，图 3 用 PCA 展示默认计划在二维下的成簇分布。十折交叉验证：平均 runtime 降低 19.1%（1.19× 更快），全 workload 总加速 21.1%，理论上界 62.5%；90 分位降 24.7%、中位仅改善 2.1%；每折约 20% 加速、20% 减速、60% 不变。表 4 显示约半数查询最优即默认（全启用），128 种位向量中 86 种至少一次当选最优——仅禁用 nestloop 并非总是制胜。需注意：PostgreSQL 上「禁用 nested-loop」可加速 60%+，但在 openGauss 上反而退化约 50%，说明无普适最优 hint。</p>
+
+  <h3>4.3 消融（表 1）</h3>
+  <p>关掉一致性校验对比 Levenshtein 与仅 LLM 嵌入：Levenshtein 变慢 64.4%、87 次超时；LLM 嵌入（无校验）仍 +16.1%、仅 5 次超时（约为 Levenshtein 的 1/5，接近默认优化器的 3 次）；开启校验后加速升至 21.1%、超时降至 1 次。证实学到的嵌入捕捉到远超原始字符串相似度的信息，且与一致性校验结合是稳健收益的关键。</p>
+
+  <h3>5 结论</h3>
+  <p>我们提出 LLM-PM，一个轻量、免训练、利用预训练 LLM 计划嵌入经 hint 推荐引导传统代价优化器的框架。它先在 N 个最近默认计划中找本地流行 hint 集，再用双邻域一致性校验（比较默认与优化计划区域平均运行时）验证收益，无需改动底层 DBMS 或大量离线训练。在 openGauss 的 JOB-CEB 上证明其一致的性能改进。未来可藉度量学习或计划-SQL 混合特征精炼嵌入空间，并按局部密度动态适配邻域大小，在保持简洁实用的同时进一步缩小与最优 hint 选择的差距。</p>
+</div>
+
+<div class="footer">Training-Free Query Optimization via LLM-Based Plan Similarity (LLM-PM) · 深度解读 · 生成于论文精读</div>
+
+</div>
+</body>
+</html>

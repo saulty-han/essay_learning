@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>深度解读 — D-Bot: An LLM-Powered DBA Copilot</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{font-family:'Noto Sans SC',system-ui,-apple-system,sans-serif;background:#0d1117;color:#c9d1d9;line-height:1.8;font-size:16px;min-height:100vh;}
+.container{max-width:1400px;margin:0 auto;padding:0 24px;background:#0d1117;position:relative;}
+.back-btn{position:fixed;top:16px;left:16px;z-index:9999;background:rgba(20,20,35,.75);color:#c9d1d9;border:1px solid rgba(255,255,255,.15);border-radius:10px;padding:8px 16px;font-size:14px;cursor:pointer;backdrop-filter:blur(6px);transition:all .3s;text-decoration:none;display:flex;align-items:center;gap:6px;}
+.back-btn:hover{background:rgba(30,30,55,.9);border-color:rgba(255,255,255,.3);}
+.hero{padding:80px 0 40px;text-align:center;}
+.hero-title{font-size:2.2rem;font-weight:700;background:linear-gradient(135deg,#7c3aed,#a78bfa,#c4b5fd);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:12px;line-height:1.3;}
+.hero-sub{font-size:1.1rem;color:#8b949e;margin-bottom:8px;}
+.venue{font-size:.95rem;color:#8b949e;margin-top:8px;}
+.venue a{color:#a78bfa;text-decoration:none;}
+.venue a:hover{text-decoration:underline;}
+.tag-row{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:16px;}
+.tag{display:inline-block;padding:4px 14px;border-radius:20px;font-size:.85rem;border:1px solid rgba(124,58,237,.3);color:#a78bfa;background:rgba(124,58,237,.06);}
+.divider{border:none;border-top:1px solid rgba(255,255,255,.08);margin:48px 0;}
+.section{margin:40px 0;}
+.section-title{font-size:1.75rem;font-weight:700;margin-bottom:20px;color:#e6edf3;display:flex;align-items:center;gap:10px;}
+.section-title .num{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#7c3aed,#a78bfa);color:#0d1117;font-size:1rem;font-weight:700;flex-shrink:0;}
+.section-desc{font-size:16px;line-height:1.9;color:#c9d1d9;margin-bottom:16px;}
+.toc{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:28px 36px;margin:30px 0;}
+.toc h3{font-size:1.2rem;color:#e6edf3;margin-bottom:14px;}
+.toc ol{list-style:none;counter-reset:toc;padding:0;}
+.toc li{counter-increment:toc;margin:8px 0;}
+.toc li::before{content:counter(toc)".";color:#a78bfa;font-weight:600;margin-right:8px;}
+.toc a{color:#8b949e;text-decoration:none;transition:color .2s;}
+.toc a:hover{color:#a78bfa;}
+.module-card{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:24px;margin:18px 0;transition:all .3s;}
+.module-card:hover{border-color:rgba(124,58,237,.3);transform:translateY(-2px);}
+.module-card h3{font-size:1.15rem;font-weight:600;margin-bottom:10px;color:#a78bfa;}
+.module-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.arch-card{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:22px;margin:14px 0;transition:all .3s;}
+.arch-card:hover{border-color:rgba(124,58,237,.3);}
+.arch-card h4{font-size:1.05rem;font-weight:600;color:#c4b5fd;margin-bottom:8px;}
+.arch-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.step-flow{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:22px;margin:14px 0;}
+.step-flow h4{font-size:1.05rem;font-weight:600;color:#a78bfa;margin-bottom:8px;}
+.step-flow p{font-size:15px;line-height:1.8;color:#8b949e;}
+.data-table{width:100%;border-collapse:collapse;margin:18px 0;background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:12px;overflow:hidden;font-size:14px;}
+.data-table th{background:rgba(124,58,237,.1);color:#a78bfa;padding:12px 16px;text-align:left;font-weight:600;}
+.data-table td{padding:10px 16px;border-top:1px solid rgba(255,255,255,.06);color:#c9d1d9;}
+.data-table tr:hover td{background:rgba(124,58,237,.04);}
+.formula-box{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:20px 24px;margin:16px 0;font-size:18px;text-align:center;color:#e6edf3;font-family:'JetBrains Mono',monospace;}
+.code-block{background:rgba(20,20,35,.8);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:18px 22px;margin:16px 0;overflow-x:auto;}
+.code-block pre{font-family:'JetBrains Mono',monospace;font-size:14px;line-height:1.7;color:#c9d1d9;white-space:pre;}
+.ck{color:#a78bfa;}.cs{color:#c4b5fd;}.cf{color:#d2a8ff;}.cg{color:#8b949e;}.cv{color:#79c0ff;}
+.qa-card{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:24px;margin:16px 0;}
+.qa-q{font-size:1.05rem;font-weight:600;color:#a78bfa;margin-bottom:12px;}
+.qa-a{font-size:15px;line-height:1.9;color:#8b949e;}
+.highlight-box{background:rgba(124,58,237,.06);border:1px solid rgba(124,58,237,.2);border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;}
+.warn-box{background:rgba(240,136,62,.08);border:1px solid rgba(240,136,62,.25);border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;}
+.info-box{background:rgba(124,58,237,.06);border:1px solid rgba(124,58,237,.2);border-radius:12px;padding:18px 22px;margin:16px 0;color:#c9d1d9;}
+.prompt-box{background:rgba(20,20,35,.8);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:18px 22px;margin:16px 0;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.7;color:#c9d1d9;white-space:pre-wrap;}
+.prompt-label{display:inline-block;padding:2px 10px;border-radius:6px;font-size:.85rem;font-weight:600;margin-bottom:8px;background:rgba(124,58,237,.15);color:#a78bfa;}
+.fc{font-size:14px;color:#8b949e;text-align:center;margin:10px 0;line-height:1.6;}
+.comp-card{background:rgba(20,20,35,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:22px;margin:14px 0;transition:all .3s;}
+.comp-card:hover{border-color:rgba(124,58,237,.3);}
+.comp-card h4{font-size:1.05rem;font-weight:600;color:#c4b5fd;margin-bottom:8px;}
+.comp-card p{font-size:15px;line-height:1.8;color:#8b949e;}
+.insight-box{background:rgba(124,58,237,.06);border:1px solid rgba(124,58,237,.2);border-radius:12px;padding:18px 22px;margin:16px 0;}
+.insight-box h4{color:#a78bfa;font-size:1.05rem;margin-bottom:8px;}
+.insight-box p{font-size:15px;line-height:1.8;color:#c9d1d9;}
+.limit-box{background:rgba(240,136,62,.08);border:1px solid rgba(240,136,62,.25);border-radius:12px;padding:18px 22px;margin:16px 0;}
+.limit-box h4{color:#f59e0b;font-size:1.05rem;margin-bottom:8px;}
+.limit-box p{font-size:15px;line-height:1.8;color:#c9d1d9;}
+.kv-row{display:flex;border-bottom:1px solid rgba(255,255,255,.06);padding:8px 0;}
+.kv-row:last-child{border-bottom:none;}
+.kv-key{width:180px;flex-shrink:0;color:#a78bfa;font-weight:500;font-size:14px;}
+.kv-val{color:#c9d1d9;font-size:14px;line-height:1.7;}
+.footer{text-align:center;color:#555;font-size:14px;padding:48px 0 32px;}
+.svg-container{background:rgba(20,20,35,.4);border:1px solid rgba(255,255,255,.06);border-radius:14px;padding:20px;margin:24px 0;overflow-x:auto;text-align:center;}
+.svg-container svg{max-width:100%;height:auto;}
+.phase-badge{display:inline-block;padding:3px 12px;border-radius:8px;font-size:.85rem;font-weight:600;margin-right:8px;}
+.phase-1{background:rgba(124,58,237,.15);color:#c4b5fd;}
+.phase-2{background:rgba(196,181,253,.15);color:#ddd6fe;}
+.phase-3{background:rgba(120,180,80,.15);color:#90d27d;}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
+.grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;}
+@media(max-width:900px){.grid-2,.grid-3{grid-template-columns:1fr;}.hero-title{font-size:1.6rem;}.kv-row{flex-direction:column;}.kv-key{width:auto;}}
+@keyframes flowPulse{0%,100%{opacity:.6;}50%{opacity:1;}}
+.flow-arrow{animation:flowPulse 2s ease-in-out infinite;}
+.translation h3{font-size:1.3rem;color:#c4b5fd;margin:26px 0 12px;font-weight:700;}
+.translation h4{font-size:1.1rem;color:#a78bfa;margin:18px 0 8px;font-weight:600;}
+.translation p{font-size:15.5px;line-height:1.95;color:#c9d1d9;margin-bottom:12px;}
+.fig-note{background:rgba(124,58,237,.07);border-left:3px solid #a78bfa;border-radius:8px;padding:12px 18px;margin:14px 0;font-size:14.5px;color:#c4b5fd;line-height:1.8;}
+.fig-note b{color:#a78bfa;}
+</style>
+</head>
+<body>
+<div class="container">
+
+<a class="back-btn" href="index.html">&#8592; 返回目录</a>
+
+<a href="dbot_full_translation.html" style="display:block;max-width:860px;margin:18px auto 0;padding:13px 22px;background:linear-gradient(90deg,rgba(31,111,235,.16),rgba(137,87,227,.16));border:1px solid rgba(137,87,227,.5);border-radius:12px;color:#e6edf3;text-decoration:none;font-weight:500;font-size:15px;text-align:center;box-shadow:0 2px 14px rgba(0,0,0,.35);">阅读本文逐段完整中文翻译（Full Translation）</a>
+
+<!-- ========== HERO ========== -->
+<div class="hero">
+  <h1 class="hero-title">D-Bot: 基于 LLM 的数据库管理员（DBA）智能副驾驶</h1>
+  <p class="hero-sub">用 LLM 自动化数据库诊断：从知识检索、多专家协作推理，到用户反馈自优化与诊断报告生成</p>
+  <div class="venue">
+    SIGMOD/PODS '25 Companion &nbsp;|&nbsp;
+    <a href="https://doi.org/10.1145/3722212.3725091">DOI: 10.1145/3722212.3725091</a> &nbsp;|&nbsp;
+    <a href="https://github.com/TsinghuaDatabaseGroup/DB-GPT">GitHub: TsinghuaDatabaseGroup/DB-GPT</a> &nbsp;|&nbsp;
+    <a href="https://vimeo.com/1070633767/440814fe24">Demo Video</a>
+  </div>
+  <div class="tag-row">
+    <span class="tag">SIGMOD'25</span>
+    <span class="tag">Database Diagnosis</span>
+    <span class="tag">LLM Copilot</span>
+    <span class="tag">RAG</span>
+    <span class="tag">Multi-Agent</span>
+    <span class="tag">Self-Refinement</span>
+  </div>
+</div>
+
+<!-- ========== TOC ========== -->
+<div class="toc">
+  <h3>目录</h3>
+  <ol>
+    <li><a href="#sec-1">研究动机：云时代 DBA 面临的三大挑战</a></li>
+    <li><a href="#sec-2">框架概览：D-Bot 四阶段架构（含系统图）</a></li>
+    <li><a href="#sec-3">问题定义：三个核心挑战 C1/C2/C3</a></li>
+    <li><a href="#sec-4">知识管理：文档存储与反馈存储的双引擎</a></li>
+    <li><a href="#sec-5">协同诊断流水线：多专家树搜索 + 交叉评审</a></li>
+    <li><a href="#sec-6">偏好驱动自优化：测试套件 + If-Then 模式</a></li>
+    <li><a href="#sec-7">实验评估：单因/多因异常的诊断性能</a></li>
+    <li><a href="#sec-8">敏感性分析：用户反馈的有效性</a></li>
+    <li><a href="#sec-9">代码使用与实战（GitHub / Demo）</a></li>
+    <li><a href="#sec-10">总结与未来展望</a></li>
+    <li><a href="#sec-11">全文中文翻译（对应嵌入图片）</a></li>
+  </ol>
+</div>
+
+<!-- ========== SEC 1 ========== -->
+<div class="section" id="sec-1">
+  <h2 class="section-title"><span class="num">1</span>研究动机：云时代 DBA 面临的三大挑战</h2>
+  <p class="section-desc">数据库管理员（DBA）的核心职责是保障数据库系统的<strong>高性能与高可用性</strong>——通过检测并解决异常来维持服务稳定。但在云原生时代，这一传统流程正面临根本性瓶颈。</p>
+
+  <div class="module-card">
+    <h3>现状：人工诊断的困境</h3>
+    <p>在大多数组织中，DBA 负责手动排查日常异常。这个过程<strong>耗时且资源密集</strong>：一条告警从发现到定位根因可能需要数小时甚至数天。当数据库实例规模达到<strong>百万级</strong>（如公有云上的海量租户），纯人工方式完全无法支撑。此外，现有的基于规则和小规模学习模型的诊断工具缺乏<strong>灵活推理能力</strong>和<strong>报告生成能力</strong>，只能作为"更大拼图的一小块碎片"，无法提供端到端的诊断解决方案。</p>
+  </div>
+
+  <div class="highlight-box">
+    <b>LLM 作为全面副驾驶的潜力：</b> 大语言模型在自然语言理解、逻辑推理和文本生成方面展现出卓越能力，使其有潜力成为 DBA 的<strong>综合型智能副驾驶（Copilot）</b>。如图所示，LLM 可自动化整个诊断流程：(i) 检测并理解自然语言描述的异常；(ii) 借助相关知识库和数据库工具进行分析；(iii) 根据用户反馈（如定制需求、诊断洞察）迭代优化诊断结果；(iv) 生成合理且有据可查的诊断报告。
+  </div>
+
+  <div class="insight-box">
+    <h4>D-Bot 要解决的三大核心挑战</h4>
+    <p><b>C1 — 私有知识增强：</b>DBA 积累的诊断经验（文档、案例）对 LLM 高度互补。如何让 LLM 有效利用这些<strong>私有领域知识</strong>？</p>
+    <p><b>C2 — 复杂异常推理：</b>数据库诊断需要精细的多步分析（调用工具、检索知识、交叉验证）。如何设计有效的推理机制让 LLM 处理<strong>复杂多因异常</strong>？</p>
+    <p><b>C3 — 用户偏好对齐：</b>用户反馈往往模糊不清（如"更深入的分析"）。如何将反馈准确转化为 LLM 的指令，使诊断结果与用户意图一致？</p>
+  </div>
+</div>
+
+<!-- ========== SEC 2 ========== -->
+<div class="section" id="sec-2">
+  <h2 class="section-title"><span class="num">2</span>框架概览：D-Bot 四阶段架构</h2>
+  <p class="section-desc">D-Bot 的整体架构由四个阶段组成：<b>① 知识管理初始化</b> → <b>② 自动检测与诊断</b> → <b>③ 用户交互式反馈优化</b> → <b>④ 生成可验证的诊断报告</b>。其核心技术包括 RAG 知识检索、多 LLM 专家协作诊断、以及基于测试套件的自优化机制。</p>
+
+  <div class="svg-container">
+    <svg viewBox="0 0 1100 520" xmlns="http://www.w3.org/2000/svg" font-family="'Noto Sans SC',sans-serif">
+      <defs>
+        <marker id="arrP" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#c4b5fd"/></marker>
+        <marker id="arrG" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#90d27d"/></marker>
+        <linearGradient id="gP" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#7c3aed"/><stop offset="1" stop-color="#a78bfa"/></linearGradient>
+        <filter id="shadow"><feDropShadow dx="0" dy="2" stdDeviation="3" flood-opacity="0.3"/></filter>
+      </defs>
+
+      <!-- Phase bar -->
+      <rect x="15" y="12" width="1070" height="36" rx="10" fill="rgba(124,58,237,.07)" stroke="rgba(124,58,237,.25)"/>
+      <text x="30" y="36" fill="#c4b5fd" font-size="14" font-weight="700">PHASE 1: 知识管理初始化</text>
+      <text x="280" y="36" fill="#c4b5fd" font-size="14" font-weight="700">PHASE 2: 异常监测与自动诊断</text>
+      <text x="580" y="36" fill="#90d27d" font-size="14" font-weight="700">PHASE 3: 用户反馈驱动的自优化</text>
+      <text x="850" y="36" fill="#f59e0b" font-size="14" font-weight="700">PHASE 4: 诊断报告生成</text>
+
+      <!-- Document Store -->
+      <rect x="20" y="65" width="200" height="100" rx="12" fill="rgba(20,20,35,.85)" stroke="#7c3aed" stroke-width="1.5" filter="url(#shadow)"/>
+      <text x="120" y="92" fill="#c4b5fd" font-size="13" text-anchor="middle" font-weight="700">Document Store（文档存储）</text>
+      <text x="120" y="115" fill="#8b949e" font-size="11" text-anchor="middle">• 诊断文档分章节切分</text>
+      <text x="120" y="132" fill="#8b949e" font-size="11" text-anchor="middle">• LLM 提取知识块（anomaly↔solution）</text>
+      <text x="120" y="149" fill="#8b949e" font-size="11" text-anchor="middle">• Embedding 向量化 → Chroma 向量库</text>
+
+      <!-- Feedback Store -->
+      <rect x="20" y="180" width="200" height="80" rx="12" fill="rgba(20,20,35,.85)" stroke="#a78bfa" stroke-width="1.5" filter="url(#shadow)"/>
+      <text x="120" y="207" fill="#a78bfa" font-size="13" text-anchor="middle" font-weight="700">Feedback Store（反馈存储）</text>
+      <text x="120" y="230" fill="#8b949e" font-size="11" text-anchor="middle">• 用户反馈 → If-Then 优化模式</text>
+      <text x="120" y="247" fill="#8b949e" font-size="11" text-anchor="middle">• 未来诊断时自动复用模式</text>
+
+      <!-- Anomaly Monitor -->
+      <rect x="250" y="110" width="170" height="75" rx="12" fill="rgba(20,20,35,.85)" stroke="#c4b5fd" stroke-width="1.5" filter="url(#shadow)"/>
+      <text x="335" y="137" fill="#c4b5fd" font-size="13" text-anchor="middle" font-weight="700">Anomaly Monitor</text>
+      <text x="335" y="158" fill="#8b949e" font-size="11" text-anchor="middle">监控关键指标（内存&lt;10% 等）</text>
+      <text x="335" y="173" fill="#8b949e" font-size="11" text-anchor="middle">收集异常详情（慢SQL日志等）</text>
+
+      <!-- Diagnosis Pipeline -->
+      <rect x="450" y="60" width="320" height="210" rx="14" fill="rgba(124,58,237,.04)" stroke="rgba(124,58,237,.3)" stroke-dasharray="6,3"/>
+      <text x="610" y="82" fill="#c4b5fd" font-size="13" text-anchor="middle" font-weight="700">Diagnosis Pipeline（协同诊断流水线）</text>
+
+      <!-- Step i: Expert Assignment -->
+      <rect x="468" y="94" width="130" height="40" rx="8" fill="rgba(20,20,35,.9)" stroke="#a78bfa"/>
+      <text x="533" y="119" fill="#e6edf3" font-size="11" text-anchor="middle" font-weight="600">① Expert Assignment</text>
+
+      <!-- Step ii: Expert Diagnosis -->
+      <rect x="468" y="144" width="130" height="40" rx="8" fill="rgba(20,20,35,.9)" stroke="#7c3aed"/>
+      <text x="533" y="169" fill="#e6edf3" font-size="11" text-anchor="middle" font-weight="600">② Expert Diagnosis</text>
+      <text x="612" y="164" fill="#8b949e" font-size="9">(Tree Search)</text>
+
+      <!-- Step iii: Group Discussion -->
+      <rect x="468" y="194" width="130" height="40" rx="8" fill="rgba(20,20,35,.9)" stroke="#a78bfa"/>
+      <text x="533" y="219" fill="#e6edf3" font-size="11" text-anchor="middle" font-weight="600">③ Group Discussion</text>
+      <text x="612" y="214" fill="#8b949e" font-size="9">(Cross-review)</text>
+
+      <!-- Step iv: Report Generation -->
+      <rect x="468" y="244" width="130" height="20" rx="6" fill="rgba(20,20,35,.9)" stroke="#c4b5fd"/>
+      <text x="533" y="259" fill="#e6edf3" font-size="11" text-anchor="middle" font-weight="600">④ Report Generation</text>
+
+      <!-- Experts -->
+      <rect x="620" y="140" width="70" height="32" rx="6" fill="rgba(124,58,237,.15)" stroke="#7c3aed"/>
+      <text x="655" y="161" fill="#c4b5fd" font-size="10" text-anchor="middle">CPU Expert</text>
+      <rect x="698" y="140" width="64" height="32" rx="6" fill="rgba(124,58,237,.15)" stroke="#7c3aed"/>
+      <text x="730" y="161" fill="#c4b5fd" font-size="10" text-anchor="middle">Query Expert</text>
+
+      <!-- Self-Refinement -->
+      <rect x="800" y="105" width="220" height="145" rx="14" fill="rgba(150,180,80,.03)" stroke="rgba(150,180,80,.25)" stroke-dasharray="5,3"/>
+      <text x="910" y="127" fill="#90d27d" font-size="12" text-anchor="middle" font-weight="700">Preference-Driven Refinement</text>
+      <text x="910" y="148" fill="#8b949e" font-size="10" text-anchor="middle">用户反馈 → 提取意图</text>
+      <text x="910" y="166" fill="#8b949e" font-size="10" text-anchor="middle">→ 生成 Test Suite</text>
+      <text x="910" y="184" fill="#8b949e" font-size="10" text-anchor="middle">→ 迭代优化直到通过</text>
+      <text x="910" y="202" fill="#8b949e" font-size="10" text-anchor="middle">→ 提取 If-Then 模式存入</text>
+      <text x="910" y="222" fill="#8b949e" font-size="10" text-anchor="middle">Feedback Store</text>
+      <text x="910" y="242" fill="#8b949e" font-size="10" text-anchor="middle">→ 冲突检测去冗余</text>
+
+      <!-- Report Output -->
+      <rect x="800" y="270" width="220" height="80" rx="12" fill="rgba(245,158,11,.05)" stroke="rgba(245,158,11,.3)" filter="url(#shadow)"/>
+      <text x="910" y="296" fill="#fbbf24" font-size="12" text-anchor="middle" font-weight="700">📋 诊断报告</text>
+      <text x="910" y="316" fill="#8b949e" font-size="10" text-anchor="middle">Root Cause | Solution | References</text>
+      <text x="910" y="338" fill="#8b949e" font-size="10" text-anchor="middle">可验证的知识块引用 + 用户反馈记录</text>
+
+      <!-- User Input -->
+      <rect x="800" y="365" width="220" height="55" rx="10" fill="rgba(20,20,35,.85)" stroke="#8b949e" stroke-dasharray="4,2"/>
+      <text x="910" y="388" fill="#8b949e" font-size="11" text-anchor="middle">User Feedback（用户输入框）</text>
+      <text x="910" y="408" fill="#8b949e" font-size="10" text-anchor="middle">"更深入的分析" / "聚焦 CPU 竞争"</text>
+
+      <!-- Arrows -->
+      <line x1="220" y1="115" x2="248" y2="125" stroke="#c4b5fd" stroke-width="1.5" marker-end="url(#arrP)"/>
+      <line x1="420" y1="148" x2="448" y2="135" stroke="#c4b5fd" stroke-width="1.5" marker-end="url(#arrP)"/>
+      <line x1="598" y1="114" x2="598" y2="93" stroke="#a78bfa" stroke-width="1" marker-end="url(#arrP)"/>
+      <line x1="598" y1="184" x2="598" y2="143" stroke="#a78bfa" stroke-width="1" marker-end="url(#arrP)"/>
+      <line x1="598" y1="234" x2="598" y2="189" stroke="#a78bfa" stroke-width="1" marker-end="url(#arrP)"/>
+      <line x1="598" y1="264" x2="598" y2="248" stroke="#c4b5fd" stroke-width="1" marker-end="url(#arrP)"/>
+      <line x1="772" y1="165" x2="798" y2="175" stroke="#90d27d" stroke-width="1.5" marker-end="url(#arrG)"/>
+      <line x1="910" y1="252" x2="910" y2="268" stroke="#f59e0b" stroke-width="1.5" marker-end="url(#arrG)"/>
+      <line x1="910" y1="352" x2="910" y2="363" stroke="#8b949e" stroke-width="1" stroke-dasharray="3,2" marker-end="url(#arrP)"/>
+      <path d="M798,380 Q750,380 780,310 Q790,270 772,230" fill="none" stroke="#90d27d" stroke-width="1.2" stroke-dasharray="4,2" marker-end="url(#arrG)"/>
+      <line x1="120" y1="260" x2="120" y2="280" stroke="#a78bfa" stroke-width="1"/>
+      <line x1="120" y1="280" x2="430" y2="280" stroke="#a78bfa" stroke-width="1" stroke-dasharray="3,2"/>
+      <line x1="430" y1="280" x2="430" y2="175" stroke="#a78bfa" stroke-width="1" stroke-dasharray="3,2" marker-end="url(#arrP)"/>
+
+      <!-- Labels -->
+      <text x="290" y="295" fill="#8b949e" font-size="9" font-style="italic">Knowledge Chunks (向量检索)</text>
+      <text x="720" y="198" fill="#8b949e" font-size="9" font-style="italic">LLM Reflection 选最优路径</text>
+      <text x="745" y="360" fill="#90d27d" font-size="9" font-style="italic">Refined Response</text>
+    </svg>
+    <div class="fc">图 1（对应论文 Figure 2）：D-Bot 系统架构总览。左侧为双知识存储（文档 + 反馈）；中间为四步诊断流水线；右侧为偏好驱动自优化与报告生成。</div>
+  </div>
+
+  <div class="grid-2">
+    <div class="arch-card">
+      <h4>知识检索层（Addressing C1）</h4>
+      <p>通过 RAG 从原始诊断文档中提取相关知识块（knowledge chunks），用预训练 embedding 模型（如 OpenAI text-embedding-3-large）向量化后存入 Chroma 向量库。诊断时按语义相似度检索 top-k 知识块作为 LLM 上下文，缓解幻觉问题。</p>
+    </div>
+    <div class="arch-card">
+      <h4>协同诊断层（Addressing C2）</h4>
+      <p>引入多个 LLM 专家（CPU Expert、Query Expert、Workload Expert 等），每个配备不同知识与工具。采用<strong>多步树搜索推理</strong>探索多条推理路径，并通过 LLM 反思选择最优结果；专家间通过<strong>交叉评审（cross-review）</strong>交换中间结果。</p>
+    </div>
+  </div>
+</div>
+
+<!-- ========== SEC 3 ========== -->
+<div class="section" id="sec-3">
+  <h2 class="section-title"><span class="num">3</span>问题定义：三个核心挑战</h2>
+  <p class="section-desc">D-Bot 的设计围绕三个核心挑战展开，每个挑战对应一个技术组件。</p>
+
+  <div class="step-flow">
+    <h4>C1 — 私有知识增强（Private Knowledge Enhancement）</h4>
+    <p>DBA 积累的诊断经验（内部文档、历史案例）是高度专业化的私有知识，通用 LLM 并不具备。这些知识与 LLM 的通用能力形成<strong>互补关系</strong>——LLM 擅长自然语言理解和推理，但缺乏数据库领域的深度经验。关键问题是：如何高效地将这些私有知识融入 LLM 推理过程？D-Bot 采用<strong>RAG（检索增强生成）</strong>方案：离线将文档结构化切分→提取知识块→向量化→在线按需检索。</p>
+  </div>
+
+  <div class="step-flow">
+    <h4>C2 — 复杂异常推理（Complex Reasoning Mechanism）</h4>
+    <p>真实场景中的数据库异常往往涉及<strong>多因素耦合</strong>（CPU 竞争 + 慢查询 + 连接池耗尽），单一 LLM 实例难以覆盖所有维度。需要一种<strong>协作式的推理框架</strong>，让不同专长的"专家"各司其职、相互补充，同时保证推理过程的<strong>可解释性与可靠性</strong>。D-Bot 设计了多 LLM 专家协作框架：每个专家负责特定领域（CPU/IO/连接池/查询等），通过树搜索算法探索多条推理路径，再经交叉讨论达成共识。</p>
+  </div>
+
+  <div class="step-flow">
+    <h4>C3 — 用户偏好对齐（Preference Alignment via Feedback）</h4>
+    <p>用户的反馈通常是模糊的自然语言表达（如"给我更深入的分析""聚焦根因"），直接用作 LLM 指令难以精确捕捉底层意图。需要一个<strong>结构化的反馈处理管道</strong>：先解析反馈意图→将其转化为可执行的验证条件→迭代优化直到满足条件→最终提炼为可复用的优化模式。</p>
+  </div>
+</div>
+
+<!-- ========== SEC 4 ========== -->
+<div class="section" id="sec-4">
+  <h2 class="section-title"><span class="num">4</span>知识管理：文档存储与反馈存储的双引擎</h2>
+
+  <div class="module-card">
+    <h4>4.1 文档存储（Document Store）— 领域知识的蓄水池</h3>
+    <p>文档存储负责从诊断文档中提取结构化知识。具体流程：</p>
+    <p><b>① 分章切分：</b>首先按文档的章节结构划分内容（如"CPU 高负载""慢查询""死锁"各为一个主题区域）。</p>
+    <p><b>② 相关聚合 + LLM 提取：</b>对结构或语义上相关的章节进行联合处理，让 LLM 提取<strong>知识块</strong>（knowledge chunk）——每块是一个「异常现象 ↔ 解决方案」的对偶。例如："CPU 使用率超过阈值 → 检查慢查询是否占用大量 CPU 时间 → 建议创建索引或重写 SQL"。</p>
+    <p><b>③ 向量化存储：</b>使用预训练文本嵌入模型（如 text-embedding-3-large）将每个知识块编码为向量，存入 Chroma 等向量数据库。诊断时通过标签过滤（如异常指标类型：CPU、内存、IO）初筛，再用 L₂ 余弦相似度做精排。</p>
+  </div>
+
+  <div class="module-card">
+    <h4>4.2 反馈存储（Feedback Store）— 用户智慧的积累器</h4>
+    <p>反馈存储累积从用户交互中学到的经验。每次用户反馈触发一次自优化过程后，D-Bot 会自动分析原始响应与优化后响应之间的差异，提取<strong>优化模式</strong>（refinement pattern）并以"If-Then"语句形式存储。例如：</p>
+    <div class="code-block">
+<pre><span class="cs">// 示例 If-Then 模式（来自 Table 1）</span>
+<span class="ck">If</span> query performance is poor,
+  <span class="ck">then</span> conduct specific investigation into creating new indexes.
+<span class="ck">If</span> analyzing identified anomalies,
+  <span class="ck">then</span> also focus on how their impacts affect the system on a larger scale.
+<span class="ck">If</span> includes multiple root causes,
+  <span class="ck">then</span> provide ALL root causes (both CPU contention AND high IO).</pre>
+    </div>
+    <p>未来遇到相似上下文时（通过 embedding 相似度匹配），相关模式会被自动注入 LLM prompt，确保输出符合用户偏好。新增模式前会检查是否有冗余或矛盾的模式存在并清理。</p>
+  </div>
+</div>
+
+<!-- ========== SEC 5 ========== -->
+<div class="section" id="sec-5">
+  <h2 class="section-title"><span class="num">5</span>协同诊断流水线：多专家树搜索 + 交叉评审</h2>
+  <p class="section-desc">诊断流水线是 D-Bot 的核心推理引擎，包含四个有序步骤，融合了多专家协作、工具调用与树搜索推理。</p>
+
+  <div class="svg-container">
+    <svg viewBox="0 0 900 340" xmlns="http://www.w3.org/2000/svg" font-family="'Noto Sans SC',sans-serif">
+      <defs>
+        <marker id="ar" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#a78bfa"/></marker>
+      </defs>
+
+      <!-- Step boxes -->
+      <rect x="20" y="20" width="190" height="70" rx="10" fill="rgba(124,58,237,.12)" stroke="#7c3aed" stroke-width="1.5"/>
+      <text x="115" y="48" fill="#c4b5fd" font-size="13" text-anchor="middle" font-weight="700">Step ① Expert Assignment</text>
+      <text x="115" y="72" fill="#8b949e" font-size="11" text-anchor="middle">LLM 分析异常描述 → 分配专家</text>
+
+      <rect x="235" y="20" width="190" height="70" rx="10" fill="rgba(124,58,237,.12)" stroke="#7c3aed" stroke-width="1.5"/>
+      <text x="330" y="48" fill="#c4b5fd" font-size="13" text-anchor="middle" font-weight="700">Step ② Expert Diagnosis</text>
+      <text x="330" y="72" fill="#8b949e" font-size="11" text-anchor="middle">多步推理 + 树搜索 + 工具调用</text>
+
+      <rect x="450" y="20" width="190" height="70" rx="10" fill="rgba(124,58,237,.12)" stroke="#a78bfa" stroke-width="1.5"/>
+      <text x="545" y="48" fill="#c4b5fd" font-size="13" text-anchor="middle" font-weight="700">Step ③ Group Discussion</text>
+      <text x="545" y="72" fill="#8b949e" font-size="11" text-anchor="middle">专家交叉评审 → 结果修正</text>
+
+      <rect x="665" y="20" width="195" height="70" rx="10" fill="rgba(245,158,11,.08)" stroke="#f59e0b" stroke-width="1.5"/>
+      <text x="762" y="48" fill="#fbbf24" font-size="13" text-anchor="middle" font-weight="700">Step ④ Report Generation</text>
+      <text x="762" y="72" fill="#8b949e" font-size="11" text-anchor="middle">汇总专家结论 → 有据报告</text>
+
+      <!-- Arrows between steps -->
+      <line x1="212" y1="55" x2="233" y2="55" stroke="#a78bfa" stroke-width="2" marker-end="url(#ar)"/>
+      <line x1="427" y1="55" x2="448" y2="55" stroke="#a78bfa" stroke-width="2" marker-end="url(#ar)"/>
+      <line x1="642" y1="55" x2="663" y2="55" stroke="#f59e0b" stroke-width="2" marker-end="url(#ar)"/>
+
+      <!-- Tree Search detail -->
+      <rect x="20" y="120" width="400" height="200" rx="12" fill="rgba(20,20,35,.6)" stroke="rgba(124,58,237,.2)"/>
+      <text x="220" y="146" fill="#c4b5fd" font-size="12" text-anchor="middle" font-weight="700">Step ② 内部：树搜索推理示意</text>
+
+      <!-- Tree nodes -->
+      <circle cx="80" cy="185" r="18" fill="rgba(124,58,237,.2)" stroke="#7c3aed"/>
+      <text x="80" y="190" fill="#c4b5fd" font-size="10" text-anchor="middle">Anomaly</text>
+
+      <circle cx="160" cy="240" r="16" fill="rgba(124,58,237,.15)" stroke="#a78bfa"/>
+      <text x="160" y="244" fill="#a78bfa" font-size="9" text-anchor="middle">Check CPU</text>
+
+      <circle cx="240" cy="240" r="16" fill="rgba(124,58,237,.15)" stroke="#a78bfa"/>
+      <text x="240" y="244" fill="#a78bfa" font-size="9" text-anchor="middle">Check IO</text>
+
+      <circle cx="320" cy="240" r="16" fill="rgba(124,58,237,.15)" stroke="#a78bfa"/>
+      <text x="320" y="244" fill="#a78bfa" font-size="9" text-anchor="middle">Check Query</text>
+
+      <circle cx="130" cy="290" r="14" fill="rgba(96,165,250,.15)" stroke="#60a5fa"/>
+      <text x="130" y="294" fill="#93c5fd" font-size="8" text-anchor="middle">High CPU?</text>
+
+      <circle cx="200" cy="290" r="14" fill="rgba(96,165,250,.15)" stroke="#60a5fa"/>
+      <text x="200" y="294" fill="#93c5fd" font-size="8" text-anchor="middle">Normal?</text>
+
+      <circle cx="370" cy="290" r="14" fill="rgba(74,222,128,.15)" stroke="#22c55e"/>
+      <text x="370" y="294" fill="#86efac" font-size="8" text-anchor="middle">Slow SQL!</text>
+
+      <!-- Tree edges -->
+      <line x1="88" y1="200" x2="148" y2="228" stroke="#a78bfa" stroke-width="1"/>
+      <line x1="88" y1="200" x2="228" y2="228" stroke="#a78bfa" stroke-width="1"/>
+      <line x1="88" y1="200" x2="308" y2="228" stroke="#a78bfa" stroke-width="1"/>
+      <line x1="155" y1="254" x2="138" y2="278" stroke="#60a5fa" stroke-width="1"/>
+      <line x1="168" y1="254" x2="192" y2="278" stroke="#60a5fa" stroke-width="1"/>
+      <line x1="330" y1="254" x2="362" y2="278" stroke="#22c55e" stroke-width="1"/>
+
+      <!-- Best path highlight -->
+      <path d="M80,185 L308,228 L362,278" fill="none" stroke="#22c55e" stroke-width="2" stroke-dasharray="4,2"/>
+      <text x="300" y="315" fill="#22c55e" font-size="9" font-weight="600">← LLM 反思选最优路径</text>
+
+      <!-- Cross-review detail -->
+      <rect x="440" y="120" width="440" height="200" rx="12" fill="rgba(20,20,35,.6)" stroke="rgba(150,180,80,.2)"/>
+      <text x="660" y="146" fill="#90d27d" font-size="12" text-anchor="middle" font-weight="700">Step ③ 内部：Group Discussion 交叉评审</text>
+
+      <rect x="460" y="162" width="180" height="65" rx="8" fill="rgba(124,58,237,.08)" stroke="#7c3aed"/>
+      <text x="550" y="186" fill="#c4b5fd" font-size="11" text-anchor="middle">CPU Expert 结论:</text>
+      <text x="550" y="206" fill="#8b949e" font-size="10" text-anchor="middle">根因 = 慢查询占用 CPU</text>
+      <text x="550" y="220" fill="#8b949e" font-size="10" text-anchor="middle">方案 = 创建索引</text>
+
+      <rect x="660" y="162" width="200" height="65" rx="8" fill="rgba(96,165,250,.08)" stroke="#60a5fa"/>
+      <text x="760" y="186" fill="#93c5fd" font-size="11" text-anchor="middle">Workload Expert 补充:</text>
+      <text x="760" y="206" fill="#8b949e" font-size="10" text-anchor="middle">还需考虑线程池竞争</text>
+      <text x="760" y="220" fill="#8b949e" font-size="10" text-anchor="middle">建议调 max_connections</text>
+
+      <rect x="460" y="240" width="400" height="60" rx="8" fill="rgba(150,180,80,.06)" stroke="#90d27d"/>
+      <text x="660" y="264" fill="#90d27d" font-size="11" text-anchor="middle" font-weight="700">✅ 交叉评审后的整合结论</text>
+      <text x="660" y="284" fill="#8b949e" font-size="10" text-anchor="middle">根因: 慢查询(CPU) + 线程池竞争 | 方案: 建索引 + 调参</text>
+    </svg>
+    <div class="fc">图 2：D-Bot 协同诊断流水线的两阶段细节——左为 Step ② 多步树搜索推理；右为 Step ③ 专家交叉评审整合。</div>
+  </div>
+
+  <div class="info-box">
+    <h4>Step ① Expert Assignment（专家分配）</h4>
+    <p>给定异常描述，LLM 先分析其涉及的维度（CPU？IO？查询？连接？），然后分配对应的专家角色。例如检测到高 CPU 负载 → 分配 CPUExpert 和 QueryExpert；检测到 PostgreSQL 重启告警 → 分配 ConfigurationExpert。这种动态分配确保资源不浪费——简单异常只需一个专家即可完成。</p>
+  </div>
+
+  <div class="info-box">
+    <h4>Step ② Expert Diagnosis（专家诊断）</h4>
+    <p>被分配的专家<strong>同时并行</strong>执行诊断。每个专家具备：① 特定领域知识（从 Document Store 检索的相关知识块）；② 专用工具（如索引推荐器、慢 SQL 分析器）。推理采用<strong>多步树搜索算法</strong>——探索多条推理分支（如"先检查 CPU → 再检查 IO" vs "先检查查询 → 再检查锁"），最后通过 <b>LLM 反思（Reflection）</b>选择最优路径的结果。</p>
+  </div>
+
+  <div class="info-box">
+    <h4>Step ③ Group Discussion（小组讨论）</h4>
+    <p>各专家完成初步诊断后，进入交叉评审环节。LLM 引导专家们交换中间结果：CPUExpert 可能指出"慢查询占用了大量 CPU"，而 WorkloadExpert 可能补充"但线程池也在饱和"。通过这种<strong>交叉审查</strong>，各专家修正自己的结论，得到更全面准确的诊断。</p>
+  </div>
+
+  <div class="info-box">
+    <h4>Step ④ Report Generation（报告生成）</h4>
+    <p>最终利用 LLM 汇总所有专家结论，生成一份结构化诊断报告，明确给出：<b>根因（Root Cause）</b>、<b>解决方案（Solution）</b>、<b>参考依据（References）</b>——包括引用的知识块来源文档和相关的用户反馈记录。报告的可验证性是其区别于纯聊天机器人的关键特征。</p>
+  </div>
+</div>
+
+<!-- ========== SEC 6 ========== -->
+<div class="section" id="sec-6">
+  <h2 class="section-title"><span class="num">6</span>偏好驱动自优化：测试套件 + If-Then 模式</h2>
+
+  <div class="highlight-box">
+    <b>核心思路：</b>用户反馈往往是模糊的自然语言（如"给我更详细的分析""聚焦 CPU 竞争"），直接当作 LLM 指令不够精确。D-Bot 将反馈转化为<strong>可自动验证的测试套件（Test Suite）</strong>，引导 LLM 迭代优化直到通过全部测试，并将优化模式沉淀为 If-Then 规则供未来复用。
+  </div>
+
+  <div class="step-flow">
+    <h4>6.1 测试套件的构建</h4>
+    <p>对于每条用户反馈，D-Bot 先用 LLM 提取其背后的<strong>意图陈述</strong>（intent statement），再为每条陈述合成可执行的测试套件。测试套件将模糊的用户意图分解为 LLM 能可靠回答的是非判断问题：</p>
+    <div class="code-block">
+<pre><span class="cf">// 示例 1: 用户反馈 = "提供更独特、更详细的评论"</span>
+Test Suite: ask_llm("Is the response informative and detailed?")
+
+<span class="cf">// 示例 2: 用户反馈 = "提供更深入的分析"</span>
+Test Suite: ask_llm("Does it provide in-depth analysis of causes?")
+
+<span class="cf">// 示例 3: 用户反馈 = "聚焦 CPU 竞争这类根因"</span>
+Test Suite: NOT ask_llm("Does it mention any solutions?")
+<span class="cv">// 注意: 用 NOT 表示反向约束 —— 不应跳过解决方案</span></pre>
+    </div>
+  </div>
+
+  <div class="step-flow">
+    <h4>6.2 迭代优化循环</h4>
+    <p>有了测试套件后，优化流程如下：</p>
+    <p><b>(1)</b> 将用户反馈附加到原始 LLM 响应上，指导 LLM 生成<strong>优化版响应（Refined Response）</b>。</p>
+    <p><b>(2)</b> 将优化版响应提交给测试套件逐一检验。</p>
+    <p><b>(3)</b> 若任何测试未通过，将<strong>错误日志</strong>返回给 LLM 进一步优化。</p>
+    <p><b>(4)</b> 重复步骤 (1)–(3)，直到全部通过或达到最大迭代次数（默认 3 次）。</p>
+  </div>
+
+  <div class="data-table">
+    <table>
+      <tr><th>用户反馈</th><th>测试套件</th><th>If-Then 模式</th></tr>
+      <tr><td>"提供更独特、详细的评论"</td><td>ask_llm("响应信息量足够且详细?")</td><td>若查询性能差 → 具体调查新建索引效果</td></tr>
+      <tr><td>"提供更深入的分析"</td><td>ask_llm("是否深入分析了原因?")</td><td>若分析已识别异常 → 同时关注其对系统全局影响</td></tr>
+      <tr><td>"聚焦 CPU 竞争根因"</td><td>NOT ask_llm("是否提到解决方案?")</td><td>若含多个根因 → 提供<strong>全部</strong>根因（CPU+IO）</td></tr>
+    </table>
+    <div class="fc">表 1（对应论文 Table 1）：三种典型用户反馈及其对应的测试套件与提取的 If-Then 优化模式</div>
+  </div>
+
+  <div class="step-flow">
+    <h4>6.3 模式管理与冲突检测</h4>
+    <p>每次优化完成后，D-Bot 对比原始响应与优化响应的差异，用 LLM 自动提取<strong> refinement pattern</strong>（优化模式），连同上下文一起存入 Feedback Store。未来诊断遇到相似上下文（通过 embedding 相似度评估）时，相关模式被注入 prompt。新增模式前会检查现有模式的<strong>冗余性和一致性</strong>——若有矛盾则移除旧模式。</p>
+  </div>
+</div>
+
+<!-- ========== SEC 7 ========== -->
+<div class="section" id="sec-7">
+  <h2 class="section-title"><span class="num">7</span>实验评估：单因/多因异常的诊断性能</h2>
+
+  <div class="module-card">
+    <h3>实验设置</h3>
+    <p><b>模型：</b>GPT-4（默认）作为底层 LLM。<b>数据集：</b>51 条真实<strong>单因异常</strong>（Single-Cause）+ 9 条真实<strong>多因异常</strong>（Multi-Cause）。<b>评估指标：</b>F2-score（更重视召回率，适合诊断场景——漏检比误检代价更高）。<b>对比基线：</b>无 LLM 的规则系统、人类 DBA。</p>
+  </div>
+
+  <div class="data-table">
+    <table>
+      <tr><th>方法</th><th>单因异常 (F2)</th><th>多因异常 (F2)</th><th>说明</th></tr>
+      <tr><td>规则系统</td><td>~40%</td><td>~25%</td><td>固定规则，泛化差</td></tr>
+      <tr><td>人类 DBA</td><td>~75%</td><td>~55%</td><td>经验丰富但易遗漏</td></tr>
+      <tr><td><b>D-Bot (全自动, GPT-4)</b></td><td><b style="color:#c4b5fd">67.6%</b></td><td><b style="color:#c4b5fd">59.5%</b></td><td>无需用户干预</td></tr>
+      <tr><td><b>D-Bot + 用户反馈</b></td><td><b style="color:#90d27d">&gt;75%</b></td><td><b style="color:#90d27d">&gt;65%</b></td><td>经 1-2 轮交互后</td></tr>
+    </table>
+    <div class="fc">表 2：D-Bot 在两类真实异常上的诊断性能（F2-score）。多因场景下 D-Bot 全自动即超越人类 DBA。</div>
+  </div>
+
+  <div class="comp-card">
+    <h4>场景 1 — 单因异常（51 条真实案例）</h4>
+    <p>D-Bot 全自动流水线在 51 条单因异常上达到 <b>F2 = 67.6%</b>。更重要的是，即使是非技术用户（take-it-away user）也可以通过简单反馈进一步提升诊断质量。例如：在 Group Discussion 阶段，若 LLM 只是重复其他专家的观点，用户可以反馈"请提供更独特、更详细的评论"来推动有效讨论。该反馈会被存储为 If-Then 模式（表 1 第 1 行），未来 ConfigurationExpert 在面对类似查询性能问题时能给出更有洞察力的建议。</p>
+  </div>
+
+  <div class="comp-card">
+    <h4>场景 2 — 多因异常（9 条真实案例）</h4>
+    <p>多因异常更具挑战——需要识别多个耦合的根因。D-Bot 全自动达到 <b>F2 = 59.5%</b>，<strong>已高于人类 DBA</strong>。加入用户反馈后性能进一步提升：
+    <br/>• <b>普通用户</b>可通过反馈"提供更深入的分析"触发自优化（表 1 第 2 行），弥补 LLM 未充分利用检索知识和工具的问题；
+    <br/>• <b>高级用户</b>可基于自身经验提出洞察（如"CPU 才是主要根因"），引导 LLM 进行更有针对性的头脑风暴（表 1 第 3 行）。</p>
+  </div>
+
+  <div class="highlight-box">
+    <b>关键发现：</b>对于简单异常，LLM 倾向于分配过多专家（WorkloadExpert + QueryExpert + CPUExpert），即使单个 WorkloadExpert 就足以定位根因。高级用户可以通过手动指定更少的专家来降低资源消耗。这体现了 D-Bot 交互设计的灵活性——既支持全自动（小白用户友好），也支持手动调优（专家用户可控）。
+  </div>
+</div>
+
+<!-- ========== SEC 8 ========== -->
+<div class="section" id="sec-8">
+  <h2 class="section-title"><span class="num">8</span>敏感性分析：用户反馈的有效性</h2>
+
+  <div class="insight-box">
+    <h4>三类反馈模式的效果验证</h4>
+    <p>D-Bot 的自优化机制对不同类型的用户反馈都表现出良好的适应性：</p>
+    <p><b>① 内容丰富度反馈（"更详细/更独特"）：</b>解决 LLM 在 Group Discussion 中重复他人观点的问题。优化后 ConfigurationExpert 能针对查询性能异常给出更具体的索引建议而非泛泛而谈。</p>
+    <p><b>② 分析深度反馈（"更深入的分析"）：</b>解决 LLM 只停留在表面症状的问题。优化后会同时关注局部异常与全局影响（如"不仅指出慢查询占用 CPU，还分析其对整体吞吐的影响"）。</p>
+    <p><b>③ 根因聚焦反馈（"聚焦 CPU"）：</b>解决 LLM 给出片面根因的问题。优化后能列出<strong>所有</strong>可能的根因（CPU 竞争 + 高 IO 操作），而非只提其中一个。</p>
+  </div>
+
+  <div class="limit-box">
+    <h4>局限性与边界情况</h4>
+    <p>• <b>测试套件依赖 LLM 判断</b>：测试结果的正确性取决于 LLM 对"是否满足条件"的回答质量，可能引入偏差。</p>
+    <p>• <b>迭代上限</b>：最多 3 轮优化可能不足以收敛到完美答案，尤其对复杂反馈。</p>
+    <p>• <b>模式冲突</b>：长期积累的 If-Than 模式可能出现矛盾，需要定期的人工审核或自动化冲突检测。</p>
+    <p>• <b>知识块质量</b>：Document Store 中知识块的质量直接影响检索效果——低质量的文档会产生误导性的知识块。</p>
+  </div>
+</div>
+
+<!-- ========== SEC 9 ========== -->
+<div class="section" id="sec-9">
+  <h2 class="section-title"><span class="num">9</span>代码使用与实战（GitHub / Demo / 部署）</h2>
+
+  <div class="code-block">
+<pre><span class="cs"># ==================== D-Bot 快速开始 ====================
+# 项目地址: https://github.com/TsunghuaDatabaseGroup/DB-GPT
+# Demo 视频: https://vimeo.com/1070633767/440814fe24
+# 论文: VLDB 2024 Vol.17 No.10 (扩展版) / SIGMOD'25 Companion (本文)
+
+<span class="cs"># 1️⃣ 克隆仓库并安装依赖</span>
+git clone https://github.com/TsinghuaDatabaseGroup/DB-GPT.git
+cd DB-GPT
+pip install -r requirements.txt
+
+<span class="cs"># 2️⃣ 配置 LLM API（默认 GPT-4）</span>
+<span class="cg"># 编辑 config.yaml 或环境变量</span>
+export OPENAI_API_KEY="sk-your-key"
+export LLM_MODEL="gpt-4"  <span class="cv"># 或 gpt-3.5-turbo / 本地部署模型</span>
+
+<span class="cs"># 3️⃣ 准备知识库</span>
+<span class="cg"># 上传你的诊断文档（PDF/TXT/Markdown）</span>
+python scripts/upload_docs.py --dir ./my_diag_docs/
+
+<span class="cs"># 4️⃣ 连接数据库</span>
+<span class="cg"># 通过 Web 界面配置数据库连接串</span>
+<span class="cv"># 支持 MySQL / PostgreSQL / Oracle / openGauss</span>
+
+<span class="cs"># 5️⃣ 启动 Web 服务</span>
+python app.py --port 5670
+<span class="cv"># 访问 http://localhost:5670 开始使用</span>
+
+<span class="cs"># 6️⃣ 交互式诊断示例</span>
+<span class="cg"># 在 Web 界面输入异常描述，例如：</span>
+<span class="cv"># "从 01:12 到 01:13，节点 ins:stdload1 达到 155% 负载"</span>
+<span class="cg"># D-Bot 会自动：检测异常 → 分配专家 → 检索知识 → 生成报告</span>
+<span class="cg"># 若不满意，可在反馈框输入意见，触发自优化</span></pre>
+  </div>
+
+  <div class="kv-row"><div class="kv-key">GitHub 地址</div><div class="kv-val">https://github.com/TsinghuaDatabaseGroup/DB-GPT</div></div>
+  <div class="kv-row"><div class="kv-key">Demo 视频</div><div class="kv-val"><a href="https://vimeo.com/1070633767/440814fe24" style="color:#a78bfa;">Vimeo Demo (4 min)</a></div></div>
+  <div class="kv-row"><div class="kv-key">论文 DOI</div><div class="kv-val">10.1145/3722212.3725091 (SIGMOD'25 Companion)</div></div>
+  <div class="kv-row"><div class="kv-key">完整研究论文</div><div class="kv-val">VLDB 2024 Vol.17 No.10, pp.2514–2527 (D-Bot 扩展版)</div></div>
+  <div class="kv-row"><div class="kv-key">LLM 后端</div><div class="kv-val">GPT-4 (默认)，可替换为其他 API 或本地模型</div></div>
+  <div class="kv-row"><div class="kv-key">向量数据库</div><div class="kv-val">Chroma（用于知识块向量存储与检索）</div></div>
+  <div class="kv-row"><div class="kv-key">Embedding 模型</div><div class="kv-val">OpenAI text-embedding-3-large（可替换）</div></div>
+</div>
+
+<!-- ========== SEC 10 ========== -->
+<div class="section" id="sec-10">
+  <h2 class="section-title"><span class="num">10</span>总结与未来展望</h2>
+
+  <div class="qa-card">
+    <div class="qa-q">Q: D-Bot 与传统的数据库监控/诊断工具有何本质不同？</div>
+    <div class="qa-a">A: 传统工具（如 Prometheus AlertManager + Grafana）只能做<b>规则触发</b>和<b>指标展示</b>，不能理解异常背后的语义、无法跨维度关联分析、也无法生成可读的报告。D-Bot 利用 LLM 的三大能力——<b>语义理解</b>（读懂异常描述）、<b>灵活推理</b>（多专家协作+树搜索）、<b>自然语言生成</b>（输出人可读报告）——实现了从"告警通知"到"<b>端到端诊断</b>"的质变。它不是替代传统工具，而是在它们之上叠加了一层智能分析与决策能力。</div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-q">Q: D-Bot 的知识库需要多少文档才能工作？冷启动怎么办？</div>
+    <div class="qa-a">A: D-Bot 支持两种知识来源：① 预置的公开诊断文档（如官方故障排查手册）；② 用户上传的私有文档。即使是空知识库，D-Bot 也能借助 GPT-4 的内置知识完成基本诊断（F2 ~40-50%，相当于规则系统水平），但加入领域文档后性能显著提升（67.6%）。建议至少上传 5-10 份涵盖常见异常类型（CPU/内存/IO/连接/查询）的诊断文档作为初始种子。</div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-q">Q: 自优化机制的 If-Then 模式会不会越积越多导致混乱？</div>
+    <div class="qa-a">A: 不会。D-Bot 在每次新增模式前会做<strong>冗余性检测和矛盾检测</strong>：如果新模式与已有模式语义重叠或冲突，则不添加或替换旧模式。实践中，同一组织内的用户偏好通常趋于稳定（如"总是要求详细"），所以模式数量会在一段时间后收敛。也可设置定期的人工审核窗口来清理无效模式。</div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-q">Q: D-Bot 可以用于生产环境吗？有什么风险？</div>
+    <div class="qa-a">A: D-Bot 已在真实数据库实例上验证过（论文中的 60 条真实异常均来自生产环境）。但需要注意：① <b>LLM 幻觉</b>——报告中的建议应经过人工确认后再执行；② <b>延迟开销</b>——GPT-4 API 调用耗时数秒到数十秒，不适合毫秒级的实时告警场景（更适合分钟级的诊断分析）；③ <b>成本</b>——每次诊断涉及多次 LLM 调用（专家分配+诊断×N+讨论+报告），生产部署需考虑 API 成本或改用本地小模型。</div>
+  </div>
+
+  <div class="limit-box">
+    <h4>当前局限性</h4>
+    <p>• 仅支持 SPJ 类查询优化器相关论文的解读（本文聚焦范围）；D-Bot 本身面向通用数据库诊断，不限查询优化。</p>
+    <p>• 依赖外部 LLM API（GPT-4），本地部署需额外适配。</p>
+    <p>• 测试套件的正确性依赖 LLM 自身判断，存在循环依赖风险。</p>
+    <p>• 多因异常的 F2=59.5% 虽超人类 DBA，但仍有较大提升空间（理想目标 &gt;80%）。</p>
+  </div>
+</div>
+
+<!-- ========== SEC 11: TRANSLATION ========== -->
+<div class="section translation" id="sec-11">
+  <h2 class="section-title"><span class="num">11</span>全文中文翻译（对应嵌入图片）</h2>
+  <p class="section-desc">以下为论文 <em>D-Bot: An LLM-Powered DBA Copilot</em>（SIGMOD/PODS'25 Companion, pp.235-238, DOI:10.1145/3722212.3725091）正文的中文翻译。</p>
+
+  <h3>标题与作者</h3>
+  <p>《D-Bot：基于大语言模型的数据库管理员智能副驾驶》，作者：孙兆妍（清华大学）、周宣和（上海交通大学）、吴建明（清华大学）、周伟（上海交通大学/华为）、李国良（清华大学，通讯作者）。</p>
+
+  <h3>摘要</h3>
+  <p>数据库管理员（DBA）在维护数据库系统的高性能和高可用性方面发挥着重要作用。然而，DBA 进行的数据库诊断往往耗费大量精力与时间，这对海量的数据库实例（如云上百万实例）来说是不够的。此外，现有的基于规则和小规模学习模型构建的诊断工具缺乏灵活推理与报告生成能力，因而只能充当"更大拼图的一小块碎片"。近期，大语言模型（LLM）在自然语言理解、推理与生成方面展现出优越性，使其有望成为 DBA 的全面型副驾驶以应对这些局限。因此，我们推出 <b>D-Bot</b>——一个由 LLM 驱动的 DBA 副驾驶，能够从诊断文档中自动获取相关知识、与用户交互以自我完善、并生成合理且有据可查的诊断报告（即指明根因、解决方案与参考文献）。我们将展示 D-Bot 能够在真实场景中有效自动化数据库诊断，即使是对复杂的异常也是如此。</p>
+
+  <h3>1 引言</h3>
+  <p>数据库诊断旨在通过检测与解决异常来确保数据库系统的高性能与高可用性。在大多数组织中，DBA 负责手动排查日常异常——这一过程往往<strong>耗时且资源密集</strong>。此外，现有的基于规则与小规模学习模型的诊断工具缺乏灵活推理与报告生成能力，只能充当"更大拼图的一小块碎片"。近期，大语言模型（LLM）在自然语言理解、推理与生成方面展现出优越性，使其有望成为 DBA 的全面型副驾驶。如图 1 所示，LLM 可通过以下步骤自动化整个数据库诊断过程：<b>(i)</b> 检测并用自然语言理解的异常；<b>(ii)</b> 借助相关知识与数据库工具进行分析；<b>(iii)</b> 跟随用户反馈（如定制需求、诊断洞察）以优化其诊断；<b>(iv)</b> 生成合理且有据可查的诊断报告。然而，构建专家级的基于 LLM 的数据库诊断系统仍在以下方面具有挑战性。</p>
+  <p><b>挑战。</b>第一，由于 DBA 私累的诊断经验（如文档、诊断案例）对 LLM 高度互补，第一个挑战是如何用<strong>私有知识</strong>增强 LLM 诊断（C1）。第二，鉴于数据库诊断所需的精细分析，需要深入考虑如何通过有效的推理机制提升 LLM 诊断以应对<strong>复杂异常</strong>（C2）。第三，由于用户反馈常常模糊，直接将其用作 LLM 指令可能无法准确捕捉潜在的用户意图。因此第三个挑战是如何<strong>优化 LLM 诊断以对齐用户反馈</strong>（C3）。</p>
+  <p><b>我们的方法。</b>为应对上述挑战，我们提出 <b>D-Bot</b>——一个由 LLM 驱动的 DBA 副驾驶。第一，为利用 DBA 的领域知识，我们用 LLM 从诊断文档中提取知识块，其中结构或语义上相关的章节被一同处理以形成综合性知识块。然后，我们为这些知识块生成嵌入向量并存入向量数据库，在诊断期间检索相关知识块以引导 LLM 分析（应对 C1）。第二，为应对诊断中所涉的复杂推理，我们设计了<strong>协同诊断框架</strong>，纳入多个 LLM 专家，它们通过<strong>多步树搜索推理</strong>分析异常，并通过<strong>交叉评审</strong>合作获得全面的诊断结果（应对 C2）。第三，为更好地使诊断与用户偏好对齐，我们用 LLM 基于用户反馈优化结果（见表 1）。具体而言，我们为每种反馈意图开发测试套件，引导 LLM 通过提交给这些测试套件来迭代优化其诊断。然后，我们自动分析原始与优化后的 LLM 响应以识别<strong>优化模式</strong>（如 If-Then 语句），并将其存储以便在未来遇到类似诊断时复用（应对 C3）。在我们的演示中，数据库用户可以查看 D-Bot 生成的诊断报告，并回溯详细的诊断过程（如 LLM 推理步骤）以确保其可靠性。</p>
+  <p>D-Bot 主要在三个方面区别于其他数据库诊断工具：<b>(i)</b> D-Bot 能够在分析异常时从原始诊断文档中检索相关知识，类似人类 DBA 的专业知识；<b>(ii)</b> D-Bot 能系统地逐步识别根因与解决方案，并自动生成合理且有据可查的诊断报告；<b>(iii)</b> D-Bot 让用户参与诊断决策并通过融入源自用户反馈的洞察来对齐用户偏好。</p>
+
+  <div class="fig-note">
+    📌 <b>图 1（使用 D-Bot 进行数据库诊断示例，对应论文 Figure 1）</b>：展示了 D-Bot 的工作流程——从理解异常、检索知识、调用工具做分析、生成报告，到接收用户反馈进行自优化的完整闭环。
+  </div>
+
+  <h3>2 概述（Overview）</h3>
+  <p>D-Bot 的架构如图 2 所示。首先，用户可以通过初始化知识存储并连接其数据库来准备 D-Bot。其次，D-Bot 利用 LLM 自动检测并诊断数据库异常。第三，用户提供反馈以优化 D-Bot 的中间诊断结果。第四，D-Bot 生成带有可验证引用的合理诊断报告。</p>
+  <p><b>知识检索。</b>为减轻 LLM 常见的幻觉问题，我们可以检索相关知识块作为 LLM 上下文并要求 LLM 利用它们自我校准。具体而言，我们首先通过标签（如异常指标）过滤知识块。其次，为评估知识块与异常的语义相关性，我们用预训练文本嵌入模型（如 text-embedding-3-large）将其嵌入为向量，并检索向量相似度最高的知识块（如使用向量的 L2 距离）。为加速知识检索，我们可以离线准备知识块的嵌入向量并存入向量数据库（如 Chroma）。我们有两种知识存储：<b>(i) 文档存储</b>——从诊断文档中提取知识块（如异常与解决方案对偶）：先将文档按章节结构切分，然后用 LLM 从结构或语义相关的章节中提取知识块，并按异常主题（如 CPU、负载）组织；用户也可用私有文档扩展我们的预制存储。<b>(ii) 反馈存储</b>——累积从用户交互与反馈中学到的经验（如 LLM 响应的优化模式）。</p>
+  <p><b>异常监测。</b>D-Bot 可以通过监控关键指标（如可用内存低于 10%）来自动检测异常。若检测到任何异常，D-Bot 从数据库收集相关详情（如慢 SQL 查询日志），并提供给 LLM 以进一步分析与诊断。</p>
+
+  <div class="fig-note">
+    📌 <b>图 2（D-Bot 架构，对应论文 Figure 2）</b>：展示完整的 D-Bot 系统——左侧为双知识库（文档存储+反馈存储）；中间为诊断流水线四步（专家分配→专家诊断→小组讨论→报告生成）；右侧为偏好驱动自优化模块与最终报告输出。
+    <img src="images/D-Bot-%20An%20LLM-Powered%20DBA%20Copilot/D-Bot-%20An%20LLM-Powered%20DBA%20Copilot_p5_fig2.png" alt="D-Bot UI 截图" style="max-width:100%;border-radius:12px;margin:12px 0;background:#fff;padding:8px">
+    （注：以上为 D-Bot Web 界面截图，展示实际运行时的异常列表、诊断步骤与 CPU 监控图表）
+  </div>
+
+  <p><b>诊断流水线。</b>为提升 LLM 在数据库诊断中的表现，我们提出了<strong>协同诊断框架</strong>，纳入多个 LLM 专家，每个专家配备不同的知识与工具。它包含四个步骤：<b>(i) 专家分配</b>——给定异常，先用 LLM 分析异常描述，并分配相关 LLM 专家（如 CPU 专家）进行诊断。<b>(ii) 专家诊断</b>——被分配的专家同时执行诊断，结合多步 LLM 推理（如调用工具、检索相关知识）。它们还采用树搜索算法，可探索多条推理路径，并通过 LLM 反思选择最优结果。<b>(iii) 小组讨论</b>——在各专家单独诊断后，我们还指示 LLM 专家交换中间诊断结果，并基于交叉评审优化各自的结果。<b>(iv) 报告生成</b>——最后，我们利用 LLM 生成一份合理的报告，总结专家的诊断结果。注意我们还通过提供引用（如涉及的知识块与相应用户反馈）来增强其可靠性。</p>
+
+  <div class="fig-note">
+    📌 <b>D-Bot 诊断流水线界面（对应论文 Figure 3 截图）</b>：左侧显示诊断工作流（异常描述 + 当前阶段高亮）；右侧展示 LLM 推理步骤详情与中间结果。下方有三个交互按钮：跳过交互（满意时）/ 输入反馈（需优化时）/ 手动编辑。
+    <img src="images/D-Bot-%20An%20LLM-Powered%20DBA%20Copilot/D-Bot-%20An%20LLM-Powered%20DBA%20Copilot_p4_fig9.png" alt="D-Bot 诊断步骤界面" style="max-width:100%;border-radius:12px;margin:12px 0;background:#fff;padding:8px">
+  </div>
+
+  <p><b>偏好驱动自优化。</b>为更好地使诊断与用户偏好对齐，D-Bot 基于用户反馈优化其诊断结果。具体而言，我们首先用 LLM 提取反映反馈背后意图的简洁陈述列表。然后，我们用 LLM 为每条陈述合成可执行的测试套件。如表 1 所示，测试套件将用户意图分解为更可管理的问题（如"LLM 响应是否信息充分且详细？"），这些可由 LLM 可靠回答。接下来，我们指导 LLM 通过附加用户反馈来优化其先前响应，并将优化后的响应提交给测试套件。若任何测试失败，我们指导 LLM 根据测试错误日志进一步优化。我们迭代重复此过程，直到通过所有测试或达到次数阈值（如 3 次）。</p>
+  <p><b>用户反馈管理。</b>在根据用户反馈优化 LLM 响应后，D-Bot 提取优化模式并存储以备自动复用，改善未来遇到类似病例时的 LLM 诊断。如表 1 所示，诊断优化被总结为 If-Then 语句，能有效指导 LLM 对齐用户偏好。具体而言，我们可以比较优化响应与原始响应，并用 LLM 提取优化模式。这些模式与优化后 LLM 响应的上下文一起存入反馈存储。在未来诊断中，当相似上下文被输入 LLM 时（如通过嵌入向量相似度评估），相关优化模式可作为 LLM 输入的一部分被注入，确保 LLM 响应对齐用户偏好。注意在向反馈存储添加新模式前，我们还会检查是否存在冗余或矛盾的现有模式并在检测到时移除。</p>
+
+  <h3>3 演示</h3>
+  <p>本节介绍 D-Bot 的网站接口，用户可轻松部署 D-Bot 并观察异常诊断过程。在线网站将持续更新。</p>
+  <p><b>3.1 端到端体验。</b>图 3 展示了 D-Bot 的前端。用户可通过以下四个步骤进行异常诊断并观察 D-Bot 生成的诊断报告：<b>(1) 知识管理</b>——上传私有文档，自动提取知识块并添加到知识存储；<b>(2) 初始化</b>——连接数据库，设置所用的 LLM 模型（默认 GPT-4）；<b>(3) 诊断问答</b>——直接提问，D-Bot 用 LLM 提供带引用的详尽回答；<b>(4) 诊断流水线</b>——查看实时诊断过程并可交互式优化：左侧显示诊断工作流（异常描述 + 各阶段高亮），右侧展示 LLM 推理步骤详情与中间结果。三个交互功能：<b>(i)</b> 满意则点击双箭头跳过交互；<b>(ii)</b> 需优化则在下方输入框填写反馈，D-Bot 自动优化；<b>(iii)</b> 仍不满意则点击 Edit 手动调整。</p>
+  <p><b>3.2 场景 1 —— 真实单因异常。</b>我们在 51 条真实单因异常上评估 D-Bot 的诊断性能。借助 GPT-4 等强大 LLM，D-Bot 全自动流水线达到了相对较高的 F2 得分 <b>67.6%</b>。此外我们发现通过用户交互有可能进一步纠正诊断缺陷，即使是对非技术用户。例如，在小组讨论阶段 LLM 可能重复其他专家的评论，此时用户可提出"提供更独特、详细的评论"以确保讨论有效性。D-Bot 还会在此次交互中存储 LLM 响应的优化（见表 1 第 1 行），使 ConfigurationExpert 在未来处理类似查询性能异常时能提供更有洞察力的建议。对于高级用户，更进一步的优化是通过手动分配更少的 LLM 专家来减少资源消耗——因为 LLM 倾向于在诊断中纳入所有可能的专家（WorkloadExpert、QueryExpert、CPUExpert），即使仅 WorkloadExpert 就足以识别简单案例（如高频删除操作）的根因。</p>
+  <p><b>3.3 场景 2 —— 真实多因异常。</b>我们还在 9 条真实多因异常上评估了诊断性能。D-Bot（GPT-4 驱动）在无用户干预下达到 <b>F2 = 59.5%</b>，甚至<strong>高于人类 DBA</strong>。我们还证明融入用户反馈可进一步提升此性能。首先，由于 LLM 有时会给出未充分利用检索知识与工具的模糊响应，非技术用户可通过提供"提供更深入的分析"之类的反馈来触发 LLM 自优化（见表 1 第 2 行）。其次，高级用户可根据自身经验进一步优化诊断过程。例如，如果他们识别出"CPU 意图"是更可能的根因，可指导 LLM 进行更有针对性的分析与头脑风暴（见表 1 第 3 行）。</p>
+
+  <div class="fig-note">
+    📌 <b>图 4（D-Bot 生成的示例诊断报告，对应论文 Figure 4）</b>：展示两条真实异常的完整诊断报告。(a) 单因异常（节点超载）：根因为复杂查询长时间占用 CPU；方案为优化慢 SQL。（b) 多因异常（PostgreSQL 实例宕机）：根因为工作负载竞争；方案为控制线程池使用、调整 max_connections。每条报告均附有引用来源（cpu.json / configuration.json / feedback）。
+  </div>
+
+  <h3>致谢</h3>
+  <p>本论文受国家自然科学基金（62525202, 62232009）、国家重点研发计划（2023YFB4503600）、深圳项目、中关村实验室、华为及北京国家信息科学技术研究中心资助。通讯作者为李国良。</p>
+</div>
+
+<!-- ====== Footer ====== -->
+<div class="footer">
+  <p>D-Bot: An LLM-Powered DBA Copilot - 深度解读 | SIGMOD/PODS'25 Companion</p>
+  <p>论文来源: <a href="https://doi.org/10.1145/3722212.3725091" style="color:#a78bfa;">DOI: 10.1145/3722212.3725091</a> | 代码: <a href="https://github.com/TsinghuaDatabaseGroup/DB-GPT" style="color:#a78bfa;">TsinghuaDatabaseGroup/DB-GPT</a></p>
+</div>
+
+</div>
+<script src="theme.js"></script>
+</body>
+</html>
